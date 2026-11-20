@@ -30,6 +30,16 @@ export type CreateSnapshot = components["schemas"]["CreateSnapshot"];
 export type SnapshotLink = components["schemas"]["SnapshotLink"];
 export type Snapshot = components["schemas"]["ReaderSnapshot"];
 
+export type BackupSettings = components["schemas"]["BackupSettings"];
+export type BackupJob = components["schemas"]["BackupJob"];
+export type SaveBackupSettings = components["schemas"]["SaveBackupSettings"];
+type PublicationTargets =
+  operations["listPublicationTargets"]["responses"][200]["content"]["application/json"];
+export type PublicationList =
+  operations["listPublications"]["responses"][200]["content"]["application/json"];
+export type CreatePublication = components["schemas"]["CreatePublication"];
+export type Publication = components["schemas"]["Publication"];
+
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
 type SaveDocument = operations["saveDocument"]["requestBody"]["content"]["application/json"];
@@ -69,7 +79,10 @@ async function request<T>(
       | RenameWorkspacePath
       | DeliveryInput
       | NewDeliveryToken
-      | CreateSnapshot;
+      | CreateSnapshot
+      | SaveBackupSettings
+      | CreatePublication
+      | { operationId: string };
   },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -145,15 +158,64 @@ export const api = {
       { method: "DELETE" },
     );
   },
+  getBackup(workspace: string, signal?: AbortSignal) {
+    return request<BackupSettings>(`${workspacePath(workspace)}/backup`, signal);
+  },
+  saveBackup(workspace: string, body: SaveBackupSettings) {
+    return request<BackupSettings>(`${workspacePath(workspace)}/backup`, undefined, {
+      method: "PUT",
+      body,
+    });
+  },
+  startBackup(workspace: string, operationId: string) {
+    return request<BackupJob>(`${workspacePath(workspace)}/backup/jobs`, undefined, {
+      method: "POST",
+      body: { operationId },
+    });
+  },
+  getBackupJob(workspace: string, id: string, signal?: AbortSignal) {
+    return request<BackupJob>(
+      `${workspacePath(workspace)}/backup/jobs/${encodeURIComponent(id)}`,
+      signal,
+    );
+  },
+  listPublicationTargets(workspace: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ workspaceId: workspace });
+    return request<PublicationTargets>(`/publications/targets?${query}`, signal);
+  },
+  listPublications(workspace: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ workspaceId: workspace });
+    return request<PublicationList>(`/publications?${query}`, signal);
+  },
+  createPublication(body: CreatePublication) {
+    return request<Publication>("/publications", undefined, { method: "POST", body });
+  },
+  confirmPublication(id: string) {
+    return request<Publication>(`/publications/${encodeURIComponent(id)}/confirm`, undefined, {
+      method: "POST",
+    });
+  },
   createSnapshot(workspace: string, body: CreateSnapshot) {
     return request<SnapshotLink>(`${workspacePath(workspace)}/snapshots`, undefined, {
       method: "POST",
       body,
     });
   },
-  getSnapshot(id: string, documentId?: string, signal?: AbortSignal) {
+  async getSnapshot(id: string, documentId?: string, signal?: AbortSignal) {
     const query = documentId ? `?${new URLSearchParams({ documentId })}` : "";
-    return request<Snapshot>(`${snapshotPath(id)}${query}`, signal);
+    const response = await fetch(`/api/v1${snapshotPath(id)}${query}`, {
+      signal: signal ?? null,
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!response.ok) throw await responseError(response);
+    return {
+      snapshot: (await response.json()) as Snapshot,
+      offline: response.headers.get("X-Librarian-Offline") === "1",
+    };
+  },
+  logout() {
+    return request<undefined>("/session/logout", undefined, { method: "POST" });
   },
   revokeSnapshot(id: string) {
     return request<undefined>(snapshotPath(id), undefined, { method: "DELETE" });

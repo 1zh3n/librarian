@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::sync::{atomic::AtomicBool, atomic::AtomicU64, Arc};
+use std::{fs, io, path::Path};
 
 use silverbullet_server_common::space::EmptySpacePrimitives;
 use silverbullet_server_common::SpacePrimitives;
@@ -8,9 +8,36 @@ use crate::auth::{Authenticator, BrowserSessions, MULTI_AUTH_FILE_NAME};
 use crate::multi::access::SessionPolicy;
 use crate::multi::instance::{AssetFactories, InstanceAuth, InstanceDeps, RuntimeRequest};
 use crate::multi::manager::MultiManager;
-use crate::multi::users::UserStore;
+use crate::multi::setup::first_admin;
+use crate::multi::users::{Profile, UserStore, USERS_FILE};
 use crate::runtime::RuntimeAvailability;
 use crate::search::{search_root, SpaceSearch};
+
+pub fn initialize_data_root(root: &Path, username: &str, password: &str) -> Result<(), String> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(root).map_err(|error| error.to_string())?;
+    let _data_lock = super::db::Metadata::lock_root(root)?;
+    let users = root.join(USERS_FILE);
+    match fs::symlink_metadata(&users) {
+        Ok(_) => return Err("Librarian accounts already exist in this data folder".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    let config = first_admin(username, password, Profile::default()).map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|error| error.message)
+            .collect::<Vec<_>>()
+            .join(", ")
+    })?;
+    config.save(&users)
+}
 
 pub struct NativeSpaces {
     pub manager: Arc<MultiManager>,

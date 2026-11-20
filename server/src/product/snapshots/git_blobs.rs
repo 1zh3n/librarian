@@ -10,7 +10,7 @@ const ENV: [(&str, &str); 3] = [
     ("SB_GIT_NO_HOOKS", "1"),
 ];
 
-pub(super) fn resolve_commit(repo: &Path, commit: &str) -> Result<String, ApiError> {
+pub(in crate::product) fn resolve_commit(repo: &Path, commit: &str) -> Result<String, ApiError> {
     git::run(
         repo,
         &[
@@ -25,7 +25,7 @@ pub(super) fn resolve_commit(repo: &Path, commit: &str) -> Result<String, ApiErr
     .map_err(|_| ApiError::not_found())
 }
 
-pub(super) fn find(
+pub(in crate::product) fn find(
     store: &RevisionStore,
     repo: &Path,
     commit: &str,
@@ -75,11 +75,11 @@ pub(super) fn find(
     Ok(Some(object.to_owned()))
 }
 
-pub(super) fn read(repo: &Path, object: &str) -> Result<Vec<u8>, ApiError> {
+pub(in crate::product) fn read(repo: &Path, object: &str) -> Result<Vec<u8>, ApiError> {
     git::run_bytes(repo, &["cat-file", "blob", object], &ENV).map_err(ApiError::internal)
 }
 
-pub(super) fn repo(
+pub(in crate::product) fn repo(
     state: &crate::state::ServerState,
 ) -> Result<(&RevisionStore, std::path::PathBuf), ApiError> {
     state

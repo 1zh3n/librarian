@@ -590,9 +590,20 @@ async fn mcp_lists_only_product_tools_and_their_input_contracts() {
     let response = server.rpc(&session.access, "tools/list", json!({})).await;
     let tools: Value = response.json().await.unwrap();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    let expected: [(&str, bool, &[&str]); 12] = [
+    let expected: [(&str, bool, &[&str]); 13] = [
         ("workspace_list", true, &[]),
         ("workspace_publish", false, &["workspaceId", "delivery"]),
+        (
+            "publication_request",
+            false,
+            &[
+                "workspaceId",
+                "targetId",
+                "commitId",
+                "documentIds",
+                "operationId",
+            ],
+        ),
         ("document_list", true, &["workspaceId"]),
         ("document_read", true, &["documentId"]),
         ("document_search", true, &["workspaceId", "query"]),
@@ -892,6 +903,76 @@ async fn mcp_workspace_publish_reuses_the_product_delivery_receipt() {
         .unwrap(),
         LEFT.as_bytes()
     );
+}
+
+#[tokio::test]
+async fn mcp_publication_requires_separate_workspace_manager_confirmation() {
+    let server = Server::boot().await;
+    let editor = server.connect("alice", "left").await;
+    let reader = server.connect("reader", "left").await;
+    let workspaces = server.tool(&editor, "workspace_list", json!({})).await;
+    let workspace = &workspaces["structuredContent"]["workspaces"][0]["id"];
+    let document = server
+        .tool(
+            &editor,
+            "document_create",
+            json!({
+                "workspaceId": workspace, "operationId": "0e57ea0d-1e50-4fbf-b071-e76bce261a5c",
+                "path": "Publish.md", "markdown": "# Test publication\n"
+            }),
+        )
+        .await;
+    let revision = &document["structuredContent"];
+    assert!(revision["commitId"].is_string(), "{document}");
+    let target = tempfile::tempdir().unwrap();
+    assert!(std::process::Command::new("git")
+        .args(["init", "--bare", "--quiet"])
+        .current_dir(target.path())
+        .status()
+        .unwrap()
+        .success());
+    fs::write(
+        server
+            .root
+            .path()
+            .join(".librarian/publication-targets.json"),
+        json!({"targets": [{
+            "id": "fixture", "label": "Publication fixture", "workspaceId": workspace,
+            "repository": target.path(), "branch": "main", "contentPath": "content/articles",
+            "template": "article.html", "baseUrl": "https://example.test",
+        }]})
+        .to_string(),
+    )
+    .unwrap();
+    let operation = "eba19732-a682-48fb-b461-dcd32ced22d7";
+    let args = json!({
+        "workspaceId": workspace, "targetId": "fixture", "commitId": revision["commitId"],
+        "documentIds": [revision["documentId"]], "operationId": operation,
+    });
+    let denied = server
+        .tool(&reader, "publication_request", args.clone())
+        .await;
+    assert_eq!(denied["isError"], true);
+    let mut attempted_confirmation = args.clone();
+    attempted_confirmation["confirm"] = true.into();
+    let denied = server
+        .tool(&editor, "publication_request", attempted_confirmation)
+        .await;
+    assert_eq!(denied["isError"], true);
+    let proposed = server
+        .tool(&editor, "publication_request", args.clone())
+        .await;
+    let publication = &proposed["structuredContent"];
+    assert_eq!(publication["id"], operation, "{proposed}");
+    assert_eq!(publication["status"], "pending");
+    assert_eq!(publication["documentIds"], args["documentIds"]);
+    assert_eq!(
+        server
+            .product_get(&editor, &format!("/publications/{operation}"))
+            .await,
+        *publication
+    );
+    assert!(!target.path().join("refs/heads/main").exists());
 }
 
 #[tokio::test]

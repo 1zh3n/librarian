@@ -70,6 +70,39 @@ fn command(repo: &Path, args: &[&str], envs: &[(&str, &str)]) -> Command {
     // Callers match on git's stderr text; keep it English on localized hosts.
     cmd.env("LC_ALL", "C");
     cmd.env("LANG", "C");
+    if envs.contains(&("SB_GIT_PRODUCT_ISOLATED", "1")) {
+        for name in [
+            "GIT_DIR",
+            "GIT_COMMON_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_CONFIG",
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_EXEC_PATH",
+            "GIT_NAMESPACE",
+            "GIT_SHALLOW_FILE",
+            "GIT_REPLACE_REF_BASE",
+            "GIT_QUARANTINE_PATH",
+            "GIT_SSH",
+            "GIT_SSH_COMMAND",
+            "GIT_SSH_VARIANT",
+            "GIT_PROXY_COMMAND",
+            "SSH_ASKPASS",
+            "GIT_ASKPASS",
+        ] {
+            cmd.env_remove(name);
+        }
+        cmd.env("GIT_CONFIG_NOSYSTEM", "1");
+        cmd.env(
+            "GIT_CONFIG_GLOBAL",
+            if cfg!(windows) { "NUL" } else { "/dev/null" },
+        );
+        cmd.env("GIT_CONFIG_COUNT", "0");
+        cmd.env("GIT_NO_REPLACE_OBJECTS", "1");
+        cmd.env("GIT_NO_LAZY_FETCH", "1");
+    }
     if envs
         .iter()
         .any(|(key, value)| *key == "GIT_ALLOW_PROTOCOL" && *value == "ssh")
@@ -89,7 +122,9 @@ fn command(repo: &Path, args: &[&str], envs: &[(&str, &str)]) -> Command {
         }
     }
     for (k, v) in envs {
-        if !k.starts_with("SB_MANAGED_") && *k != "SB_GIT_NO_HOOKS" {
+        if !k.starts_with("SB_MANAGED_")
+            && !matches!(*k, "SB_GIT_NO_HOOKS" | "SB_GIT_PRODUCT_ISOLATED")
+        {
             cmd.env(k, v);
         }
     }

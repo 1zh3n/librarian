@@ -95,6 +95,11 @@ fn call_local(
     arguments: Value,
 ) -> Result<Value, ApiError> {
     match name {
+        "publication_request" => encode(super::publication::request_proposal(
+            service,
+            account,
+            arguments_as(arguments)?,
+        )?),
         "workspace_publish" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -174,6 +174,12 @@ impl ToolSet for ProductTools {
                 &["workspaceId", "delivery"], false,
             ),
             tool(
+                "publication_request", "Request Zola publication", "Prepare an explicit publication request for a fixed revision and configured target. A Librarian Workspace manager confirms it separately.",
+                json!({"workspaceId": workspace, "targetId": {"type": "string", "description": "Configured Zola target ID."}, "commitId": commit,
+                    "documentIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": document}, "operationId": operation}),
+                &["workspaceId", "targetId", "commitId", "documentIds", "operationId"], false,
+            ),
+            tool(
                 "document_list", "List documents", "List documents in a granted workspace in path order.",
                 json!({"workspaceId": workspace, "after": {"type": "string", "description": "List paths strictly after this document path."}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
                 &["workspaceId"], true,

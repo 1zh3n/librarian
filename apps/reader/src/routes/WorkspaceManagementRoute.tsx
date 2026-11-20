@@ -3,6 +3,8 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { documentsQuery, workspacesQuery } from "../api/queries";
 import { DeliveryPanel } from "../features/delivery/DeliveryPanel";
 import { DeliveryTokens } from "../features/delivery/DeliveryTokens";
+import { BackupPanel } from "../features/release/BackupPanel";
+import { PublicationPanel } from "../features/release/PublicationPanel";
 import { SnapshotPanel } from "../features/snapshot/SnapshotPanel";
 import { RenamePathForm } from "../features/workspace/RenamePathForm";
 import { WorkspaceEditor } from "../features/workspace/WorkspaceEditor";
@@ -56,6 +58,16 @@ export function WorkspaceManagementRoute() {
       />
       {workspace.canManage && (
         <DeliveryTokens key={`token-${workspaceId}`} workspace={workspaceId} />
+      )}
+      {workspace.canManage && (
+        <>
+          <BackupPanel key={`backup-${workspaceId}`} workspace={workspaceId} />
+          <PublicationPanel
+            key={`publication-${workspaceId}`}
+            workspace={workspaceId}
+            documents={documents.data ?? []}
+          />
+        </>
       )}
       {workspace.canWrite && (
         <SnapshotPanel

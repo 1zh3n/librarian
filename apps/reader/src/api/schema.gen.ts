@@ -1,6 +1,150 @@
 // Generated from api/librarian.openapi.json. Run npm run api:generate -w @librarian/reader.
 
 export interface paths {
+  "/session": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getSession"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/session/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["logoutSession"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/backup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getBackupSettings"];
+    put: operations["saveBackupSettings"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/backup/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["startBackupJob"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/backup/jobs/{job}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getBackupJob"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/publications/targets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listPublicationTargets"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/publications": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listPublications"];
+    put?: never;
+    post: operations["createPublication"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/publications/{publication}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getPublication"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/publications/{publication}/confirm": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["confirmPublication"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -534,6 +678,58 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    BrowserSession: {
+      username: string;
+      cacheId: string;
+    };
+    ConfiguredTarget: {
+      id: string;
+      label: string;
+    };
+    SaveBackupSettings: {
+      targetId: string | null;
+      /** @enum {string} */
+      mode: "grouped" | "each-operation";
+    };
+    BackupSettings: {
+      targets: components["schemas"]["ConfiguredTarget"][];
+      targetId: string | null;
+      /** @enum {string} */
+      mode: "grouped" | "each-operation";
+      lastJob: components["schemas"]["BackupJob"] | null;
+    };
+    BackupJob: {
+      id: string;
+      workspaceId: string;
+      /** @enum {string} */
+      status: "queued" | "succeeded" | "failed";
+      sourceCommitId: string;
+      commitId: string | null;
+      message: string | null;
+    };
+    CreatePublication: {
+      workspaceId: string;
+      targetId: string;
+      commitId: string;
+      documentIds: string[];
+      /** Format: uuid */
+      operationId: string;
+      /** @default false */
+      confirm: boolean;
+    };
+    Publication: {
+      /** Format: uuid */
+      id: string;
+      workspaceId: string;
+      targetId: string;
+      documentIds: string[];
+      /** @enum {string} */
+      status: "pending" | "published" | "failed";
+      sourceCommitId: string;
+      publishedCommitId: string | null;
+      url: string | null;
+      message: string | null;
+    };
     Workspace: {
       id: string;
       spaceId: string;
@@ -852,6 +1048,368 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserSession"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  logoutSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getBackupSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BackupSettings"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  saveBackupSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SaveBackupSettings"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BackupSettings"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  startBackupJob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          /** Format: uuid */
+          operationId: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BackupJob"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getBackupJob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+        job: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BackupJob"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listPublicationTargets: {
+    parameters: {
+      query: {
+        workspaceId: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            targets: components["schemas"]["ConfiguredTarget"][];
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listPublications: {
+    parameters: {
+      query: {
+        workspaceId: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            publications: components["schemas"]["Publication"][];
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createPublication: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreatePublication"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Publication"];
+        };
+      };
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Publication"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getPublication: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        publication: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Publication"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  confirmPublication: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        publication: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Publication"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
   health: {
     parameters: {
       query?: never;

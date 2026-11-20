@@ -18,6 +18,459 @@
     }
   ],
   "paths": {
+    "/session": {
+      "get": {
+        "operationId": "getSession",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/session/logout": {
+      "post": {
+        "operationId": "logoutSession",
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/workspaces/{workspace}/backup": {
+      "get": {
+        "operationId": "getBackupSettings",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "operationId": "saveBackupSettings",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBackupSettings"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/backup/jobs": {
+      "post": {
+        "operationId": "startBackupJob",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/backup/jobs/{job}": {
+      "get": {
+        "operationId": "getBackupJob",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "job",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/publications/targets": {
+      "get": {
+        "operationId": "listPublicationTargets",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "targets"
+                  ],
+                  "properties": {
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ConfiguredTarget"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/publications": {
+      "get": {
+        "operationId": "listPublications",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["publications"],
+                  "properties": {
+                    "publications": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Publication"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createPublication",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePublication"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/publications/{publication}": {
+      "get": {
+        "operationId": "getPublication",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "publication",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/publications/{publication}/confirm": {
+      "post": {
+        "operationId": "confirmPublication",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "publication",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health",
@@ -2547,6 +3000,241 @@
       }
     },
     "schemas": {
+      "BrowserSession": {
+        "type": "object",
+        "required": [
+          "username",
+          "cacheId"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "cacheId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "ConfiguredTarget": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "SaveBackupSettings": {
+        "type": "object",
+        "required": [
+          "targetId",
+          "mode"
+        ],
+        "properties": {
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "grouped",
+              "each-operation"
+            ]
+          }
+        }
+      },
+      "BackupSettings": {
+        "type": "object",
+        "required": [
+          "targets",
+          "targetId",
+          "mode",
+          "lastJob"
+        ],
+        "properties": {
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfiguredTarget"
+            }
+          },
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "grouped",
+              "each-operation"
+            ]
+          },
+          "lastJob": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "BackupJob": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "status",
+          "sourceCommitId",
+          "commitId",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "sourceCommitId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "commitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreatePublication": {
+        "type": "object",
+        "required": [
+          "workspaceId",
+          "targetId",
+          "commitId",
+          "documentIds",
+          "operationId"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "commitId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "documentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "Publication": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "targetId",
+          "documentIds",
+          "status",
+          "sourceCommitId",
+          "publishedCommitId",
+          "url",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "documentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "published",
+              "failed"
+            ]
+          },
+          "sourceCommitId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "publishedCommitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Workspace": {
         "type": "object",
         "required": [

@@ -70,6 +70,7 @@ fn build(state: Arc<ProductState>, routes: Router) -> Router {
         .route("/workspaces/{workspace}/manage", get(index))
         .route("/workspaces/{workspace}/documents/{document}", get(index))
         .route("/r/{snapshot}", get(index))
+        .route("/sw.js", get(service_worker))
         .route("/assets/{name}", get(asset))
         .with_state(state)
         .nest("/api/v1", api)
@@ -90,15 +91,20 @@ async fn index(State(state): State<Arc<ProductState>>) -> Response {
     serve(&state, "index.html", "no-cache")
 }
 
+async fn service_worker(State(state): State<Arc<ProductState>>) -> Response {
+    serve(&state, "sw.js", "no-cache")
+}
+
 async fn asset(State(state): State<Arc<ProductState>>, Path(name): Path<String>) -> Response {
     if name.contains(['/', '\\']) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    serve(
-        &state,
-        &format!("assets/{name}"),
-        "public, max-age=31536000, immutable",
-    )
+    let cache = if name == "reader-shell.json" {
+        "no-cache"
+    } else {
+        "public, max-age=31536000, immutable"
+    };
+    serve(&state, &format!("assets/{name}"), cache)
 }
 
 fn serve(state: &ProductState, path: &str, cache: &'static str) -> Response {

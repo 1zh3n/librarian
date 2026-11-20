@@ -1,15 +1,18 @@
 mod ai;
 mod ai_runner;
 mod auth;
+mod backup;
 mod contract;
 pub(crate) mod db;
 mod delivery;
 mod documents;
 pub mod mcp_bridge;
 mod mutations;
+mod publication;
 mod revisions;
 pub mod router;
 mod search;
+mod session;
 mod settings;
 mod snapshots;
 pub mod space_adapter;

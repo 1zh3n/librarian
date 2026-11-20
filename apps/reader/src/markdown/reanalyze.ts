@@ -7,7 +7,7 @@ import type { Block } from "./blocks";
 
 type ReadingSnapshot = { readonly source: string; readonly analysis: MarkdownAnalysis };
 
-const complexLine = /[^# \p{L}\p{N}\p{M}、。！？]/u;
+const complexLine = /^[ *]| $|[^#* \p{L}\p{N}\p{M}、。！？]/u;
 
 function relocate<T extends RootContent>(node: T, mapPoint: (point: Point) => Point): T {
   const position = node.position;
@@ -26,9 +26,9 @@ function commonPrefix(before: string, after: string): number {
   return index;
 }
 
-// A blank line on either side isolates a top-level paragraph or ATX heading.
-// The restricted line alphabet cannot create links, definitions, a container,
-// or other Markdown constructs that could affect the unchanged document.
+// Blank lines isolate a top-level paragraph or ATX heading. Asterisks can
+// add inline emphasis, but a leading asterisk can start a list or a thematic
+// break. The allowed characters also rule out definitions and references.
 function reparseLine(
   source: string,
   documentId: string,
@@ -47,12 +47,9 @@ function reparseLine(
   if (
     (changed.from > 0 && before.slice(changed.from - 2, changed.from) !== "\n\n") ||
     (changed.to < before.length && before.slice(changed.to, changed.to + 2) !== "\n\n") ||
-    before[changed.from] === " " ||
     complexLine.test(before.slice(changed.from, changed.to)) ||
     endOfNewLine <= changed.from ||
     before.slice(changed.to) !== source.slice(endOfNewLine) ||
-    line.startsWith(" ") ||
-    line.endsWith(" ") ||
     complexLine.test(line)
   )
     return;

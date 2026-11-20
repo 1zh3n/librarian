@@ -1,4 +1,4 @@
-mod git_blobs;
+pub(super) mod git_blobs;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

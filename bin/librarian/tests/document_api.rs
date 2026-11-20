@@ -627,3 +627,70 @@ async fn browser_login_binds_writes_to_the_product_origin() {
         assert_eq!(response.status(), status);
     }
 }
+
+#[tokio::test]
+async fn session_logout_rejects_cross_origin_and_revokes_the_browser_cookie() {
+    let f = Fixture::new(false);
+    let login = f
+        .app
+        .clone()
+        .oneshot(
+            Request::post("/.auth/librarian/login")
+                .header("host", "127.0.0.1")
+                .header("origin", "http://127.0.0.1")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from("username=editor&password=local-test-password"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::SEE_OTHER);
+    let cookie = login.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let session = async |method: &str, route: &str, origin: &str| {
+        f.app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(route)
+                    .header("host", "127.0.0.1")
+                    .header("origin", origin)
+                    .header("cookie", cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    };
+    let identity = session("GET", "/api/v1/session", "http://127.0.0.1").await;
+    assert_eq!(identity.status(), StatusCode::OK);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(identity.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(body["username"], "editor");
+    assert!(body["cacheId"].as_str().is_some_and(|id| id.len() == 64));
+    let wrong = session("POST", "/api/v1/session/logout", "http://example.test").await;
+    assert_eq!(wrong.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        session("GET", "/api/v1/session", "http://127.0.0.1")
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    let logout = session("POST", "/api/v1/session/logout", "http://127.0.0.1").await;
+    assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    assert!(logout.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .contains("Max-Age=0"));
+    assert_eq!(
+        session("GET", "/api/v1/session", "http://127.0.0.1")
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}

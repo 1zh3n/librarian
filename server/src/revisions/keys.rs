@@ -29,8 +29,16 @@ fn shell_quote(value: &Path) -> String {
 }
 
 pub fn ssh_command(key: &Path, known_hosts: &Path) -> String {
+    ssh_command_with_host_check(key, known_hosts, "accept-new")
+}
+
+pub(crate) fn pinned_ssh_command(key: &Path, known_hosts: &Path) -> String {
+    ssh_command_with_host_check(key, known_hosts, "yes")
+}
+
+fn ssh_command_with_host_check(key: &Path, known_hosts: &Path, host_check: &str) -> String {
     format!(
-        "ssh -F {} -i {} -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile={} -o GlobalKnownHostsFile={} -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no",
+        "ssh -F {} -i {} -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking={host_check} -o UserKnownHostsFile={} -o GlobalKnownHostsFile={} -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no",
         null_path(), shell_quote(key), shell_quote(known_hosts), null_path()
     )
 }

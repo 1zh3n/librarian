@@ -17,5 +17,7 @@ declare const styles: {
   readonly records: string;
   readonly fieldset: string;
   readonly address: string;
+  readonly actions: string;
+  readonly result: string;
 };
 export default styles;

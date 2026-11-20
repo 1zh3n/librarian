@@ -73,6 +73,60 @@ test("scrolls wide tables and code within the 360 px canvas", async ({ page }) =
   expect(widths.codeOverflow).toBeGreaterThan(0);
 });
 
+test("preserves phone-size controls and monochrome reading with reduced motion", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 760 },
+    isMobile: true,
+    hasTouch: true,
+    colorScheme: "light",
+    reducedMotion: "reduce",
+  });
+  try {
+    const page = await context.newPage();
+    const route = await fieldDocument(page);
+    await page.goto(route);
+    const layout = page.getByRole("button", { name: "布局", exact: true });
+    const actions = page.getByRole("button", { name: "文档更多" });
+    for (const control of [layout, actions]) {
+      await expect(control).toBeVisible();
+      const size = await control.boundingBox();
+      expect(size?.width).toBeGreaterThanOrEqual(24);
+      expect(size?.height).toBeGreaterThanOrEqual(24);
+    }
+    expect(
+      await page
+        .locator("html")
+        .evaluate((element) =>
+          Number.parseFloat(getComputedStyle(element).getPropertyValue("--reading-transition")),
+        ),
+    ).toBe(0);
+    await page.keyboard.press("Tab");
+    const focused = page.locator(":focus-visible").first();
+    await expect(focused).toBeInViewport();
+    await expect(focused).toHaveCSS("outline-style", "solid");
+    await expect(focused).toHaveCSS("outline-width", "2px");
+
+    await layout.tap();
+    await page.getByRole("menuitem", { name: "阅读设置" }).tap();
+    const settings = page.getByRole("dialog", { name: "阅读设置" });
+    await settings.getByText("墨水屏", { exact: true }).tap();
+    await expect(settings.getByRole("checkbox", { name: "墨水屏" })).toBeChecked();
+    await settings.getByRole("button", { name: "保存设置" }).tap();
+    await expect(page.locator("html")).toHaveAttribute("data-eink", "true");
+    await expect(page.locator("html")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(page.getByRole("article")).toHaveCSS("color", "rgb(0, 0, 0)");
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "河岸清晨", level: 1 })).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-eink", "true");
+    const width = await page.locator("html").evaluate((element) => element.scrollWidth);
+    expect(width).toBe(360);
+  } finally {
+    await context.close();
+  }
+});
+
 test("opens a relative Markdown link through the existing document identity", async ({ page }) => {
   await createNote(page, "野外/LinkSource.md", "[回到河岸](01.md)");
   await page.getByRole("link", { name: "回到河岸" }).click();

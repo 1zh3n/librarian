@@ -2,7 +2,8 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { CreateSnapshot, DocumentSummary, SnapshotLink } from "../../api/client";
-import { Button, Checkbox, Form, Label, TextArea, TextField } from "../../ui/primitives";
+import { Button, Form, Label, TextArea, TextField } from "../../ui/primitives";
+import { DocumentChecklist } from "../workspace/DocumentChecklist";
 import { Choice, Field } from "../workspace/ManagementFields";
 import styles from "../workspace/Management.module.css";
 
@@ -94,26 +95,7 @@ export function SnapshotPanel({
               <Field label="提交 ID（可选）" value={commit} onChange={setCommit} />
             )}
           </div>
-          <fieldset className={styles.fieldset}>
-            <legend>文档范围</legend>
-            <div className={styles.checklist}>
-              {documents.map(({ id, path }) => (
-                <Checkbox
-                  key={id}
-                  className={styles.checkbox}
-                  isSelected={selected.includes(id)}
-                  onChange={(checked) =>
-                    setSelected((items) =>
-                      checked ? [...items, id] : items.filter((item) => item !== id),
-                    )
-                  }
-                >
-                  <span className={styles.checkboxMark} aria-hidden="true" />
-                  <span>{path}</span>
-                </Checkbox>
-              ))}
-            </div>
-          </fieldset>
+          <DocumentChecklist documents={documents} selected={selected} onChange={setSelected} />
           <TextField className={styles.field} value={attachmentInput} onChange={setAttachmentInput}>
             <Label>附件路径（可选，每行一项）</Label>
             <TextArea rows={2} className={styles.input} />

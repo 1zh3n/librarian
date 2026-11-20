@@ -95,6 +95,10 @@ impl Metadata {
         self.directory.join("mutations").join(operation)
     }
 
+    pub(super) fn product_file(&self, name: &str) -> PathBuf {
+        self.directory.join(name)
+    }
+
     pub(super) fn retired_workspace_directory(&self) -> PathBuf {
         self.directory.join("retired-workspaces")
     }
@@ -203,7 +207,12 @@ impl Metadata {
             super::delivery::migrate(&transaction)?;
             super::snapshots::migrate(&transaction)?;
             transaction.pragma_update(None, "user_version", 6)?;
-        } else if version != 6 {
+        }
+        if version <= 6 {
+            super::backup::migrate(&transaction)?;
+            super::publication::migrate(&transaction)?;
+            transaction.pragma_update(None, "user_version", 7)?;
+        } else if version != 7 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;

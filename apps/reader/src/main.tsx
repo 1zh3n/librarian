@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { initializeOfflineReader } from "./features/offline/readerOffline";
 
 const root = document.getElementById("root");
 if (root === null) {
@@ -16,6 +17,7 @@ if (import.meta.env.DEV && window.location.pathname === "/spike") {
     );
   });
 } else {
+  initializeOfflineReader();
   void import("./routes/ReaderApplication").then(({ ReaderApplication }) => {
     app.render(
       <StrictMode>

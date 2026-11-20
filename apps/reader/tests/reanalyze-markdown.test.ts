@@ -13,16 +13,27 @@ test.each([
   ["## 河边\n\n正文 🏞️\n\n## 河边", "## 河边\n\n正文 🏞️\n\n## 河边。"],
   ["## 河边 ###\n\n段落", "## 河边 ###字\n\n段落"],
   [
+    "## 河边的**笔记**\n\n段落\n\n## 河边的**笔记**",
+    "潮## 河边的**笔记**\n\n段落\n\n## 河边的**笔记**",
+  ],
+  [
+    "## 河边的**笔记**\n\n段落\n\n## 河边的**笔记**",
+    "## 河边的**笔记**。\n\n段落\n\n## 河边的**笔记**",
+  ],
+  ["河边的**笔记*\n\n段落", "河边的**笔记**\n\n段落"],
+  [
     "\uFEFF---\r\ntitle: note\r\n---\r\n\r\n## Anchor\n\n河边\n\n[link][x] and 🏞️.\n\n[x]: https://example.test/\r\n",
     "\uFEFF---\r\ntitle: note\r\n---\r\n\r\n## Anchor\n\n河边潮水\n\n[link][x] and 🏞️.\n\n[x]: https://example.test/\r\n",
   ],
 ])("matches complete analysis after a change confined to one simple line", (source, changed) => {
   const previous = { source, analysis: markdown.analyzeMarkdown(source, documentId) };
+  const originalAnalysis = structuredClone(previous.analysis);
   const expected = markdown.analyzeMarkdown(changed, documentId);
   const analyze = vi.spyOn(markdown, "analyzeMarkdown");
   try {
     const result = reanalyzeMarkdown(changed, documentId, previous);
     expect(result).toEqual(expected);
+    expect(previous.analysis).toEqual(originalAnalysis);
     expect(analyze).toHaveBeenCalledTimes(1);
     expect(analyze.mock.calls[0]?.[0]).not.toMatch(/[\r\n]/);
   } finally {
@@ -40,6 +51,15 @@ test.each([
   ["河边\n\n清晨", "河边甲\n\n\n清晨"],
   ["河边\n\n清晨", "    河边\n\n清晨"],
   ["河边\n\n清晨", "河边  \n\n清晨"],
+  ["## 河边的**笔记**\n\n段落", "* 河边的**笔记**\n\n段落"],
+  ["## 河边的**笔记**\n\n段落", "* * *\n\n段落"],
+  ["## 河边的**笔记**\n\n段落", "*河边的笔记*\n\n段落"],
+  ["*河边的笔记*\n\n段落", "潮*河边的笔记*\n\n段落"],
+  [
+    "## [河边的*笔记*]\n\n[河边的*笔记*]: /source",
+    "## 潮[河边的*笔记*]\n\n[河边的*笔记*]: /source",
+  ],
+  ["## 河边的**笔记**\n段落", "## 河边的**笔记**。\n段落"],
 ])("falls back to a full parse for edits outside the isolated case", (source, changed) => {
   const previous = { source, analysis: markdown.analyzeMarkdown(source, documentId) };
   const expected = markdown.analyzeMarkdown(changed, documentId);

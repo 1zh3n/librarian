@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { api, ApiError } from "../api/client";
 import type { Snapshot } from "../api/client";
 import documentStyles from "../features/document/DocumentPage.module.css";
+import { OfflineSnapshotControl } from "../features/offline/OfflineSnapshotControl";
+import { offlineAvailable } from "../features/offline/readerOffline";
 import { analyzeMarkdown } from "../markdown/analyze";
 import { ReaderSurface } from "../markdown/ReaderSurface";
 import { relativeDocumentPath } from "../markdown/relativePath";
@@ -18,7 +20,17 @@ export function SnapshotRoute() {
     queryKey: ["snapshots", snapshotId, documentId ?? null],
     queryFn: ({ signal }) => api.getSnapshot(snapshotId, documentId, signal),
     staleTime: 0,
+    networkMode: "always",
   });
+  const { refetch } = result;
+  useEffect(() => {
+    if (!offlineAvailable()) return;
+    const changedIdentity = (event: MessageEvent<{ type?: string }>) => {
+      if (event.data.type === "offline-identity-changed") void refetch();
+    };
+    navigator.serviceWorker.addEventListener("message", changedIdentity);
+    return () => navigator.serviceWorker.removeEventListener("message", changedIdentity);
+  }, [refetch]);
   const loginRequired = result.error instanceof ApiError && result.error.status === 401;
   const login = `/.auth/librarian/login?${new URLSearchParams({
     next: window.location.pathname + window.location.search,
@@ -39,13 +51,13 @@ export function SnapshotRoute() {
           阅读地址不可用
         </p>
       ) : (
-        <SnapshotReader snapshot={result.data} />
+        <SnapshotReader snapshot={result.data.snapshot} offline={result.data.offline} />
       )}
     </main>
   );
 }
 
-function SnapshotReader({ snapshot }: { snapshot: Snapshot }) {
+function SnapshotReader({ snapshot, offline }: { snapshot: Snapshot; offline: boolean }) {
   const { id, document, documents, attachmentPaths, kind } = snapshot;
   const analysis = useMemo(() => analyzeMarkdown(document.markdown, document.id), [document]);
   const resolveLink = useCallback(
@@ -81,6 +93,7 @@ function SnapshotReader({ snapshot }: { snapshot: Snapshot }) {
     <>
       <header className={`${documentStyles.header} ${styles.header}`}>
         <p className={styles.kind}>{kind === "release" ? "固定版本" : "当前地址"}</p>
+        {kind === "release" && <OfflineSnapshotControl key={id} id={id} offline={offline} />}
         {documents.length > 1 && (
           <nav aria-label="阅读地址中的文档" className={styles.navigation}>
             {documents.map((item) => (

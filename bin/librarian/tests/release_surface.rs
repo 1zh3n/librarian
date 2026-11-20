@@ -3,6 +3,50 @@ use axum::http::{header, Request, StatusCode};
 use axum::Router;
 use tower::ServiceExt;
 
+#[test]
+fn init_creates_a_first_administrator_and_preserves_existing_accounts() {
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let init = || {
+        let mut process = Command::new(env!("CARGO_BIN_EXE_librarian"))
+            .arg("--data-root")
+            .arg(root.path())
+            .args(["init", "--username", "owner"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        process
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"release-test-password\n")
+            .unwrap();
+        process.wait_with_output().unwrap()
+    };
+    let first = init();
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let users_before = std::fs::read(root.path().join("users.json")).unwrap();
+    let users = silverbullet_server::multi::users::UserStore::open(root.path())
+        .unwrap()
+        .unwrap();
+    assert!(users.is_admin("owner"));
+    let second = init();
+    assert!(!second.status.success());
+    assert_eq!(
+        std::fs::read(root.path().join("users.json")).unwrap(),
+        users_before
+    );
+}
+
 async fn get(router: &Router, path: &str) -> (StatusCode, axum::http::HeaderMap, String) {
     let response = router
         .clone()

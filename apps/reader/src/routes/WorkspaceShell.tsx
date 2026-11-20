@@ -16,10 +16,11 @@ import {
   TooltipTrigger,
 } from "../ui/primitives";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
-import { ApiError } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { DevicePreferences, DocumentSummary } from "../api/client";
 import { documentsQuery, workspacesQuery } from "../api/queries";
 import { SpaceTree } from "../features/navigation/SpaceTree";
+import { purgeOfflineReader } from "../features/offline/readerOffline";
 import {
   isEditingTarget,
   ReaderLayoutContext,
@@ -79,6 +80,8 @@ export function WorkspaceShell() {
   const [search, setSearch] = useState(false);
   const [settings, setSettings] = useState(false);
   const [settingsError, setSettingsError] = useState(false);
+  const [logoutError, setLogoutError] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const navigation = navigationOverride ?? preferences.navigation ?? wide;
   const navigationVisible = Boolean(workspace && navigation && !focus.active);
 
@@ -153,10 +156,25 @@ export function WorkspaceShell() {
     workspaces.error instanceof ApiError &&
     workspaces.error.status === 401;
   const login = `/.auth/librarian/login?${new URLSearchParams({ next: window.location.pathname })}`;
+  async function logout() {
+    if (signingOut) return;
+    setSigningOut(true);
+    setLogoutError(false);
+    try {
+      await api.logout();
+      await purgeOfflineReader();
+      window.location.replace("/.auth/librarian/login");
+    } catch {
+      setLogoutError(true);
+      setSigningOut(false);
+    }
+  }
+
   const focusLabel = focus.active ? "退出专注阅读" : "专注阅读";
   const commands = [
     ...(documentId ? [{ id: "focus", title: focusLabel, run: focus.toggle }] : []),
     { id: "settings", title: "阅读设置", run: () => setSettings(true) },
+    { id: "logout", title: "退出登录", run: () => void logout() },
     {
       id: "workspace-ai",
       title: "Workspace AI",
@@ -362,9 +380,18 @@ export function WorkspaceShell() {
                 <div className={styles.state}>
                   <p>{workspaceId ? "此空间不可用" : "没有可访问的空间"}</p>
                   {!workspaceId && (
-                    <Link to="/workspaces/new" className={styles.signIn}>
-                      新建空间
-                    </Link>
+                    <>
+                      <Link to="/workspaces/new" className={styles.signIn}>
+                        新建空间
+                      </Link>
+                      <Button
+                        className={styles.button}
+                        isDisabled={signingOut}
+                        onPress={() => void logout()}
+                      >
+                        退出登录
+                      </Button>
+                    </>
                   )}
                 </div>
               ) : documentId || workspaceTool ? (
@@ -384,6 +411,11 @@ export function WorkspaceShell() {
         {settingsError && (
           <p role="alert" className={styles.notice}>
             布局未保存，请重试。
+          </p>
+        )}
+        {logoutError && (
+          <p role="alert" className={styles.notice}>
+            无法完成退出登录，请重试。
           </p>
         )}
         {focus.announce && <output className={styles.notice}>专注阅读 · Esc 退出</output>}

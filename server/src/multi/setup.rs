@@ -121,34 +121,19 @@ fn relativize_folder_field(root: &Path, folder: &str) -> String {
     }
 }
 
-/// Provision `root`: write a fresh `users.json` (admin account) and
-/// `spaces.json` (optionally with one first space).
-/// Fails closed — on any error nothing is written — except that a
-/// directory may already have been created for the first space (mirrors
-/// `MultiManager::create`, which has the same property).
-pub fn run_setup(root: &Path, req: &SetupRequest) -> Result<(), Vec<FieldError>> {
-    if is_configured(root) {
-        return Err(err("", "this server is already configured"));
-    }
-
-    let username = req.admin_username.trim();
+pub(crate) fn first_admin(
+    username: &str,
+    password: &str,
+    profile: Profile,
+) -> Result<UsersConfig, Vec<FieldError>> {
+    let username = username.trim();
     if username.is_empty() || username.contains(':') || username.contains('/') {
         return Err(err("adminUsername", "invalid username"));
     }
-    if req.admin_password.is_empty() {
+    if password.is_empty() {
         return Err(err("adminPassword", "password must not be empty"));
     }
-    let profile = Profile {
-        full_name: crate::auth::clean_full_name(&req.admin_full_name)
-            .map_err(|e| err("adminFullName", e))?,
-        email: crate::auth::clean_email(&req.admin_email).map_err(|e| err("adminEmail", e))?,
-    };
-
-    let spaces_path = root.join(SPACES_FILE);
-    let mut spaces = MultiConfig::load(&spaces_path).map_err(|e| err("", e))?;
-
-    let password_hash =
-        crate::auth::password::hash_password(&req.admin_password).map_err(|e| err("", e))?;
+    let password_hash = crate::auth::password::hash_password(password).map_err(|e| err("", e))?;
     let mut users = UsersConfig::default();
     users.users.insert(
         username.to_string(),
@@ -166,6 +151,27 @@ pub fn run_setup(root: &Path, req: &SetupRequest) -> Result<(), Vec<FieldError>>
             extra: Default::default(),
         },
     );
+    Ok(users)
+}
+
+/// Provision `root`: write a fresh `users.json` (admin account) and
+/// `spaces.json` (optionally with one first space).
+/// Fails closed — on any error nothing is written — except that a
+/// directory may already have been created for the first space (mirrors
+/// `MultiManager::create`, which has the same property).
+pub fn run_setup(root: &Path, req: &SetupRequest) -> Result<(), Vec<FieldError>> {
+    if is_configured(root) {
+        return Err(err("", "this server is already configured"));
+    }
+
+    let profile = Profile {
+        full_name: crate::auth::clean_full_name(&req.admin_full_name)
+            .map_err(|e| err("adminFullName", e))?,
+        email: crate::auth::clean_email(&req.admin_email).map_err(|e| err("adminEmail", e))?,
+    };
+    let users = first_admin(&req.admin_username, &req.admin_password, profile)?;
+    let spaces_path = root.join(SPACES_FILE);
+    let mut spaces = MultiConfig::load(&spaces_path).map_err(|e| err("", e))?;
 
     let mut pending_starter = None;
     if let Some(first) = &req.space {
