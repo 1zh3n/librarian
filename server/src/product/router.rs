@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::{path::Path as FilePath, sync::Arc};
+use std::{path::Path as FilePath, sync::Arc, time::Duration};
 
 use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
@@ -30,8 +30,30 @@ pub fn build_configured_product_router(
     spaces: super::space_adapter::NativeSpaces,
 ) -> Result<(Router, McpBridge), String> {
     let service = Arc::new(super::documents::DocumentService::open(root, spaces)?);
+    sweep(&service);
+    let maintain = Arc::downgrade(&service);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            let Some(service) = maintain.upgrade() else {
+                break;
+            };
+            if let Err(error) = tokio::task::spawn_blocking(move || sweep(&service)).await {
+                tracing::warn!(%error, "Workspace maintenance did not complete");
+            }
+        }
+    });
     let routes = super::documents::routes(service.clone());
     Ok((build(state, routes), McpBridge::new(service)))
+}
+
+fn sweep(service: &super::documents::DocumentService) {
+    if let Err(error) = super::workspace::sweep_due(service) {
+        tracing::warn!(?error, "Expired Workspace maintenance deferred");
+    }
+    if let Err(error) = super::snapshots::sweep_due(service) {
+        tracing::warn!(?error, "Reader snapshot maintenance deferred");
+    }
 }
 
 fn build(state: Arc<ProductState>, routes: Router) -> Router {
@@ -45,7 +67,9 @@ fn build(state: Arc<ProductState>, routes: Router) -> Router {
         .route("/", get(index))
         .route("/workspaces/{workspace}", get(index))
         .route("/workspaces/{workspace}/ai", get(index))
+        .route("/workspaces/{workspace}/manage", get(index))
         .route("/workspaces/{workspace}/documents/{document}", get(index))
+        .route("/r/{snapshot}", get(index))
         .route("/assets/{name}", get(asset))
         .with_state(state)
         .nest("/api/v1", api)

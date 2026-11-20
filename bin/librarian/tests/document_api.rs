@@ -469,6 +469,25 @@ fn assert_response_shape(specification: &Value, schema: &Value, actual: &Value) 
         assert_response_shape(specification, target, actual);
         return;
     }
+    if let Some(types) = schema["type"].as_array() {
+        let actual_type = match actual {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(number) if number.is_i64() || number.is_u64() => "integer",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        };
+        assert!(
+            types.iter().any(|kind| kind == actual_type),
+            "{actual} does not have any declared OpenAPI type: {types:?}"
+        );
+        let mut matching_schema = schema.clone();
+        matching_schema["type"] = json!(actual_type);
+        assert_response_shape(specification, &matching_schema, actual);
+        return;
+    }
     match schema["type"].as_str().unwrap() {
         "array" => {
             for item in actual.as_array().expect("expected a response array") {
@@ -487,6 +506,11 @@ fn assert_response_shape(specification: &Value, schema: &Value, actual: &Value) 
         }
         "string" => assert!(actual.is_string(), "expected a string, got {actual}"),
         "boolean" => assert!(actual.is_boolean(), "expected a boolean, got {actual}"),
+        "integer" => assert!(
+            actual.is_i64() || actual.is_u64(),
+            "expected an integer, got {actual}"
+        ),
+        "null" => assert!(actual.is_null(), "expected null, got {actual}"),
         kind => panic!("unhandled response schema type {kind}"),
     }
 }

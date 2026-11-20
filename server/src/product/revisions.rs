@@ -105,9 +105,10 @@ pub(super) fn document_history(
     if let Some(before) = &query.before {
         validate_commit(before)?;
     }
-    let (instance, _, _, path) = service.document_scope(account, document, false)?;
+    let (instance, _, workspace, _) = service.document_scope(account, document, false)?;
     let state = state(&instance)?;
     let _mutation = product_read(state)?;
+    let path = service.path_in(&workspace, document)?;
     check_file_path(state, &path)?;
     state.space.get_file_meta(&path)?;
     let engine = engine(state)?;
@@ -173,9 +174,10 @@ pub(super) fn document_diff(
     commit: String,
 ) -> Result<VersionDiff, ApiError> {
     validate_commit(&commit)?;
-    let (instance, _, _, path) = service.document_scope(account, document, false)?;
+    let (instance, _, workspace, _) = service.document_scope(account, document, false)?;
     let state = state(&instance)?;
     let _mutation = product_read(state)?;
+    let path = service.path_in(&workspace, document)?;
     check_file_path(state, &path)?;
     state.space.get_file_meta(&path)?;
     let engine = engine(state)?;
@@ -228,8 +230,7 @@ pub(super) async fn restore(
     let request = body(request)?;
     validate_commit(&request.commit_id)?;
     run(move || {
-        let (instance, actor, workspace, path) =
-            service.document_scope(&account, &document, true)?;
+        let (instance, actor, workspace, _) = service.document_scope(&account, &document, true)?;
         let state = state(&instance)?;
         let engine = engine(state)?;
         if !engine.store().auto_commit_allowed() {
@@ -242,6 +243,7 @@ pub(super) async fn restore(
         let expected = request.precondition()?;
         engine.with_managed_write(|transaction| {
             check_storage_recovery(state)?;
+            let path = service.path_in(&workspace, &document)?;
             let current = read_markdown(state, &path)?;
             let current_revision = sha256_hex(current.as_bytes());
             if current_revision != expected {

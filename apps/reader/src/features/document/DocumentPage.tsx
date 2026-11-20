@@ -18,6 +18,7 @@ import { captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { reanalyzeMarkdown } from "../../markdown/reanalyze";
+import { relativeDocumentPath } from "../../markdown/relativePath";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
 import { AiPanel } from "../ai/AiPanel";
 import { ContextUnavailable } from "../ai/aiContext";
@@ -83,32 +84,29 @@ function DocumentWorkspace({
   const path = snapshot.document.path;
   const resolveLink = useCallback(
     (href: string) => {
-      if (!documents || href.startsWith("#") || href.startsWith("?")) return;
-      const base = new URL(
-        path.split("/").map(encodeURIComponent).join("/"),
-        "https://librarian.invalid/",
-      );
-      try {
-        const url = new URL(href, base);
-        if (url.origin !== base.origin) return;
-        const destination = decodeURIComponent(url.pathname.slice(1));
-        const target = documents.find((document) => document.path === destination);
-        if (!target) return;
-        const route = `/workspaces/${workspace}/documents/${target.id}${url.hash}`;
-        return {
-          href: route,
-          open: () =>
-            void navigate({
-              to: "/workspaces/$workspaceId/documents/$documentId",
-              params: { workspaceId: workspace, documentId: target.id },
-              hash: url.hash.slice(1),
-            }),
-        };
-      } catch {
-        return undefined;
-      }
+      const relative = relativeDocumentPath(path, href);
+      const target = documents?.find((document) => document.path === relative?.path);
+      if (!target || !relative) return;
+      return {
+        href: `/workspaces/${workspace}/documents/${target.id}${relative.hash}`,
+        open: () =>
+          void navigate({
+            to: "/workspaces/$workspaceId/documents/$documentId",
+            params: { workspaceId: workspace, documentId: target.id },
+            hash: relative.hash.slice(1),
+          }),
+      };
     },
     [documents, navigate, path, workspace],
+  );
+  const resolveImage = useCallback(
+    (src: string) => {
+      const relative = relativeDocumentPath(path, src);
+      if (relative && /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/iu.test(relative.path)) {
+        return api.workspaceAsset(workspace, relative.path);
+      }
+    },
+    [path, workspace],
   );
   const queryClient = useQueryClient();
   const bodyKey = workspaceKeys.document(workspace, documentId);
@@ -644,6 +642,7 @@ function DocumentWorkspace({
               activeBlocks={selectedBlock?.ids}
               onKeyDown={readerShortcut}
               resolveLink={resolveLink}
+              resolveImage={resolveImage}
             />
           ) : (
             <div ref={mountBody} />

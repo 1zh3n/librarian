@@ -26,7 +26,7 @@ export interface paths {
     };
     get: operations["listWorkspaces"];
     put?: never;
-    post?: never;
+    post: operations["createWorkspace"];
     delete?: never;
     options?: never;
     head?: never;
@@ -386,6 +386,150 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/workspaces/{workspace}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch: operations["updateWorkspace"];
+    trace?: never;
+  };
+  "/workspaces/{workspace}/rename": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["renameWorkspacePaths"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/deliveries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listWorkspaceDeliveries"];
+    put?: never;
+    post: operations["deliverWorkspaceFiles"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/delivery-tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listDeliveryTokens"];
+    put?: never;
+    post: operations["issueDeliveryToken"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/delivery-tokens/{token}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations["revokeDeliveryToken"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/assets/{path}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["readWorkspaceAttachment"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/snapshots": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["createSnapshot"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/snapshots/{snapshot}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getReaderSnapshot"];
+    put?: never;
+    post?: never;
+    delete: operations["revokeSnapshot"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/snapshots/{snapshot}/assets/{path}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["readSnapshotAttachment"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -395,15 +539,17 @@ export interface components {
       spaceId: string;
       name: string;
       /** @enum {string} */
-      origin: "native";
+      origin: "native" | "delivery";
       /** @enum {string} */
-      retention: "persistent";
+      retention: "persistent" | "temporary";
       /** @enum {string} */
       revisionMode: "managed" | "repository" | "disabled";
       defaults: {
         outlineEnabled: boolean;
       };
       canWrite: boolean;
+      expiresAt: number | null;
+      canManage: boolean;
     };
     DocumentSummary: {
       id: string;
@@ -597,6 +743,106 @@ export interface components {
     AiRunnerFailure: {
       text: string;
     };
+    CreateWorkspace: {
+      name: string;
+      /** @enum {string} */
+      origin?: "native" | "delivery";
+      /** @enum {string} */
+      retention?: "persistent" | "temporary";
+      expiresAt?: number | null;
+    };
+    UpdateWorkspace: {
+      name?: string;
+      /** @enum {string} */
+      retention?: "persistent" | "temporary";
+      expiresAt?: number | null;
+    };
+    RenameWorkspacePaths: {
+      operationId: string;
+      from: string;
+      to: string;
+    };
+    DeliveryManifest: {
+      deliveryId: string;
+      sourceName: string;
+      version?: string | null;
+      /** Format: date-time */
+      generatedAt?: string | null;
+    };
+    DeliveryFile: {
+      path: string;
+      contentBase64: string;
+    };
+    DeliveryRequest:
+      | {
+          manifest: components["schemas"]["DeliveryManifest"];
+          files: components["schemas"]["DeliveryFile"][];
+        }
+      | {
+          manifest: components["schemas"]["DeliveryManifest"];
+          archiveBase64: string;
+        };
+    DeliveryReceipt: {
+      deliveryId: string;
+      workspaceId: string;
+      operationId: string;
+      commitId: string;
+      manifest: components["schemas"]["DeliveryManifest"];
+      changes: components["schemas"]["MutationFileChange"][];
+    };
+    DeliveryToken: {
+      id: string;
+      name: string;
+      revoked: boolean;
+    };
+    NewDeliveryToken: {
+      name: string;
+    };
+    IssuedDeliveryToken: {
+      id: string;
+      name: string;
+      revoked: boolean;
+      token: string;
+    };
+    CreateSnapshot: {
+      /** @enum {string} */
+      kind: "current" | "release";
+      /** @enum {string} */
+      audience?: "members" | "share";
+      documentIds: string[];
+      attachmentPaths?: string[];
+      expiresAt?: number | null;
+      commitId?: string | null;
+    };
+    SnapshotLink: {
+      id: string;
+      url: string;
+    };
+    SnapshotDocumentSummary: {
+      id: string;
+      path: string;
+      title: string;
+    };
+    SnapshotDocument: {
+      id: string;
+      path: string;
+      title: string;
+      markdown: string;
+      revision: string;
+    };
+    ReaderSnapshot: {
+      id: string;
+      workspaceId: string;
+      /** @enum {string} */
+      kind: "current" | "release";
+      /** @enum {string} */
+      audience: "members" | "share";
+      expiresAt: number | null;
+      commitId: string | null;
+      documents: components["schemas"]["SnapshotDocumentSummary"][];
+      document: components["schemas"]["SnapshotDocument"];
+      attachmentPaths: string[];
+    };
   };
   responses: never;
   parameters: never;
@@ -659,6 +905,39 @@ export interface operations {
       };
       /** @description Request failed */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createWorkspace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateWorkspace"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Workspace"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
         headers: {
           [name: string]: unknown;
         };
@@ -2127,6 +2406,405 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AiOperation"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  updateWorkspace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateWorkspace"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Workspace"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  renameWorkspacePaths: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenameWorkspacePaths"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MutationReceipt"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listWorkspaceDeliveries: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeliveryReceipt"][];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  deliverWorkspaceFiles: {
+    parameters: {
+      query?: {
+        deliveryId?: string;
+        sourceName?: string;
+        version?: string;
+        generatedAt?: string;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeliveryRequest"];
+        "application/zip": string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeliveryReceipt"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listDeliveryTokens: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeliveryToken"][];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  issueDeliveryToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewDeliveryToken"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedDeliveryToken"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  revokeDeliveryToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+        token: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  readWorkspaceAttachment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Original attachment bytes */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": string;
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createSnapshot: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateSnapshot"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SnapshotLink"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getReaderSnapshot: {
+    parameters: {
+      query?: {
+        documentId?: string;
+      };
+      header?: never;
+      path: {
+        snapshot: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReaderSnapshot"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  revokeSnapshot: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        snapshot: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  readSnapshotAttachment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        snapshot: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Original attachment bytes */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": string;
         };
       };
       /** @description Request could not be completed */

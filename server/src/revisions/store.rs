@@ -341,6 +341,29 @@ impl RevisionStore {
         self.commit_staged(&repo, author_name, author_email, message)
     }
 
+    pub(crate) fn checkpoint_files(
+        &self,
+        author: (&str, &str),
+        message: &str,
+        paths: &[String],
+    ) -> Result<Option<String>, String> {
+        let mut index = ExactIndex::open(self.prepare_commit()?)?;
+        for path in paths {
+            super::read::validate_space_path(path)?;
+            let relative = self.rel(path);
+            let location = index.repo.join(&relative);
+            let metadata = fs::symlink_metadata(&location).map_err(|error| error.to_string())?;
+            if !metadata.is_file()
+                || location.canonicalize().map_err(|error| error.to_string())? != location
+            {
+                return Err("Expected a regular file in the Space".into());
+            }
+            index.stage_contents(&relative, markdown_mode(&metadata), None)?;
+        }
+        index.commit(author.0, author.1, message)?;
+        index.publish()
+    }
+
     /// Like [`Self::commit_batch`], but derives the message from what
     /// actually landed in the index instead of taking one from the caller.
     /// A classification failure must never cost a commit, so it falls back

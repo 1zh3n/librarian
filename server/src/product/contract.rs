@@ -111,8 +111,10 @@ pub(crate) struct Workspace {
     pub name: String,
     pub origin: &'static str,
     pub retention: &'static str,
+    pub expires_at: Option<i64>,
     pub revision_mode: &'static str,
     pub can_write: bool,
+    pub can_manage: bool,
     pub defaults: WorkspaceDefaults,
 }
 

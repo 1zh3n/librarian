@@ -31,8 +31,9 @@ use super::{
     },
 };
 
-const MAX_FILES: usize = 64;
-const MAX_BATCH_BYTES: usize = 24 * 1024 * 1024;
+pub(super) const MAX_FILES: usize = 64;
+pub(super) const MAX_BATCH_BYTES: usize = 24 * 1024 * 1024;
+pub(super) const MAX_ASSET_BYTES: usize = 12 * 1024 * 1024;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +41,12 @@ pub(super) struct MutationEdit {
     pub path: String,
     pub base_revision: Option<String>,
     pub markdown: Option<String>,
+}
+
+pub(super) struct FileEdit {
+    pub path: String,
+    pub base_revision: Option<String>,
+    pub contents: Option<Vec<u8>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,8 +184,8 @@ pub(super) struct MutationContext<'a> {
 
 struct Change {
     record: FileChange,
-    before: Option<String>,
-    after: Option<String>,
+    before: Option<Vec<u8>>,
+    after: Option<Vec<u8>>,
 }
 
 impl MutationContext<'_> {
@@ -204,16 +211,59 @@ impl MutationContext<'_> {
         transaction: ManagedWrite<'_>,
         mut edits: Vec<MutationEdit>,
         subject: &str,
+        checkpoint: impl FnMut(Checkpoint) -> Result<(), ApiError>,
+    ) -> Result<MutationReceipt, ApiError> {
+        edits.sort_unstable_by(|left, right| left.path.cmp(&right.path));
+        validate_edits(&edits)?;
+        let fingerprint = sha256_hex(&serde_json::to_vec(&edits).map_err(ApiError::internal)?);
+        let files = edits
+            .into_iter()
+            .map(|edit| FileEdit {
+                path: edit.path,
+                base_revision: edit.base_revision,
+                contents: edit.markdown.map(String::into_bytes),
+            })
+            .collect();
+        self.apply_batch(transaction, files, fingerprint, subject, checkpoint)
+    }
+
+    pub(super) fn apply_files(
+        &self,
+        transaction: ManagedWrite<'_>,
+        mut edits: Vec<FileEdit>,
+        subject: &str,
+    ) -> Result<MutationReceipt, ApiError> {
+        edits.sort_unstable_by(|left, right| left.path.cmp(&right.path));
+        validate_files(&edits)?;
+        let before_after: Vec<_> = edits
+            .iter()
+            .map(|edit| {
+                (
+                    edit.path.as_str(),
+                    edit.base_revision.as_deref(),
+                    digest(edit.contents.as_deref()),
+                )
+            })
+            .collect();
+        let fingerprint =
+            sha256_hex(&serde_json::to_vec(&before_after).map_err(ApiError::internal)?);
+        self.apply_batch(transaction, edits, fingerprint, subject, |_| Ok(()))
+    }
+
+    fn apply_batch(
+        &self,
+        transaction: ManagedWrite<'_>,
+        edits: Vec<FileEdit>,
+        fingerprint: String,
+        subject: &str,
         mut checkpoint: impl FnMut(Checkpoint) -> Result<(), ApiError>,
     ) -> Result<MutationReceipt, ApiError> {
         check_storage_recovery(self.state)?;
+        super::workspace::ensure_active(self.metadata, self.workspace)?;
         let operation = uuid::Uuid::parse_str(self.operation)
             .ok()
             .filter(|id| id.to_string() == self.operation)
             .ok_or_else(|| ApiError::invalid("Expected a canonical operation UUID"))?;
-        edits.sort_unstable_by(|left, right| left.path.cmp(&right.path));
-        validate_edits(&edits)?;
-        let fingerprint = sha256_hex(&serde_json::to_vec(&edits).map_err(ApiError::internal)?);
         let root = Path::new(&self.state.space_folder_path)
             .canonicalize()
             .map_err(ApiError::internal)?;
@@ -241,8 +291,8 @@ impl MutationContext<'_> {
             .iter()
             .map(|change| OperationFile {
                 path: &change.record.path,
-                before: change.before.as_deref().map(str::as_bytes),
-                after: change.after.as_deref().map(str::as_bytes),
+                before: change.before.as_deref(),
+                after: change.after.as_deref(),
             })
             .collect();
         let commit = transaction
@@ -271,23 +321,19 @@ impl MutationContext<'_> {
             let prepared = commit.prepare().map_err(ApiError::internal)?;
             for (index, change) in changes.iter().enumerate() {
                 checkpoint(Checkpoint::BeforeWrite(index))?;
-                let current = current_markdown(&journal.manifest.root, space, &change.record.path)?;
-                let revision = digest(current.as_ref());
+                let current = current_bytes(&journal.manifest.root, space, &change.record.path)?;
+                let revision = digest(current.as_deref());
                 if revision != change.record.before_revision {
                     return Err(ApiError::conflict(revision));
                 }
                 journal.attempt(self.metadata, index + 1)?;
-                let file = write_snapshot(
-                    space,
-                    &change.record.path,
-                    change.after.as_deref().map(str::as_bytes),
-                )?;
+                let file = write_snapshot(space, &change.record.path, change.after.as_deref())?;
                 self.record_change(&change.record.path, change.record.revision.as_deref(), file);
             }
             checkpoint(Checkpoint::BeforePublish)?;
             for change in &changes {
-                let current = current_markdown(&journal.manifest.root, space, &change.record.path)?;
-                let revision = digest(current.as_ref());
+                let current = current_bytes(&journal.manifest.root, space, &change.record.path)?;
+                let revision = digest(current.as_deref());
                 if revision != change.record.revision {
                     return Err(ApiError::conflict(revision));
                 }
@@ -306,7 +352,10 @@ impl MutationContext<'_> {
                     engine.notify_file_saved();
                 }
                 if index_installed {
-                    journal.finish(self.metadata, Some("committed"))?;
+                    if let Err(error) = journal.finish(self.metadata, Some("committed")) {
+                        self.state.fs_guard.require_storage_recovery();
+                        return Err(error);
+                    }
                 }
                 Ok(journal.receipt())
             }
@@ -389,23 +438,66 @@ pub(super) fn validate_edits(edits: &[MutationEdit]) -> Result<(), ApiError> {
     Ok(())
 }
 
+pub(super) fn valid_file_path(path: &str) -> bool {
+    path.len() <= 1024
+        && path.split('/').all(|part| {
+            !part.is_empty()
+                && !matches!(part, "." | "..")
+                && !part.eq_ignore_ascii_case(".git")
+                && !part.eq_ignore_ascii_case(super::db::PRODUCT_DIR)
+                && !part.contains(['\\', ':'])
+                && !part.chars().any(char::is_control)
+        })
+}
+
+pub(super) fn max_file_bytes(path: &str) -> usize {
+    if path.to_ascii_lowercase().ends_with(".md") {
+        MARKDOWN_LIMIT
+    } else {
+        MAX_ASSET_BYTES
+    }
+}
+
+fn validate_files(edits: &[FileEdit]) -> Result<(), ApiError> {
+    if edits.is_empty() || edits.len() > MAX_FILES {
+        return Err(ApiError::invalid("Expected between 1 and 64 file changes"));
+    }
+    if edits.iter().any(|edit| !valid_file_path(&edit.path))
+        || edits.windows(2).any(|pair| pair[0].path == pair[1].path)
+    {
+        return Err(ApiError::invalid(
+            "Expected distinct safe relative file paths",
+        ));
+    }
+    let mut bytes = 0;
+    for edit in edits {
+        if let Some(contents) = &edit.contents {
+            bytes += contents.len();
+            if contents.len() > max_file_bytes(&edit.path) || bytes > MAX_BATCH_BYTES {
+                return Err(too_large());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn plan_edits(
     root: &Path,
     space: &dyn SpacePrimitives,
-    edits: Vec<MutationEdit>,
+    edits: Vec<FileEdit>,
 ) -> Result<Vec<Change>, ApiError> {
     let mut changes = Vec::new();
     let mut old_bytes = 0;
     for edit in edits {
-        let before = current_markdown(root, space, &edit.path)?;
-        let before_revision = digest(before.as_ref());
+        let before = current_bytes(root, space, &edit.path)?;
+        let before_revision = digest(before.as_deref());
         if before_revision != edit.base_revision {
             return Err(ApiError::conflict(before_revision));
         }
-        if before == edit.markdown {
+        if before == edit.contents {
             continue;
         }
-        old_bytes += before.as_ref().map_or(0, String::len);
+        old_bytes += before.as_ref().map_or(0, Vec::len);
         if old_bytes > MAX_BATCH_BYTES {
             return Err(too_large());
         }
@@ -413,10 +505,10 @@ fn plan_edits(
             record: FileChange {
                 path: edit.path,
                 before_revision,
-                revision: digest(edit.markdown.as_ref()),
+                revision: digest(edit.contents.as_deref()),
             },
             before,
-            after: edit.markdown,
+            after: edit.contents,
         });
     }
     if changes.is_empty() {
@@ -429,29 +521,28 @@ fn plan_edits(
     Ok(changes)
 }
 
-fn digest(markdown: Option<&String>) -> Option<String> {
-    markdown.map(|body| sha256_hex(body.as_bytes()))
+fn digest(contents: Option<&[u8]>) -> Option<String> {
+    contents.map(sha256_hex)
 }
 
-fn current_markdown(
+pub(super) fn current_bytes(
     root: &Path,
     space: &dyn SpacePrimitives,
     path: &str,
-) -> Result<Option<String>, ApiError> {
+) -> Result<Option<Vec<u8>>, ApiError> {
     check_native_path(root, path)?;
+    let maximum = max_file_bytes(path);
     match space.get_file_meta(path) {
         Err(SpaceError::NotFound) => return Ok(None),
-        Ok(meta) if meta.size > MARKDOWN_LIMIT as i64 => return Err(too_large()),
+        Ok(meta) if meta.size > maximum as i64 => return Err(too_large()),
         Err(error) => return Err(error.into()),
         _ => {}
     }
     let (bytes, _) = space.read_file(path)?;
-    if bytes.len() > MARKDOWN_LIMIT {
+    if bytes.len() > maximum {
         return Err(too_large());
     }
-    String::from_utf8(bytes)
-        .map(Some)
-        .map_err(|_| ApiError::invalid("Markdown file is not UTF-8"))
+    Ok(Some(bytes))
 }
 
 fn write_snapshot(
@@ -476,10 +567,7 @@ fn save_materials(path: &Path, changes: &[Change]) -> Result<(), ApiError> {
     for (number, change) in changes.iter().enumerate() {
         if let Some(bytes) = &change.before {
             File::create(path.join(number.to_string()))
-                .and_then(|mut file| {
-                    file.write_all(bytes.as_bytes())
-                        .and_then(|()| file.sync_all())
-                })
+                .and_then(|mut file| file.write_all(bytes).and_then(|()| file.sync_all()))
                 .map_err(ApiError::internal)?;
         }
     }
@@ -542,7 +630,7 @@ fn recover_pending(
         .rev()
     {
         let path = &change.path;
-        if !valid_path(path) {
+        if !valid_file_path(path) {
             return Err(ApiError::internal("Invalid path in mutation journal"));
         }
         // A foreign process may have replaced a file with a directory or symlink.
@@ -555,8 +643,8 @@ fn recover_pending(
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(ApiError::internal(error)),
         }
-        let current = match current_markdown(root, space, path) {
-            Ok(markdown) => digest(markdown.as_ref()),
+        let current = match current_bytes(root, space, path) {
+            Ok(bytes) => digest(bytes.as_deref()),
             Err(error) if error.is_file_conflict() => {
                 conflict = true;
                 continue;
@@ -588,6 +676,21 @@ fn recover_pending(
         return Err(recovery_conflict());
     }
     Ok(false)
+}
+
+pub(super) fn receipt(
+    metadata: &Metadata,
+    operation: &str,
+    workspace: &str,
+    account: &str,
+) -> Result<Option<MutationReceipt>, ApiError> {
+    let Some(journal) = Journal::get(metadata, operation)? else {
+        return Ok(None);
+    };
+    if journal.workspace != workspace || journal.account != account {
+        return Err(operation_id_reused());
+    }
+    Ok((journal.status == "committed").then(|| journal.receipt()))
 }
 
 pub(super) fn recover_startup(root: &Path, metadata: &Metadata) -> Result<(), String> {

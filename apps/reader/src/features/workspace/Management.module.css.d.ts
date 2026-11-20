@@ -1,0 +1,21 @@
+declare const styles: {
+  readonly page: string;
+  readonly section: string;
+  readonly form: string;
+  readonly field: string;
+  readonly fields: string;
+  readonly input: string;
+  readonly select: string;
+  readonly menu: string;
+  readonly option: string;
+  readonly primary: string;
+  readonly secondary: string;
+  readonly checklist: string;
+  readonly checkbox: string;
+  readonly checkboxMark: string;
+  readonly status: string;
+  readonly records: string;
+  readonly fieldset: string;
+  readonly address: string;
+};
+export default styles;

@@ -89,6 +89,41 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createWorkspace",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspace"
+              }
+            }
+          }
+        }
       }
     },
     "/workspaces/{workspace}/documents": {
@@ -1908,6 +1943,587 @@
           }
         }
       }
+    },
+    "/workspaces/{workspace}": {
+      "patch": {
+        "operationId": "updateWorkspace",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkspace"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/rename": {
+      "post": {
+        "operationId": "renameWorkspacePaths",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameWorkspacePaths"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/deliveries": {
+      "post": {
+        "operationId": "deliverWorkspaceFiles",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deliveryId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "generatedAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryRequest"
+              }
+            },
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "userToken": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {
+            "deliveryToken": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "listWorkspaceDeliveries",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryReceipt"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/workspaces/{workspace}/delivery-tokens": {
+      "post": {
+        "operationId": "issueDeliveryToken",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedDeliveryToken"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewDeliveryToken"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listDeliveryTokens",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryToken"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/workspaces/{workspace}/delivery-tokens/{token}": {
+      "delete": {
+        "operationId": "revokeDeliveryToken",
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/workspaces/{workspace}/assets/{path}": {
+      "get": {
+        "operationId": "readWorkspaceAttachment",
+        "responses": {
+          "200": {
+            "description": "Original attachment bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/workspaces/{workspace}/snapshots": {
+      "post": {
+        "operationId": "createSnapshot",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSnapshot"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/snapshots/{snapshot}": {
+      "get": {
+        "operationId": "getReaderSnapshot",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReaderSnapshot"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "snapshot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "userToken": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "revokeSnapshot",
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "snapshot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/snapshots/{snapshot}/assets/{path}": {
+      "get": {
+        "operationId": "readSnapshotAttachment",
+        "responses": {
+          "200": {
+            "description": "Original attachment bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "snapshot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "userToken": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1924,6 +2540,10 @@
       "runnerToken": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "deliveryToken": {
+        "type": "http",
+        "scheme": "bearer"
       }
     },
     "schemas": {
@@ -1937,7 +2557,9 @@
           "retention",
           "revisionMode",
           "defaults",
-          "canWrite"
+          "canWrite",
+          "expiresAt",
+          "canManage"
         ],
         "properties": {
           "id": {
@@ -1952,13 +2574,15 @@
           "origin": {
             "type": "string",
             "enum": [
-              "native"
+              "native",
+              "delivery"
             ]
           },
           "retention": {
             "type": "string",
             "enum": [
-              "persistent"
+              "persistent",
+              "temporary"
             ]
           },
           "revisionMode": {
@@ -1981,6 +2605,16 @@
             }
           },
           "canWrite": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "canManage": {
             "type": "boolean"
           }
         }
@@ -2795,6 +3429,422 @@
         "properties": {
           "text": {
             "type": "string"
+          }
+        }
+      },
+      "CreateWorkspace": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "native",
+              "delivery"
+            ]
+          },
+          "retention": {
+            "type": "string",
+            "enum": [
+              "persistent",
+              "temporary"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "UpdateWorkspace": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "retention": {
+            "type": "string",
+            "enum": [
+              "persistent",
+              "temporary"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "RenameWorkspacePaths": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "from",
+          "to"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "DeliveryManifest": {
+        "type": "object",
+        "required": [
+          "deliveryId",
+          "sourceName"
+        ],
+        "properties": {
+          "deliveryId": {
+            "type": "string"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "DeliveryFile": {
+        "type": "object",
+        "required": [
+          "path",
+          "contentBase64"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "contentBase64": {
+            "type": "string"
+          }
+        }
+      },
+      "DeliveryRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "manifest",
+              "files"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "manifest": {
+                "$ref": "#/components/schemas/DeliveryManifest"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DeliveryFile"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "manifest",
+              "archiveBase64"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "manifest": {
+                "$ref": "#/components/schemas/DeliveryManifest"
+              },
+              "archiveBase64": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "DeliveryReceipt": {
+        "type": "object",
+        "required": [
+          "deliveryId",
+          "workspaceId",
+          "operationId",
+          "commitId",
+          "manifest",
+          "changes"
+        ],
+        "properties": {
+          "deliveryId": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "commitId": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/DeliveryManifest"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MutationFileChange"
+            }
+          }
+        }
+      },
+      "DeliveryToken": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "revoked"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NewDeliveryToken": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "IssuedDeliveryToken": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "revoked",
+          "token"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateSnapshot": {
+        "type": "object",
+        "required": [
+          "kind",
+          "documentIds"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "current",
+              "release"
+            ]
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "members",
+              "share"
+            ]
+          },
+          "documentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachmentPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "commitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SnapshotLink": {
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "SnapshotDocumentSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "SnapshotDocument": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "title",
+          "markdown",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        }
+      },
+      "ReaderSnapshot": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "kind",
+          "audience",
+          "expiresAt",
+          "commitId",
+          "documents",
+          "document",
+          "attachmentPaths"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "current",
+              "release"
+            ]
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "members",
+              "share"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "commitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnapshotDocumentSummary"
+            }
+          },
+          "document": {
+            "$ref": "#/components/schemas/SnapshotDocument"
+          },
+          "attachmentPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

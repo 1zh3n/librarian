@@ -19,12 +19,14 @@ export function ReaderSurface({
   activeBlocks,
   onKeyDown,
   resolveLink,
+  resolveImage,
 }: {
   readonly analysis: MarkdownAnalysis;
   readonly label?: string;
   readonly activeBlocks?: readonly string[] | undefined;
   readonly onKeyDown?: KeyboardEventHandler<HTMLElement>;
-  readonly resolveLink?: (href: string) => { href: string; open: () => void } | undefined;
+  readonly resolveLink?: (href: string) => { href: string; open?: () => void } | null | undefined;
+  readonly resolveImage?: (src: string) => string | null | undefined;
 }) {
   const article = useRef<HTMLElement>(null);
   const content = useMemo(
@@ -38,9 +40,11 @@ export function ReaderSurface({
           ...(resolveLink && {
             a: ({ href, children, ...props }: ComponentProps<"a">) => {
               const target = href ? resolveLink(href) : undefined;
-              if (!target)
+              if (target === null) return <>{children}</>;
+              const open = target?.open;
+              if (!open)
                 return (
-                  <a {...props} {...(href && { href })}>
+                  <a {...props} {...(target?.href ? { href: target.href } : href ? { href } : {})}>
                     {children}
                   </a>
                 );
@@ -59,7 +63,7 @@ export function ReaderSurface({
                     )
                       return;
                     event.preventDefault();
-                    target.open();
+                    open();
                   }}
                 >
                   {children}
@@ -67,9 +71,16 @@ export function ReaderSurface({
               );
             },
           }),
+          ...(resolveImage && {
+            img: ({ src, alt, ...props }: ComponentProps<"img">) => {
+              const target = src ? resolveImage(src) : null;
+              if (target === null) return alt ? <span>{alt}</span> : null;
+              return <img {...props} src={target ?? src} alt={alt ?? ""} loading="lazy" />;
+            },
+          }),
         },
       }),
-    [analysis.tree, resolveLink],
+    [analysis.tree, resolveImage, resolveLink],
   );
   useLayoutEffect(() => {
     if (!article.current || !activeBlocks?.length) return;

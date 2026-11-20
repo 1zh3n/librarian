@@ -24,6 +24,8 @@ export {
   TextArea,
   TextField,
   ToggleButton,
+  Tooltip,
+  TooltipTrigger,
   Tree,
   TreeItem,
   TreeItemContent,

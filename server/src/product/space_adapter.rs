@@ -25,6 +25,8 @@ impl NativeSpaces {
         let data_lock = super::db::Metadata::lock_root(root)?;
         let metadata = super::db::Metadata::open(root)?;
         super::mutations::recover_startup(root, &metadata)?;
+        super::workspace::recover_startup(&metadata)?;
+        super::delivery::recover_startup(&metadata).map_err(|error| format!("{error:?}"))?;
         let users = UserStore::open(root)?
             .ok_or_else(|| "Missing users.json in the Librarian data folder".to_string())?;
         let authenticator = Arc::new(

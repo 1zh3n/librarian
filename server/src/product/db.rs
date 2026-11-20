@@ -16,6 +16,7 @@ pub(crate) struct Metadata {
     directory: PathBuf,
     connection: Mutex<Connection>,
     ai_gate: Mutex<()>,
+    workspace_gate: Mutex<()>,
 }
 
 pub(super) struct DataRootLock(fs::File);
@@ -64,6 +65,7 @@ impl Metadata {
             directory,
             connection: Mutex::new(connection),
             ai_gate: Mutex::new(()),
+            workspace_gate: Mutex::new(()),
         })
     }
 
@@ -93,8 +95,16 @@ impl Metadata {
         self.directory.join("mutations").join(operation)
     }
 
+    pub(super) fn retired_workspace_directory(&self) -> PathBuf {
+        self.directory.join("retired-workspaces")
+    }
+
     pub(super) fn ai_guard(&self) -> Result<MutexGuard<'_, ()>, ApiError> {
         self.ai_gate.lock().map_err(ApiError::internal)
+    }
+
+    pub(super) fn workspace_guard(&self) -> Result<MutexGuard<'_, ()>, ApiError> {
+        self.workspace_gate.lock().map_err(ApiError::internal)
     }
 
     pub(super) fn runner_digest(&self) -> Result<Option<String>, ApiError> {
@@ -187,7 +197,13 @@ impl Metadata {
                  CREATE UNIQUE INDEX ai_events_from_runner ON ai_events(operation_id, lease_id, executor_seq);
                  PRAGMA user_version = 5;",
             )?;
-        } else if version != 5 {
+        }
+        if version <= 5 {
+            super::workspace::migrate(&transaction)?;
+            super::delivery::migrate(&transaction)?;
+            super::snapshots::migrate(&transaction)?;
+            transaction.pragma_update(None, "user_version", 6)?;
+        } else if version != 6 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;

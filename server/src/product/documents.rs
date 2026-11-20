@@ -24,7 +24,7 @@ use super::{
     auth::Account,
     contract::{
         ApiError, CreateDocument, DocumentSnapshot, DocumentSummary, OutlineSnapshot, Workspace,
-        WorkspaceDefaults, WriteMarkdown,
+        WriteMarkdown,
     },
     db::Metadata,
     space_adapter::NativeSpaces,
@@ -53,6 +53,7 @@ impl DocumentService {
         write: bool,
     ) -> Result<(Arc<SpaceInstance>, Actor), ApiError> {
         let space_id = self.metadata.space_id(workspace)?;
+        super::workspace::ensure_active(&self.metadata, workspace)?;
         let instance = self
             .spaces
             .manager
@@ -74,28 +75,29 @@ impl DocumentService {
     }
 
     pub(super) fn workspaces(&self, account: &Account) -> Result<Vec<Workspace>, ApiError> {
+        let _workspace_guard = self.metadata.workspace_guard()?;
         let registry = self.spaces.manager.registry().current();
         let mut workspaces = Vec::new();
         for instance in registry.instances.values() {
             let Ok(actor) = account.actor(&self.spaces, instance, false) else {
                 continue;
             };
-            let revision_mode = super::revisions::mode(instance.revisions.as_deref());
-            workspaces.push(Workspace {
-                id: self.metadata.workspace_id(&instance.id)?,
-                space_id: instance.id.clone(),
-                name: instance.config.name.clone(),
-                origin: "native",
-                retention: "persistent",
-                revision_mode,
-                can_write: actor.level == crate::auth::AccessLevel::Write,
-                defaults: WorkspaceDefaults {
-                    outline_enabled: false,
-                },
-            });
+            let workspace = super::workspace::describe(self, account, instance, &actor)?;
+            if !super::workspace::expired(workspace.expires_at) {
+                workspaces.push(workspace);
+            }
         }
         workspaces.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
         Ok(workspaces)
+    }
+
+    pub(super) fn path_in(&self, workspace: &str, document: &str) -> Result<String, ApiError> {
+        super::workspace::ensure_active(&self.metadata, workspace)?;
+        let (actual, path) = self.metadata.document_path(document)?;
+        if actual != workspace {
+            return Err(ApiError::not_found());
+        }
+        Ok(path)
     }
 
     pub(super) fn list(
@@ -110,6 +112,7 @@ impl DocumentService {
         let (instance, _) = self.scope(account, workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
+        super::workspace::ensure_active(&self.metadata, workspace)?;
         let mut files = state.space.fetch_file_list()?;
         files.sort_unstable_by(|a, b| a.name.cmp(&b.name));
 
@@ -157,10 +160,11 @@ impl DocumentService {
     }
 
     pub(super) fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
-        let (workspace, path) = self.metadata.document_path(id)?;
+        let (workspace, _) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
+        let path = self.path_in(&workspace, id)?;
         let markdown = read_markdown(state, &path)?;
         let revision = sha256_hex(markdown.as_bytes());
         Ok(snapshot(
@@ -191,6 +195,7 @@ impl DocumentService {
         }
         let state = state(&instance)?;
         let _mutation = product_write(state)?;
+        super::workspace::ensure_active(&self.metadata, workspace)?;
         let (markdown, revision) =
             save_locked(state, &path, request.content.markdown, None, actor)?;
         let id = self.metadata.document_id(workspace, &path)?;
@@ -203,7 +208,7 @@ impl DocumentService {
         id: &str,
         request: WriteMarkdown,
     ) -> Result<DocumentSnapshot, ApiError> {
-        let (workspace, path) = self.metadata.document_path(id)?;
+        let (workspace, _) = self.metadata.document_path(id)?;
         let (instance, actor) = self.scope(account, &workspace, true)?;
         let expected = request
             .precondition()?
@@ -211,6 +216,7 @@ impl DocumentService {
             .to_owned();
         let state = state(&instance)?;
         let _mutation = product_write(state)?;
+        let path = self.path_in(&workspace, id)?;
         let (markdown, revision) =
             save_locked(state, &path, request.markdown, Some(&expected), actor)?;
         Ok(snapshot(
@@ -228,10 +234,11 @@ impl DocumentService {
         account: &Account,
         id: &str,
     ) -> Result<OutlineSnapshot, ApiError> {
-        let (workspace, path) = self.metadata.document_path(id)?;
+        let (workspace, _) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
+        let path = self.path_in(&workspace, id)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let sidecar = outline_path(&path);
@@ -258,11 +265,12 @@ impl DocumentService {
         id: &str,
         request: WriteMarkdown,
     ) -> Result<OutlineSnapshot, ApiError> {
-        let (workspace, path) = self.metadata.document_path(id)?;
+        let (workspace, _) = self.metadata.document_path(id)?;
         let (instance, actor) = self.scope(account, &workspace, true)?;
         let state = state(&instance)?;
         let expected = request.precondition()?.map(str::to_owned);
         let _mutation = product_write(state)?;
+        let path = self.path_in(&workspace, id)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let (markdown, revision) = save_locked(
@@ -295,7 +303,7 @@ pub(super) fn product_read(state: &ServerState) -> Result<RwLockReadGuard<'_, ()
     Ok(lock)
 }
 
-fn product_write(state: &ServerState) -> Result<RwLockWriteGuard<'_, ()>, ApiError> {
+pub(super) fn product_write(state: &ServerState) -> Result<RwLockWriteGuard<'_, ()>, ApiError> {
     let lock = state
         .fs_guard
         .mutation
@@ -456,7 +464,7 @@ pub(super) fn outline_path(path: &str) -> String {
     format!("{}.outline.md", path.strip_suffix(".md").unwrap_or(path))
 }
 
-fn title_from_front_matter(bytes: &[u8]) -> Option<String> {
+pub(super) fn title_from_front_matter(bytes: &[u8]) -> Option<String> {
     let prefix = &bytes[..bytes.len().min(METADATA_LIMIT)];
     let prefix = prefix.strip_prefix(b"\xef\xbb\xbf").unwrap_or(prefix);
     let mut lines = prefix.split_inclusive(|&byte| byte == b'\n');
@@ -517,6 +525,9 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
             get(super::settings::get_preferences).put(super::settings::save_preferences),
         )
         .merge(super::ai::routes())
+        .merge(super::workspace::routes())
+        .merge(super::delivery::routes())
+        .merge(super::snapshots::routes())
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
             response

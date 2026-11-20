@@ -590,8 +590,9 @@ async fn mcp_lists_only_product_tools_and_their_input_contracts() {
     let response = server.rpc(&session.access, "tools/list", json!({})).await;
     let tools: Value = response.json().await.unwrap();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    let expected: [(&str, bool, &[&str]); 11] = [
+    let expected: [(&str, bool, &[&str]); 12] = [
         ("workspace_list", true, &[]),
+        ("workspace_publish", false, &["workspaceId", "delivery"]),
         ("document_list", true, &["workspaceId"]),
         ("document_read", true, &["documentId"]),
         ("document_search", true, &["workspaceId", "query"]),
@@ -849,6 +850,48 @@ async fn mcp_read_only_member_can_grant_and_read_but_cannot_write() {
         )
         .await;
     assert!(native.is_err());
+}
+
+#[tokio::test]
+async fn mcp_workspace_publish_reuses_the_product_delivery_receipt() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.tool(&session, "workspace_list", json!({})).await;
+    let workspace = workspaces["structuredContent"]["workspaces"][0]["id"]
+        .as_str()
+        .unwrap();
+    let args = json!({
+        "workspaceId":workspace,
+        "delivery":{
+            "manifest":{"deliveryId":"mcp-docs","sourceName":"MCP client"},
+            "files":[{"path":"Guide.md","contentBase64":STANDARD.encode(LEFT)}]
+        }
+    });
+    let result = server
+        .tool(&session, "workspace_publish", args.clone())
+        .await;
+    assert_ne!(result["isError"], true, "{result}");
+    let receipt = &result["structuredContent"];
+    assert_eq!(
+        &server.tool(&session, "workspace_publish", args).await["structuredContent"],
+        receipt
+    );
+    let listed = server
+        .product_get(&session, &format!("/workspaces/{workspace}/deliveries"))
+        .await;
+    assert_eq!(&listed[0], receipt);
+    assert_eq!(
+        fs::read(
+            server
+                .root
+                .path()
+                .join("spaces/left/deliveries/mcp-docs/Guide.md")
+        )
+        .unwrap(),
+        LEFT.as_bytes()
+    );
 }
 
 #[tokio::test]

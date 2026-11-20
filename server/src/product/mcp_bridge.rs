@@ -95,6 +95,21 @@ fn call_local(
     arguments: Value,
 ) -> Result<Value, ApiError> {
     match name {
+        "workspace_publish" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct PublishArgs {
+                workspace_id: String,
+                delivery: super::delivery::DeliveryRequest,
+            }
+            let args: PublishArgs = arguments_as(arguments)?;
+            encode(super::delivery::publish(
+                service,
+                account,
+                &args.workspace_id,
+                args.delivery,
+            )?)
+        }
         "workspace_list" => {
             let _: EmptyArgs = arguments_as(arguments)?;
             Ok(json!({"workspaces": service.workspaces(account)?}))
@@ -151,7 +166,7 @@ fn call_local(
                 account,
                 &args.workspace_id,
                 &args.operation_id,
-                args.path,
+                WriteTarget::NewPath(args.path),
                 change,
             )
         }
@@ -165,13 +180,13 @@ fn call_local(
                     base.ok_or_else(|| ApiError::invalid("Updating requires a content revision"))?;
                 Change::Markdown(args.markdown, Some(base))
             };
-            let (workspace, path) = service.metadata.document_path(&args.document_id)?;
+            let (workspace, _) = service.metadata.document_path(&args.document_id)?;
             write(
                 service,
                 account,
                 &workspace,
                 &args.operation_id,
-                path,
+                WriteTarget::Document(args.document_id),
                 change,
             )
         }
@@ -180,14 +195,14 @@ fn call_local(
             let base = content_precondition(args.base_revision.as_ref())?
                 .ok_or_else(|| ApiError::invalid("Restoring requires a content revision"))?;
             revisions::validate_commit(&args.commit_id)?;
-            let (workspace, path) = service.metadata.document_path(&args.document_id)?;
+            let (workspace, _) = service.metadata.document_path(&args.document_id)?;
             let change = Change::Restore(args.commit_id, base.to_owned());
             write(
                 service,
                 account,
                 &workspace,
                 &args.operation_id,
-                path,
+                WriteTarget::Document(args.document_id),
                 change,
             )
         }
@@ -199,6 +214,11 @@ enum Change {
     Markdown(String, Option<String>),
     Outline(String, Option<String>),
     Restore(String, String),
+}
+
+enum WriteTarget {
+    NewPath(String),
+    Document(String),
 }
 
 #[derive(Serialize)]
@@ -214,7 +234,7 @@ fn write(
     account: &Account,
     workspace: &str,
     operation: &str,
-    path: String,
+    target_document: WriteTarget,
     change: Change,
 ) -> Result<Value, ApiError> {
     let (instance, actor) = service.scope(account, workspace, true)?;
@@ -230,7 +250,11 @@ fn write(
                 "Writes require managed versions in this workspace",
             )
         })?;
-    let receipt = engine.with_managed_write(|transaction| {
+    let result = engine.with_managed_write(|transaction| -> Result<WriteResult, ApiError> {
+        let path = match target_document {
+            WriteTarget::NewPath(path) => path,
+            WriteTarget::Document(document) => service.path_in(workspace, &document)?,
+        };
         let (target, markdown, base_revision) = match change {
             Change::Markdown(markdown, base) => (path.clone(), markdown, base),
             Change::Outline(markdown, base) => {
@@ -244,7 +268,7 @@ fn write(
                 (path.clone(), markdown, Some(base))
             }
         };
-        MutationContext {
+        let receipt = MutationContext {
             metadata: &service.metadata,
             state,
             actor: &actor,
@@ -259,13 +283,14 @@ fn write(
                 base_revision,
                 markdown: Some(markdown),
             }],
-        )
+        )?;
+        let document_id = service.metadata.document_id(workspace, &path)?;
+        Ok(WriteResult {
+            document_id,
+            receipt,
+        })
     })?;
-    let document_id = service.metadata.document_id(workspace, &path)?;
-    encode(WriteResult {
-        document_id,
-        receipt,
-    })
+    encode(result)
 }
 
 #[derive(Deserialize)]

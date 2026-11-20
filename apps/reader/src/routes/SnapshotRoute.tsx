@@ -1,0 +1,111 @@
+import { useQuery } from "@tanstack/react-query";
+import { getRouteApi, Link } from "@tanstack/react-router";
+import { useCallback, useMemo } from "react";
+import { api, ApiError } from "../api/client";
+import type { Snapshot } from "../api/client";
+import documentStyles from "../features/document/DocumentPage.module.css";
+import { analyzeMarkdown } from "../markdown/analyze";
+import { ReaderSurface } from "../markdown/ReaderSurface";
+import { relativeDocumentPath } from "../markdown/relativePath";
+import styles from "./SnapshotRoute.module.css";
+
+const route = getRouteApi("/r/$snapshotId");
+
+export function SnapshotRoute() {
+  const { snapshotId } = route.useParams();
+  const { documentId } = route.useSearch();
+  const result = useQuery({
+    queryKey: ["snapshots", snapshotId, documentId ?? null],
+    queryFn: ({ signal }) => api.getSnapshot(snapshotId, documentId, signal),
+    staleTime: 0,
+  });
+  const loginRequired = result.error instanceof ApiError && result.error.status === 401;
+  const login = `/.auth/librarian/login?${new URLSearchParams({
+    next: window.location.pathname + window.location.search,
+  })}`;
+
+  return (
+    <main className={documentStyles.page}>
+      <meta name="referrer" content="no-referrer" />
+      {result.isPending ? (
+        <output className={documentStyles.message}>正在打开阅读地址…</output>
+      ) : result.isError && loginRequired ? (
+        <div className={documentStyles.message}>
+          <p>请登录后阅读此地址。</p>
+          <a href={login}>登录</a>
+        </div>
+      ) : result.isError ? (
+        <p role="alert" className={documentStyles.message}>
+          阅读地址不可用
+        </p>
+      ) : (
+        <SnapshotReader snapshot={result.data} />
+      )}
+    </main>
+  );
+}
+
+function SnapshotReader({ snapshot }: { snapshot: Snapshot }) {
+  const { id, document, documents, attachmentPaths, kind } = snapshot;
+  const analysis = useMemo(() => analyzeMarkdown(document.markdown, document.id), [document]);
+  const resolveLink = useCallback(
+    (href: string) => {
+      if (href.startsWith("#") || /^(?:https?:|mailto:)/iu.test(href)) return;
+      const relative = relativeDocumentPath(document.path, href);
+      if (!relative) return null;
+      const target = documents.find((item) => item.path === relative.path);
+      if (target) {
+        const search = new URLSearchParams({ documentId: target.id });
+        return { href: `/r/${encodeURIComponent(id)}?${search}${relative.hash}` };
+      }
+      if (attachmentPaths.includes(relative.path)) {
+        return { href: api.snapshotAsset(id, relative.path) };
+      }
+      return null;
+    },
+    [attachmentPaths, document.path, documents, id],
+  );
+  const resolveImage = useCallback(
+    (src: string) => {
+      const relative = relativeDocumentPath(document.path, src);
+      return relative && attachmentPaths.includes(relative.path)
+        ? api.snapshotAsset(id, relative.path)
+        : null;
+    },
+    [attachmentPaths, document.path, id],
+  );
+  const titleIsFirstHeading =
+    analysis.headings[0]?.level === 1 && analysis.headings[0].label === document.title;
+
+  return (
+    <>
+      <header className={`${documentStyles.header} ${styles.header}`}>
+        <p className={styles.kind}>{kind === "release" ? "固定版本" : "当前地址"}</p>
+        {documents.length > 1 && (
+          <nav aria-label="阅读地址中的文档" className={styles.navigation}>
+            {documents.map((item) => (
+              <Link
+                key={item.id}
+                to="/r/$snapshotId"
+                params={{ snapshotId: id }}
+                search={{ documentId: item.id }}
+                aria-current={item.id === document.id ? "page" : false}
+              >
+                {item.title}
+              </Link>
+            ))}
+          </nav>
+        )}
+        {!titleIsFirstHeading && <h1 className={documentStyles.title}>{document.title}</h1>}
+      </header>
+      <div className={documentStyles.canvas}>
+        <ReaderSurface
+          analysis={analysis}
+          label={document.title}
+          resolveLink={resolveLink}
+          resolveImage={resolveImage}
+        />
+      </div>
+    </>
+  );
+}

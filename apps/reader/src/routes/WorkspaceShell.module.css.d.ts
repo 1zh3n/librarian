@@ -5,6 +5,10 @@ declare const styles: {
   readonly button: string;
   readonly brand: string;
   readonly workspace: string;
+  readonly workspaceBar: string;
+  readonly workspaceChooser: string;
+  readonly workspaceSettings: string;
+  readonly tooltip: string;
   readonly columns: string;
   readonly topActions: string;
   readonly layoutMenu: string;

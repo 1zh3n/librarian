@@ -12,6 +12,8 @@ import {
   Select,
   SelectValue,
   ToggleButton,
+  Tooltip,
+  TooltipTrigger,
 } from "../ui/primitives";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { ApiError } from "../api/client";
@@ -48,10 +50,16 @@ const presets = [
 export function WorkspaceShell() {
   const { workspaceId, documentId } = useParams({ strict: false });
   const navigate = useNavigate();
-  const workspaceAi = useRouterState({
+  const workspaceTool = useRouterState({
     select: ({ matches }) =>
-      matches.some(({ routeId }) => routeId === "/workspaces/$workspaceId/ai"),
+      matches.find(
+        ({ routeId }) =>
+          routeId === "/workspaces/new" ||
+          routeId === "/workspaces/$workspaceId/manage" ||
+          routeId === "/workspaces/$workspaceId/ai",
+      )?.routeId,
   });
+  const creating = workspaceTool === "/workspaces/new";
   const workspaces = useQuery(workspacesQuery);
   const workspace = workspaceId
     ? workspaces.data?.find((item) => item.id === workspaceId)
@@ -92,17 +100,17 @@ export function WorkspaceShell() {
   }, [navigationPanel, navigationVisible, preferences.sidebarWidth, wide]);
 
   useEffect(() => {
-    if (!selected || documentId || workspaceAi || !firstDocument) return;
+    if (!selected || documentId || workspaceTool || !firstDocument) return;
     void navigate({
       to: "/workspaces/$workspaceId/documents/$documentId",
       params: { workspaceId: selected, documentId: firstDocument },
       replace: true,
     });
-  }, [selected, documentId, firstDocument, navigate, workspaceAi]);
+  }, [selected, documentId, firstDocument, navigate, workspaceTool]);
 
   useEffect(() => {
     viewport.current?.scrollTo({ top: 0, left: 0 });
-  }, [documentId, workspaceAi]);
+  }, [documentId, workspaceTool]);
 
   useEffect(() => {
     if (!selected) return;
@@ -262,32 +270,59 @@ export function WorkspaceShell() {
                 className={styles.navigation}
                 hidden={!navigationVisible}
               >
-                <Select
-                  aria-label="空间"
-                  value={workspace.id}
-                  onChange={(id) => {
-                    if (id !== null && id !== selected) {
-                      void navigate({
-                        to: "/workspaces/$workspaceId",
-                        params: { workspaceId: String(id) },
-                      });
-                    }
-                  }}
-                >
-                  <Button className={styles.workspace}>
-                    <SelectValue />
-                    <span aria-hidden="true">⌄</span>
-                  </Button>
-                  <Popover className={styles.popover}>
-                    <ListBox items={workspaces.data ?? []} className={styles.spaces}>
-                      {(item) => (
-                        <ListBoxItem id={item.id} className={styles.spaceOption}>
-                          {item.name}
+                <div className={styles.workspaceBar}>
+                  <Select
+                    aria-label="空间"
+                    value={workspace.id}
+                    className={styles.workspaceChooser}
+                    onChange={(id) => {
+                      if (id === "new-workspace") {
+                        if (!wide) setNavigationOverride(false);
+                        void navigate({ to: "/workspaces/new" });
+                      } else if (id !== null && id !== selected) {
+                        void navigate({
+                          to: "/workspaces/$workspaceId",
+                          params: { workspaceId: String(id) },
+                        });
+                      }
+                    }}
+                  >
+                    <Button className={styles.workspace}>
+                      <SelectValue />
+                      <span aria-hidden="true">⌄</span>
+                    </Button>
+                    <Popover className={styles.popover}>
+                      <ListBox className={styles.spaces}>
+                        {workspaces.data?.map((item) => (
+                          <ListBoxItem key={item.id} id={item.id} className={styles.spaceOption}>
+                            {item.name}
+                          </ListBoxItem>
+                        ))}
+                        <ListBoxItem id="new-workspace" className={styles.spaceOption}>
+                          新建空间
                         </ListBoxItem>
-                      )}
-                    </ListBox>
-                  </Popover>
-                </Select>
+                      </ListBox>
+                    </Popover>
+                  </Select>
+                  {(workspace.canManage || workspace.canWrite) && (
+                    <TooltipTrigger>
+                      <Button
+                        aria-label="空间设置"
+                        className={styles.workspaceSettings}
+                        onPress={() => {
+                          if (!wide) setNavigationOverride(false);
+                          void navigate({
+                            to: "/workspaces/$workspaceId/manage",
+                            params: { workspaceId: workspace.id },
+                          });
+                        }}
+                      >
+                        <span aria-hidden="true">⚙</span>
+                      </Button>
+                      <Tooltip className={styles.tooltip}>空间设置</Tooltip>
+                    </TooltipTrigger>
+                  )}
+                </div>
                 {resource.data && (
                   <SpaceTree
                     key={selected}
@@ -321,9 +356,18 @@ export function WorkspaceShell() {
                 </p>
               ) : workspaces.isPending ? (
                 <output className={styles.state}>正在加载空间…</output>
+              ) : creating ? (
+                <Outlet />
               ) : !workspace ? (
-                <p className={styles.state}>{workspaceId ? "此空间不可用" : "没有可访问的空间"}</p>
-              ) : documentId || workspaceAi ? (
+                <div className={styles.state}>
+                  <p>{workspaceId ? "此空间不可用" : "没有可访问的空间"}</p>
+                  {!workspaceId && (
+                    <Link to="/workspaces/new" className={styles.signIn}>
+                      新建空间
+                    </Link>
+                  )}
+                </div>
+              ) : documentId || workspaceTool ? (
                 <Outlet />
               ) : resource.isError ? (
                 <p role="alert" className={styles.state}>

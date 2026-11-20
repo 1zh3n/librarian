@@ -15,7 +15,7 @@ silverbullet-server-space-tools = { path = "../server-space-tools" }
 axum = { workspace = true }
 async-trait = { workspace = true }
 tower-http = { workspace = true, features = ["compression-gzip", "compression-br"] }
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "time"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tracing = { workspace = true }
@@ -43,6 +43,8 @@ openidconnect = { version = "4", default-features = false, features = ["reqwest"
 tempfile = "3"
 png = "0.18"
 rusqlite = { version = "=0.43.0", features = ["bundled"] }
+unicode-normalization-alignments = "=0.1.12"
+zip = { workspace = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 libc = { workspace = true }

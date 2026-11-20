@@ -16,6 +16,20 @@ export type MutationReceipt = components["schemas"]["MutationReceipt"];
 type AiOperationDiff = components["schemas"]["AiOperationDiff"];
 type AiConfirm = components["schemas"]["AiConfirmRequest"];
 
+type CreateWorkspace = components["schemas"]["CreateWorkspace"];
+type UpdateWorkspace = components["schemas"]["UpdateWorkspace"];
+type RenameWorkspacePath = components["schemas"]["RenameWorkspacePaths"];
+export type WorkspaceSettings = Omit<CreateWorkspace, "origin">;
+export type DeliveryManifest = components["schemas"]["DeliveryManifest"];
+type DeliveryInput = components["schemas"]["DeliveryRequest"];
+export type DeliveryReceipt = components["schemas"]["DeliveryReceipt"];
+type NewDeliveryToken = components["schemas"]["NewDeliveryToken"];
+export type DeliveryToken = components["schemas"]["DeliveryToken"];
+type IssuedDeliveryToken = components["schemas"]["IssuedDeliveryToken"];
+export type CreateSnapshot = components["schemas"]["CreateSnapshot"];
+export type SnapshotLink = components["schemas"]["SnapshotLink"];
+export type Snapshot = components["schemas"]["ReaderSnapshot"];
+
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
 type SaveDocument = operations["saveDocument"]["requestBody"]["content"]["application/json"];
@@ -41,7 +55,7 @@ async function request<T>(
   path: string,
   signal?: AbortSignal,
   write?: {
-    method: "POST" | "PUT";
+    method: "POST" | "PUT" | "PATCH" | "DELETE";
     body?:
       | CreateDocument
       | SaveDocument
@@ -49,7 +63,13 @@ async function request<T>(
       | RestoreRevision
       | DevicePreferences
       | AiTask
-      | AiConfirm;
+      | AiConfirm
+      | CreateWorkspace
+      | UpdateWorkspace
+      | RenameWorkspacePath
+      | DeliveryInput
+      | NewDeliveryToken
+      | CreateSnapshot;
   },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -61,6 +81,7 @@ async function request<T>(
       body: JSON.stringify(write.body),
     }),
   });
+  if (response.status === 204) return undefined as T;
   if (response.ok) return (await response.json()) as T;
 
   throw await responseError(response);
@@ -76,8 +97,9 @@ async function responseError(response: Response) {
   );
 }
 
-const workspaceDocuments = (workspace: string) =>
-  `/workspaces/${encodeURIComponent(workspace)}/documents`;
+const workspacePath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}`;
+const workspaceDocuments = (workspace: string) => `${workspacePath(workspace)}/documents`;
+const snapshotPath = (id: string) => `/snapshots/${encodeURIComponent(id)}`;
 const documentPath = (document: string) => `/documents/${encodeURIComponent(document)}`;
 
 const operationPath = (id: string) => `/ai/operations/${encodeURIComponent(id)}`;
@@ -85,6 +107,62 @@ const operationPath = (id: string) => `/ai/operations/${encodeURIComponent(id)}`
 export const api = {
   listWorkspaces(signal?: AbortSignal) {
     return request<Workspace[]>("/workspaces", signal);
+  },
+  createWorkspace(body: CreateWorkspace) {
+    return request<Workspace>("/workspaces", undefined, { method: "POST", body });
+  },
+  updateWorkspace(workspace: string, body: UpdateWorkspace) {
+    return request<Workspace>(workspacePath(workspace), undefined, { method: "PATCH", body });
+  },
+  renameWorkspacePath(workspace: string, body: RenameWorkspacePath) {
+    return request<MutationReceipt>(`${workspacePath(workspace)}/rename`, undefined, {
+      method: "POST",
+      body,
+    });
+  },
+  createDelivery(workspace: string, body: DeliveryInput) {
+    return request<DeliveryReceipt>(`${workspacePath(workspace)}/deliveries`, undefined, {
+      method: "POST",
+      body,
+    });
+  },
+  listDeliveries(workspace: string, signal?: AbortSignal) {
+    return request<DeliveryReceipt[]>(`${workspacePath(workspace)}/deliveries`, signal);
+  },
+  listDeliveryTokens(workspace: string, signal?: AbortSignal) {
+    return request<DeliveryToken[]>(`${workspacePath(workspace)}/delivery-tokens`, signal);
+  },
+  issueDeliveryToken(workspace: string, body: NewDeliveryToken) {
+    return request<IssuedDeliveryToken>(`${workspacePath(workspace)}/delivery-tokens`, undefined, {
+      method: "POST",
+      body,
+    });
+  },
+  revokeDeliveryToken(workspace: string, id: string) {
+    return request<undefined>(
+      `${workspacePath(workspace)}/delivery-tokens/${encodeURIComponent(id)}`,
+      undefined,
+      { method: "DELETE" },
+    );
+  },
+  createSnapshot(workspace: string, body: CreateSnapshot) {
+    return request<SnapshotLink>(`${workspacePath(workspace)}/snapshots`, undefined, {
+      method: "POST",
+      body,
+    });
+  },
+  getSnapshot(id: string, documentId?: string, signal?: AbortSignal) {
+    const query = documentId ? `?${new URLSearchParams({ documentId })}` : "";
+    return request<Snapshot>(`${snapshotPath(id)}${query}`, signal);
+  },
+  revokeSnapshot(id: string) {
+    return request<undefined>(snapshotPath(id), undefined, { method: "DELETE" });
+  },
+  workspaceAsset(workspace: string, path: string) {
+    return `/api/v1${workspacePath(workspace)}/assets/${encodeFilePath(path)}`;
+  },
+  snapshotAsset(id: string, path: string) {
+    return `/api/v1${snapshotPath(id)}/assets/${encodeFilePath(path)}`;
   },
   listDocuments(workspace: string, options: ListOptions = {}, signal?: AbortSignal) {
     const query = new URLSearchParams();
@@ -188,3 +266,7 @@ export const api = {
     );
   },
 };
+
+function encodeFilePath(path: string) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}

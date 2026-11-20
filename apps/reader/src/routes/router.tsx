@@ -3,10 +3,19 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
+  Outlet,
+  useRouterState,
 } from "@tanstack/react-router";
 import { WorkspaceShell } from "./WorkspaceShell";
 
-const root = createRootRoute({ component: WorkspaceShell });
+function RootRoute() {
+  const snapshot = useRouterState({
+    select: ({ matches }) => matches.some(({ routeId }) => routeId === "/r/$snapshotId"),
+  });
+  return snapshot ? <Outlet /> : <WorkspaceShell />;
+}
+
+const root = createRootRoute({ component: RootRoute });
 const home = createRoute({ getParentRoute: () => root, path: "/" });
 const workspace = createRoute({ getParentRoute: () => root, path: "/workspaces/$workspaceId" });
 const document = createRoute({
@@ -21,8 +30,41 @@ const workspaceAi = createRoute({
   component: lazyRouteComponent(() => import("./WorkspaceAiRoute"), "WorkspaceAiRoute"),
 });
 
+const workspaceCreate = createRoute({
+  getParentRoute: () => root,
+  path: "/workspaces/new",
+  component: lazyRouteComponent(() => import("./WorkspaceManagementRoute"), "CreateWorkspaceRoute"),
+});
+
+const workspaceManagement = createRoute({
+  getParentRoute: () => root,
+  path: "/workspaces/$workspaceId/manage",
+  component: lazyRouteComponent(
+    () => import("./WorkspaceManagementRoute"),
+    "WorkspaceManagementRoute",
+  ),
+});
+
+const snapshot = createRoute({
+  getParentRoute: () => root,
+  path: "/r/$snapshotId",
+  validateSearch: (value: Record<string, unknown>) =>
+    typeof value.documentId === "string" && value.documentId
+      ? { documentId: value.documentId }
+      : {},
+  component: lazyRouteComponent(() => import("./SnapshotRoute"), "SnapshotRoute"),
+});
+
 export const router = createRouter({
-  routeTree: root.addChildren([home, workspace, document, workspaceAi]),
+  routeTree: root.addChildren([
+    home,
+    workspace,
+    document,
+    workspaceAi,
+    workspaceCreate,
+    workspaceManagement,
+    snapshot,
+  ]),
 });
 
 declare module "@tanstack/react-router" {

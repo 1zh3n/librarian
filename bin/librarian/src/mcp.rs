@@ -153,6 +153,27 @@ impl ToolSet for ProductTools {
                 json!({}), &[], true,
             ),
             tool(
+                "workspace_publish", "Deliver documents", "Import documents and attachments into a granted Workspace. Identical content and manifest reuse the same receipt.",
+                json!({"workspaceId": workspace, "delivery": {
+                    "type": "object", "additionalProperties": false, "required": ["manifest"],
+                    "properties": {
+                        "manifest": {"type": "object", "additionalProperties": false, "required": ["deliveryId", "sourceName"],
+                            "properties": {
+                                "deliveryId": {"type": "string", "description": "Stable lowercase delivery name."},
+                                "sourceName": {"type": "string"},
+                                "version": {"type": "string"},
+                                "generatedAt": {"type": "string", "format": "date-time"}
+                            }
+                        },
+                        "files": {"type": "array", "items": {"type": "object", "required": ["path", "contentBase64"],
+                            "additionalProperties": false, "properties": {"path": {"type": "string"}, "contentBase64": {"type": "string"}}}},
+                        "archiveBase64": {"type": "string"}
+                    },
+                    "oneOf": [{"required": ["files"]}, {"required": ["archiveBase64"]}]
+                }}),
+                &["workspaceId", "delivery"], false,
+            ),
+            tool(
                 "document_list", "List documents", "List documents in a granted workspace in path order.",
                 json!({"workspaceId": workspace, "after": {"type": "string", "description": "List paths strictly after this document path."}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
                 &["workspaceId"], true,
@@ -273,7 +294,9 @@ impl LoginQuery {
             ["", ""] => true,
             ["", "workspaces", workspace] => id(workspace),
             ["", "workspaces", workspace, "ai"] => id(workspace),
+            ["", "workspaces", workspace, "manage"] => id(workspace),
             ["", "workspaces", workspace, "documents", document] => id(workspace) && id(document),
+            ["", "r", snapshot] => id(snapshot),
             _ => false,
         };
         known_route.then_some(next)

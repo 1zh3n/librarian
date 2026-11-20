@@ -731,6 +731,20 @@ fn account_attribution(actor: &crate::auth::Actor) -> Attribution {
 pub(crate) struct ManagedWrite<'a>(&'a EngineInner);
 
 impl ManagedWrite<'_> {
+    pub(crate) fn checkpoint_files(
+        &self,
+        actor: &crate::auth::Actor,
+        paths: &[String],
+    ) -> Result<Option<String>, String> {
+        let (name, email) = self.0.identity_for(&account_attribution(actor));
+        let commit =
+            self.0
+                .store
+                .checkpoint_files((&name, &email), "Capture reader release", paths)?;
+        self.finish_operation(paths.iter().map(String::as_str));
+        Ok(commit)
+    }
+
     pub(crate) fn plan_operation(
         &self,
         operation: &str,

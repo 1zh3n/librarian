@@ -377,6 +377,27 @@ fn path_at_rev(
     Ok(Some(source))
 }
 
+pub(crate) fn file_path_before_rename(
+    store: &RevisionStore,
+    space_path: &str,
+    commit: &str,
+) -> Result<Option<String>, String> {
+    validate_space_path(space_path)?;
+    if !is_hex40(commit) {
+        return Err("invalid revision".into());
+    }
+    let repo = store.repo_root().ok_or("no repository")?;
+    let relative = store.rel(space_path);
+    let prefix = space_prefix(store);
+    Ok(
+        path_at_rev(&repo, commit, &relative, prefix.as_deref())?.and_then(|historical| {
+            historical
+                .strip_prefix(prefix.as_deref().unwrap_or_default())
+                .map(str::to_owned)
+        }),
+    )
+}
+
 fn show_blob(repo: &Path, rev: &str, rel: &str) -> Result<Option<Vec<u8>>, String> {
     let spec = format!("{rev}:{rel}");
     match git::run_bytes(repo, &["show", &spec], &[]) {
