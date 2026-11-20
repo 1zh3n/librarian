@@ -19,3 +19,16 @@ export const spikeMarkdown = [
   "潮水退了。",
   "```",
 ].join("\n");
+
+export function spikeFixture(): string {
+  const fixture = new URLSearchParams(window.location.search).get("fixture");
+  if (fixture === "empty") return "";
+  if (fixture !== "anchors") return spikeMarkdown;
+  return [
+    "# 锚点测试",
+    "![迟到的图片](/spike-delayed-image.png)",
+    ...Array.from({ length: 90 }, (_, index) =>
+      index === 12 || index === 60 ? "## 重复标题" : `第 ${index + 1} 段`,
+    ),
+  ].join("\n\n");
+}

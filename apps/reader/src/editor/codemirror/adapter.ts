@@ -12,6 +12,9 @@ import { EditorView, keymap } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
 import { applyTextEdits, editorOffset, editorText, originalOffset, readSource } from "../document";
 import type { SourceDocument, TextEdit } from "../document";
+import { anchorSampleInset, blockAtOffset, resolveAnchor } from "../../markdown/anchors";
+import type { ScrollAnchor } from "../../markdown/anchors";
+import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
 import { livePreview } from "./livePreview";
 import { frontMatterRange } from "./syntax";
@@ -69,6 +72,12 @@ export interface EditorSession {
   source(): string;
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
+  captureAnchor(viewport: HTMLElement, blocks: readonly Block[]): ScrollAnchor | undefined;
+  restoreAnchor(
+    viewport: HTMLElement,
+    blocks: readonly Block[],
+    anchor: ScrollAnchor,
+  ): Promise<boolean>;
   mount(parent: HTMLElement): () => void;
 }
 
@@ -133,6 +142,39 @@ export function openEditor(initial: string): EditorSession {
         view.focus();
       } else {
         state = transaction.state;
+      }
+      return true;
+    },
+    captureAnchor(viewport, blocks) {
+      if (!view || viewport.scrollTop === 0) return;
+      const top = viewport.getBoundingClientRect().top;
+      const sampled = view.lineBlockAtHeight(top + anchorSampleInset - view.documentTop);
+      const source = state.field(sourceField);
+      const block = blockAtOffset(blocks, originalOffset(source, sampled.from));
+      if (block) {
+        const start = view.lineBlockAt(editorOffset(source, block.from));
+        return {
+          blockId: block.id,
+          sourceOffset: block.from,
+          insetPx: view.documentTop + start.top - top,
+        };
+      }
+    },
+    async restoreAnchor(viewport, blocks, anchor) {
+      const mounted = view;
+      const block = resolveAnchor(blocks, anchor, true);
+      if (!mounted || !block) return false;
+      const at = editorOffset(state.field(sourceField), block.from);
+      mounted.dispatch({
+        selection: { anchor: at },
+        effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 0 }),
+      });
+      for (let i = 0; i < 3; i++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (view !== mounted) return false;
+        const inset =
+          mounted.documentTop + mounted.lineBlockAt(at).top - viewport.getBoundingClientRect().top;
+        viewport.scrollTop += inset - anchor.insetPx;
       }
       return true;
     },
