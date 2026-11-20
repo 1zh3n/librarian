@@ -13,6 +13,7 @@ pub mod listing_cache;
 pub mod metrics;
 pub mod multi;
 pub mod page_watch;
+pub mod product;
 pub mod revisions;
 pub mod router;
 pub mod runtime;
