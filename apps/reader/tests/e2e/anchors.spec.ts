@@ -86,3 +86,47 @@ test("empty_document_switches_surfaces", async ({ page }) => {
   await page.getByRole("button", { name: "返回阅读" }).click();
   await expect(page.getByRole("article")).toBeEmpty();
 });
+
+test("removed_duplicate_uses_transaction_mapped_anchor", async ({ page }) => {
+  await page.goto("/");
+  const id = await page.evaluate(async () => {
+    const editorModule = "/src/editor/codemirror/adapter.ts";
+    const markdownModule = "/src/markdown/analyze.ts";
+    const anchorsModule = "/src/markdown/anchors.ts";
+    const { openEditor } = await import(/* @vite-ignore */ editorModule);
+    const { analyzeMarkdown } = await import(/* @vite-ignore */ markdownModule);
+    const { restoreReaderAnchor } = await import(/* @vite-ignore */ anchorsModule);
+    const source = "甲\n\n重复📝\n\n丙\n\n重复📝\n\n丁";
+    const before = analyzeMarkdown(source, "spike");
+    const session = openEditor(source);
+    const removed = before.blocks[1];
+    session.trackAnchor({ blockId: removed.id, sourceOffset: removed.from, insetPx: 0 });
+    // A preceding edit moves the deleted anchor right. Reusing the old offset
+    // or duplicate ID would resolve a different paragraph.
+    session.applyChanges([
+      { from: 0, to: 0, insert: "很长的开头\n\n" },
+      { from: removed.from, to: before.blocks[2].from, insert: "" },
+    ]);
+    const after = analyzeMarkdown(session.source(), "spike");
+    const viewport = document.createElement("div");
+    viewport.style.cssText = "height:80px;overflow:auto";
+    const article = viewport.appendChild(document.createElement("article"));
+    for (const block of after.blocks) {
+      const element = article.appendChild(document.createElement("p"));
+      element.dataset.blockId = block.id;
+      element.style.cssText = "margin:0;height:80px";
+      element.textContent = session.source().slice(block.from, block.to);
+    }
+    document.body.append(viewport);
+    const anchor = session.trackedAnchor();
+    const dispose = restoreReaderAnchor(viewport, after.blocks, anchor.anchor, anchor.sameRevision);
+    const target = Array.from(article.children).find(
+      (element) =>
+        Math.abs(element.getBoundingClientRect().top - viewport.getBoundingClientRect().top) < 1,
+    );
+    dispose();
+    viewport.remove();
+    return target?.textContent;
+  });
+  expect(id).toBe("丙");
+});

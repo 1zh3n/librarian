@@ -1,56 +1,94 @@
 import { markdown } from "@codemirror/lang-markdown";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, invertedEffects } from "@codemirror/commands";
 import {
   Compartment,
   EditorState,
-  MapMode,
   StateEffect,
   StateField,
   Text,
   Transaction,
 } from "@codemirror/state";
+import type { ChangeSet } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
-import { applyTextEdits, editorOffset, editorText, originalOffset, readSource } from "../document";
+import {
+  applyTextEdits,
+  editorOffset,
+  editorText,
+  originalLineEndings,
+  originalOffset,
+  readSource,
+} from "../document";
 import type { SourceDocument, TextEdit } from "../document";
 import { anchorSampleInset, blockAtOffset, resolveAnchor } from "../../markdown/anchors";
-import type { ScrollAnchor } from "../../markdown/anchors";
+import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
 import { livePreview } from "./livePreview";
 import { frontMatterRange } from "./syntax";
 
 const replaceSource = StateEffect.define<SourceDocument>();
+const restoreLineEndings = StateEffect.define<readonly TextEdit[]>();
+
+function projectSource(source: SourceDocument, changes: ChangeSet): SourceDocument {
+  const edits: TextEdit[] = [];
+  changes.iterChanges((from, to, _start, _end, inserted) => {
+    edits.push({
+      from: originalOffset(source, from),
+      to: originalOffset(source, to),
+      insert: inserted.toString(),
+    });
+  });
+  return readSource(applyTextEdits(source.value, edits));
+}
 
 const sourceField = StateField.define<SourceDocument>({
   create(state) {
     return readSource(state.doc.toString());
   },
   update(source, transaction) {
-    for (const effect of transaction.effects) {
-      if (effect.is(replaceSource)) {
-        return effect.value;
+    // Grouped undo stores inverse effects in reverse edit order. The last
+    // snapshot describes the same document as the composed inverse changes.
+    for (let index = transaction.effects.length - 1; index >= 0; index--) {
+      const effect = transaction.effects[index]!;
+      if (effect.is(replaceSource)) return effect.value;
+      if (effect.is(restoreLineEndings)) {
+        return readSource(applyTextEdits(transaction.newDoc.toString(), effect.value));
       }
     }
-    if (!transaction.docChanged) {
-      return source;
-    }
-
-    const edits: TextEdit[] = [];
-    transaction.changes.iterChanges((from, to, _start, _end, inserted) => {
-      edits.push({
-        from: originalOffset(source, from),
-        to: originalOffset(source, to),
-        insert: inserted.toString(),
-      });
-    });
-
-    const crlf = source.crlf.flatMap((offset) => {
-      const mapped = transaction.changes.mapPos(offset, 1, MapMode.TrackAfter);
-      return mapped === null ? [] : [mapped];
-    });
-    return { value: applyTextEdits(source.value, edits), crlf };
+    return transaction.docChanged ? projectSource(source, transaction.changes) : source;
   },
+});
+
+const sourceHistory = invertedEffects.of((transaction) => {
+  if (
+    !transaction.docChanged &&
+    !transaction.effects.some((effect) => effect.is(replaceSource) || effect.is(restoreLineEndings))
+  ) {
+    return [];
+  }
+  return [
+    restoreLineEndings.of(originalLineEndings(transaction.startState.field(sourceField).value)),
+  ];
+});
+
+const reconcileLineEndings = EditorState.transactionFilter.of((transaction) => {
+  if (!transaction.docChanged || transaction.effects.some((effect) => effect.is(replaceSource))) {
+    return transaction;
+  }
+  const before = transaction.startState.field(sourceField);
+  if (!before.value.includes("\r")) return transaction;
+
+  const after = projectSource(before, transaction.changes);
+  const expected = editorText(after.value);
+  return [
+    transaction,
+    {
+      sequential: true,
+      changes: minimalChange(transaction.newDoc.toString(), expected),
+      effects: replaceSource.of(after),
+    },
+  ];
 });
 
 function minimalChange(before: string, after: string): TextEdit[] {
@@ -89,11 +127,14 @@ export interface EditorSession {
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
+  trackAnchor(anchor: ScrollAnchor | undefined): void;
+  trackedAnchor(): AnchorPlacement | undefined;
   captureAnchor(viewport: HTMLElement, blocks: readonly Block[]): ScrollAnchor | undefined;
   restoreAnchor(
     viewport: HTMLElement,
     blocks: readonly Block[],
     anchor: ScrollAnchor,
+    sameRevision: boolean,
   ): Promise<boolean>;
   mount(parent: HTMLElement): () => void;
 }
@@ -118,6 +159,8 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       : { anchor: metadata ? Math.min(metadata.to + 1, doc.length) : 0 },
     extensions: [
       sourceField.init(() => source),
+      sourceHistory,
+      reconcileLineEndings,
       undoHistory.of(history()),
       markdown({ extensions: GFM, completeHTMLTags: false }),
       composing,
@@ -129,12 +172,20 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     ],
   });
   let view: EditorView | undefined;
+  let tracked: { anchor: ScrollAnchor; position: number; source: string } | undefined;
+
+  function record(transaction: Transaction) {
+    if (tracked && transaction.docChanged) {
+      tracked.position = transaction.changes.mapPos(tracked.position);
+    }
+    state = transaction.state;
+  }
 
   function dispatch(transaction: Transaction) {
     if (view) {
       view.dispatch(transaction);
     } else {
-      state = transaction.state;
+      record(transaction);
     }
   }
 
@@ -215,13 +266,27 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       const transaction = state.update({
         effects: preview.reconfigure(enabled ? [] : livePreview),
       });
-      if (view) {
-        view.dispatch(transaction);
-        view.focus();
-      } else {
-        state = transaction.state;
-      }
+      dispatch(transaction);
+      view?.focus();
       return true;
+    },
+    trackAnchor(anchor) {
+      const current = state.field(sourceField);
+      tracked = anchor
+        ? {
+            anchor,
+            position: editorOffset(current, anchor.sourceOffset),
+            source: current.value,
+          }
+        : undefined;
+    },
+    trackedAnchor() {
+      if (!tracked) return;
+      const current = state.field(sourceField);
+      return {
+        anchor: { ...tracked.anchor, sourceOffset: originalOffset(current, tracked.position) },
+        sameRevision: tracked.source === current.value,
+      };
     },
     captureAnchor(viewport, blocks) {
       if (!view || viewport.scrollTop === 0) return;
@@ -238,18 +303,19 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         };
       }
     },
-    async restoreAnchor(viewport, blocks, anchor) {
+    async restoreAnchor(viewport, blocks, anchor, sameRevision) {
       const mounted = view;
-      const block = resolveAnchor(blocks, anchor, true);
+      const block = resolveAnchor(blocks, anchor, sameRevision);
       if (!mounted || !block) return false;
       const at = editorOffset(state.field(sourceField), block.from);
       mounted.dispatch({
         selection: { anchor: at },
         effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 0 }),
       });
+      const targetDoc = mounted.state.doc;
       for (let i = 0; i < 3; i++) {
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        if (view !== mounted) return false;
+        if (view !== mounted || mounted.state.doc !== targetDoc) return false;
         const inset =
           mounted.documentTop + mounted.lineBlockAt(at).top - viewport.getBoundingClientRect().top;
         viewport.scrollTop += inset - anchor.insetPx;
@@ -266,7 +332,9 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         dispatchTransactions(transactions, editor) {
           const wasComposing = state.field(composing);
           editor.update(transactions);
-          state = editor.state;
+          for (const transaction of transactions) {
+            record(transaction);
+          }
           if (wasComposing && !state.field(composing) && pendingExternal) {
             queueMicrotask(settleDeferred);
           }

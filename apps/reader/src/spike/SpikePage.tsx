@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "react-aria-components/Button";
 import { openEditor } from "../editor/codemirror/adapter";
 import { captureReaderAnchor, restoreReaderAnchor } from "../markdown/anchors";
-import type { ScrollAnchor } from "../markdown/anchors";
+import type { AnchorPlacement } from "../markdown/anchors";
 import { analyzeMarkdown } from "../markdown/analyze";
 import { ReaderSurface } from "../markdown/ReaderSurface";
 import { spikeFixture } from "./fixture";
@@ -12,10 +12,13 @@ export function SpikePage() {
   const [editing, setEditing] = useState(false);
   const [sourceMode, setSourceMode] = useState(false);
   const [session] = useState(() => openEditor(spikeFixture()));
-  const [analysis, setAnalysis] = useState(() => analyzeMarkdown(session.source(), "spike"));
+  const [reading, setReading] = useState(() => {
+    const source = session.source();
+    return { source, analysis: analyzeMarkdown(source, "spike") };
+  });
   const viewport = useRef<HTMLDivElement>(null);
   const restoringEditor = useRef(false);
-  const pendingAnchor = useRef<ScrollAnchor | undefined>(undefined);
+  const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
 
   const mountEditor = useCallback(
     (parent: HTMLDivElement | null) => {
@@ -26,13 +29,18 @@ export function SpikePage() {
 
   useLayoutEffect(() => {
     const surface = viewport.current;
-    const anchor = pendingAnchor.current;
-    if (!surface || !anchor) return;
+    const placement = pendingAnchor.current;
+    if (!surface || !placement) return;
     if (editing) {
       restoringEditor.current = true;
       let cancelled = false;
       const frame = requestAnimationFrame(() => {
-        void session.restoreAnchor(surface, analysis.blocks, anchor).then(() => {
+        const target = session.trackedAnchor() ?? placement;
+        const current = session.source();
+        const blocks = (
+          current === reading.source ? reading.analysis : analyzeMarkdown(current, "spike")
+        ).blocks;
+        void session.restoreAnchor(surface, blocks, target.anchor, target.sameRevision).then(() => {
           if (!cancelled) restoringEditor.current = false;
         });
       });
@@ -41,23 +49,36 @@ export function SpikePage() {
         cancelAnimationFrame(frame);
       };
     }
-    return restoreReaderAnchor(surface, analysis.blocks, anchor);
-  }, [editing, analysis, session]);
+    return restoreReaderAnchor(
+      surface,
+      reading.analysis.blocks,
+      placement.anchor,
+      placement.sameRevision,
+    );
+  }, [editing, reading, session]);
 
   function enterEditor() {
-    if (viewport.current) {
-      pendingAnchor.current = captureReaderAnchor(viewport.current, analysis.blocks);
-    }
+    const anchor = viewport.current
+      ? captureReaderAnchor(viewport.current, reading.analysis.blocks)
+      : undefined;
+    session.trackAnchor(anchor);
+    pendingAnchor.current = anchor ? { anchor, sameRevision: true } : undefined;
     setEditing(true);
   }
 
   function leaveEditor() {
-    const next = analyzeMarkdown(session.source(), "spike");
-    if (viewport.current && !restoringEditor.current) {
-      pendingAnchor.current = session.captureAnchor(viewport.current, next.blocks);
+    const source = session.source();
+    const next =
+      source === reading.source ? reading : { source, analysis: analyzeMarkdown(source, "spike") };
+    if (restoringEditor.current) {
+      pendingAnchor.current = session.trackedAnchor();
+    } else if (viewport.current) {
+      const anchor = session.captureAnchor(viewport.current, next.analysis.blocks);
+      pendingAnchor.current = anchor ? { anchor, sameRevision: true } : undefined;
     }
     restoringEditor.current = false;
-    setAnalysis(next);
+    session.trackAnchor(undefined);
+    setReading(next);
     setEditing(false);
   }
 
@@ -83,7 +104,7 @@ export function SpikePage() {
       </div>
       <div className={styles.viewport} ref={viewport} data-scroll-surface="">
         <div className={styles.canvas}>
-          {editing ? <div ref={mountEditor} /> : <ReaderSurface analysis={analysis} />}
+          {editing ? <div ref={mountEditor} /> : <ReaderSurface analysis={reading.analysis} />}
         </div>
       </div>
     </main>

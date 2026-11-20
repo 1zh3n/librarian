@@ -14,6 +14,18 @@ export function readSource(value: string): SourceDocument {
   return { value, crlf };
 }
 
+export function originalLineEndings(value: string): TextEdit[] {
+  const endings: TextEdit[] = [];
+  let crlf = 0;
+  for (const match of value.matchAll(/\r\n?/g)) {
+    const from = match.index - crlf;
+    const insert = match[0];
+    endings.push({ from, to: from + 1, insert });
+    if (insert.length === 2) crlf++;
+  }
+  return endings;
+}
+
 export function editorText(source: string): string {
   return source.replace(/\r\n?/g, "\n");
 }

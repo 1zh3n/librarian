@@ -6,6 +6,8 @@ export interface ScrollAnchor {
   readonly insetPx: number;
 }
 
+export type AnchorPlacement = { readonly anchor: ScrollAnchor; readonly sameRevision: boolean };
+
 // Sample below the viewport edge so a sliver of the previous block does not
 // become the anchor when the next block is already being read.
 export const anchorSampleInset = 36;
@@ -46,8 +48,9 @@ export function restoreReaderAnchor(
   viewport: HTMLElement,
   blocks: readonly Block[],
   anchor: ScrollAnchor,
+  sameRevision: boolean,
 ): () => void {
-  const block = resolveAnchor(blocks, anchor, true);
+  const block = resolveAnchor(blocks, anchor, sameRevision);
   const target = block && viewport.querySelector(`[data-block-id="${CSS.escape(block.id)}"]`);
   const article = viewport.querySelector("article");
   if (!target || !article) return () => {};
