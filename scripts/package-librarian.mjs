@@ -21,6 +21,7 @@ if (process.platform !== "linux" || process.arch !== "x64" || process.argv.lengt
 
 const destination = resolve(process.argv[2]);
 const revision = run("git", ["rev-parse", "HEAD"]);
+const timestamp = run("git", ["show", "-s", "--format=%ct", revision]);
 if (run("git", ["status", "--porcelain"])) {
   throw new Error("Build and package from a clean release checkout");
 }
@@ -28,7 +29,9 @@ for (const [program, args] of [
   ["npm", ["run", "build", "-w", "@librarian/reader"]],
   ["cargo", ["build", "--locked", "--release", "-p", "librarian", "-p", "docs"]],
 ]) {
-  execFileSync(program, args, { cwd: root, stdio: "inherit" });
+  execFileSync(program, args, {
+    cwd: root, stdio: "inherit", env: { ...process.env, SOURCE_DATE_EPOCH: timestamp },
+  });
 }
 const host = run("rustc", ["-vV"]).match(/^host: (.+)$/m)?.[1];
 const cargo = readJsonFrom("cargo", [
@@ -99,7 +102,6 @@ try {
   mkdirSync(destination, { recursive: true });
   const filename = `${name}.tar.gz`;
   const archive = join(destination, filename);
-  const timestamp = run("git", ["show", "-s", "--format=%ct", revision]);
   run("tar", [
     "--sort=name", `--mtime=@${timestamp}`, "--owner=0", "--group=0", "--numeric-owner",
     "-czf", archive, "-C", staging, name,

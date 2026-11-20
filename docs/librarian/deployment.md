@@ -2,6 +2,8 @@
 
 发行归档包含 Linux x86_64 的 `librarian`、`bin/docs`、许可证、可独立运行的 AI 示例和本页。检查 SHA-256 后解包。Librarian 二进制已嵌入 Web 界面，安装时需要 Git，启用 Zola 发布时还需要安装 Zola 0.23.6。启用 AI 示例时使用 Node.js 24。 [Zola 0.23.6](https://github.com/getzola/zola/releases/tag/v0.23.6)
 
+本次本机发行需要 glibc 2.39 或更新版本。
+
 ```bash
 sha256sum -c librarian-0.1.0-linux-x86_64.tar.gz.sha256
 tar -xzf librarian-0.1.0-linux-x86_64.tar.gz
