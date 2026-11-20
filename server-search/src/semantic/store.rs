@@ -224,10 +224,8 @@ pub fn load_state(path: &Path, expect: &Header) -> Result<(VectorIndex, bool), S
         for c in page.chunks {
             let (raw, rest) = floats.split_at(meta.dim * 4);
             floats = rest;
-            let vector: Vec<f32> = raw
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes(b.try_into().expect("4 bytes")))
-                .collect();
+            let (raw, _) = raw.as_chunks();
+            let vector: Vec<f32> = raw.iter().copied().map(f32::from_le_bytes).collect();
             if !vector.iter().all(|v| v.is_finite()) {
                 return Err(corrupt("a vector is not finite"));
             }

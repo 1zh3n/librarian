@@ -129,14 +129,17 @@ fn decode_rgba(png_bytes: &[u8]) -> Result<Decoded, RuntimeError> {
     let (width, height) = (info.width as usize, info.height as usize);
     let rgba = match info.color_type {
         png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf
-            .chunks_exact(3)
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        png::ColorType::GrayscaleAlpha => buf
-            .chunks_exact(2)
-            .flat_map(|p| [p[0], p[0], p[0], p[1]])
-            .collect(),
+        png::ColorType::Rgb => {
+            let (pixels, _) = buf.as_chunks();
+            pixels
+                .iter()
+                .flat_map(|&[r, g, b]| [r, g, b, 255])
+                .collect()
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let (pixels, _) = buf.as_chunks();
+            pixels.iter().flat_map(|&[g, a]| [g, g, g, a]).collect()
+        }
         png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
         other => {
             return Err(RuntimeError::Transport(format!(

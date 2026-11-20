@@ -315,7 +315,7 @@ async fn authorize_get(
     let authorize_url = format!("{AUTHORIZE_PATH}?{query}");
     match check_authorize(&st, &headers, &params, Some(&authorize_url)).await {
         Ok(req) => st.consent.on_get(&st, &headers, &authorize_url, req).await,
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -327,7 +327,7 @@ async fn authorize_post(
     let form = parse_pairs(&body);
     match check_authorize(&st, &headers, &form, None).await {
         Ok(req) => st.consent.on_post(&st, &headers, req, &form).await,
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -361,8 +361,8 @@ async fn check_authorize(
     headers: &HeaderMap,
     params: &[(String, String)],
     authorize_url: Option<&str>,
-) -> Result<ConsentRequest, Response> {
-    let page = |message: &str| st.consent.error_page(StatusCode::BAD_REQUEST, message);
+) -> Result<ConsentRequest, Box<Response>> {
+    let page = |message: &str| Box::new(st.consent.error_page(StatusCode::BAD_REQUEST, message));
     let (Ok(Some(client_id)), Ok(Some(redirect_uri))) =
         (single(params, "client_id"), single(params, "redirect_uri"))
     else {
@@ -372,16 +372,16 @@ async fn check_authorize(
     };
     if is_metadata_url(client_id) {
         if let Some(response) = st.consent.before_fetch(st, headers, authorize_url).await {
-            return Err(response);
+            return Err(Box::new(response));
         }
     }
     let client = match resolve_client(client_id, &st.clients, &st.cimd).await {
         Ok(client) => client,
         Err(OAuthError::TemporarilyUnavailable) => {
-            return Err(st.consent.error_page(
+            return Err(Box::new(st.consent.error_page(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "The app could not be checked right now. Try again later.",
-            ))
+            )))
         }
         Err(_) => {
             return Err(page(
@@ -405,11 +405,11 @@ async fn check_authorize(
             code_challenge: challenge.to_string(),
             resource,
         }),
-        Err(error) => Err(found(authorization_redirect(
+        Err(error) => Err(Box::new(found(authorization_redirect(
             redirect_uri,
             &[("error", error)],
             state,
-        ))),
+        )))),
     }
 }
 

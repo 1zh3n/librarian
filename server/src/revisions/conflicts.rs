@@ -233,7 +233,8 @@ fn text_attributes(repo: &Path, path: &str) -> Option<usize> {
     .ok()?;
     let parts: Vec<_> = out.split(|b| *b == 0).collect();
     let mut size = 7;
-    for triple in parts.chunks_exact(3) {
+    let (attributes, _) = parts.as_chunks::<3>();
+    for triple in attributes {
         let name = std::str::from_utf8(triple[1]).ok()?;
         let value = std::str::from_utf8(triple[2]).ok()?;
         match name {
@@ -273,11 +274,8 @@ fn complete_markers(body: &str, size: usize) -> bool {
 }
 
 fn marker_remains(body: &str) -> bool {
-    body.lines().any(|line| {
-        [b'<', b'=', b'>', b'|']
-            .iter()
-            .any(|b| marker(line.trim_start(), 3, *b))
-    })
+    body.lines()
+        .any(|line| b"<=>|".iter().any(|b| marker(line.trim_start(), 3, *b)))
 }
 
 fn classify_entry(
