@@ -13,3 +13,7 @@ pub fn reader_asset(path: &str) -> Option<ProductAsset> {
         content_type: asset.metadata.mimetype().to_owned(),
     })
 }
+
+#[derive(RustEmbed)]
+#[folder = "$CARGO_MANIFEST_DIR/src/auth-assets/"]
+pub(crate) struct ConsentAssets;

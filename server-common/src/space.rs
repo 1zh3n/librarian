@@ -5,6 +5,7 @@ pub mod conditional;
 pub mod config_migration;
 pub mod disk;
 pub mod embed;
+mod embedded_assets;
 pub mod http;
 pub mod legacy_repositories;
 pub mod readonly;
@@ -16,6 +17,7 @@ pub use embed::{
     bundled_repositories, layer_perm, EmptySpacePrimitives, FallthroughSpacePrimitives,
     ReadOnlyDirSpacePrimitives, BUNDLED_COPY_ON_WRITE,
 };
+pub use embedded_assets::EmbeddedSpace;
 pub use http::HttpSpacePrimitives;
 pub use legacy_repositories::remove_legacy_repository_pages;
 pub use readonly::ReadOnlySpacePrimitives;

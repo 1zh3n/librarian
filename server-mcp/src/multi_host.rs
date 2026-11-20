@@ -21,6 +21,7 @@ pub struct MultiHost {
     manager: Arc<MultiManager>,
     users: Arc<UserStore>,
     oauth: Option<OAuth>,
+    login_path: &'static str,
 }
 
 struct OAuth {
@@ -34,6 +35,7 @@ impl MultiHost {
             manager,
             users,
             oauth: None,
+            login_path: "/.dashboard/login",
         }
     }
 
@@ -46,6 +48,11 @@ impl MultiHost {
             authenticator,
             grants,
         });
+        self
+    }
+
+    pub fn with_login_path(mut self, path: &'static str) -> Self {
+        self.login_path = path;
         self
     }
 
@@ -229,7 +236,8 @@ impl McpAccountHost for MultiHost {
 
     fn login_url(&self, return_to: &str) -> String {
         format!(
-            "/.dashboard/login?next={}",
+            "{}?next={}",
+            self.login_path,
             percent_encoding::utf8_percent_encode(return_to, percent_encoding::NON_ALPHANUMERIC)
         )
     }

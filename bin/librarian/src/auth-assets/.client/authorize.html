@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Librarian 授权</title>
+</head>
+<body>
+<main>
+  {% if error %}
+    <h1>连接失败</h1>
+    <p>{{ error }}</p>
+  {% else %}
+    <h1>{{ client_name }} 请求访问 Librarian</h1>
+    <p>当前账户 {{ username }}</p>
+    {% if verified_host %}
+      <p>已验证来源 {{ verified_host }}</p>
+    {% else %}
+      <p>应用名称由发起方自行注册，回调地址为 {{ redirect_host }}。</p>
+    {% endif %}
+    <form method="post" action="/.auth/mcp/authorize">
+      {% for field in fields %}
+        <input type="hidden" name="{{ field[0] }}" value="{{ field[1] }}">
+      {% endfor %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <fieldset>
+        <legend>允许该应用读写的 Workspace</legend>
+        {% for space in spaces %}
+          <label><input type="checkbox" name="space" value="{{ space.id }}"> {{ space.name }}{% if space.shared %}（共享）{% endif %}</label>
+        {% endfor %}
+      </fieldset>
+      <button name="decision" value="approve">允许</button>
+      <button name="decision" value="deny">取消</button>
+    </form>
+  {% endif %}
+</main>
+</body>
+</html>
