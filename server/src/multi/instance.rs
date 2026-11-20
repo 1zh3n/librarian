@@ -70,6 +70,8 @@ pub struct InstanceDeps {
     /// regardless of its own `spaces.json` settings. It only ever disables:
     /// a space that turned the shell off stays off.
     pub shell_disabled: bool,
+    /// Preserve stored Markdown bytes when this server creates managed Git versions.
+    pub exact_markdown_revisions: bool,
     /// Process-wide shutdown signal, cloned into every instance's
     /// `ServerState::shutdown`. See that field's doc comment.
     pub shutdown: Option<tokio::sync::watch::Receiver<()>>,
@@ -494,13 +496,15 @@ fn try_build_parts(
     let (quiet, max_interval) = config.revisions_commit().effective();
     // Revisions write into the space folder, which an in-memory server never does.
     let store = root.and_then(|root| {
-        crate::revisions::RevisionStore::open(&folder, config.revisions).filter(|store| {
-            !store
-                .repo_root()
-                .and_then(|repo| repo.canonicalize().ok())
-                .zip(root.canonicalize().ok())
-                .is_some_and(|(repo, root)| root.starts_with(repo))
-        })
+        crate::revisions::RevisionStore::open(&folder, config.revisions)
+            .filter(|store| {
+                !store
+                    .repo_root()
+                    .and_then(|repo| repo.canonicalize().ok())
+                    .zip(root.canonicalize().ok())
+                    .is_some_and(|(repo, root)| root.starts_with(repo))
+            })
+            .map(|store| store.with_exact_markdown(deps.exact_markdown_revisions))
     });
     let revisions_mode = if store.is_some() {
         config.revisions
@@ -635,6 +639,7 @@ mod tests {
             main_port: 3000,
             disable_service_worker: true,
             shell_disabled: false,
+            exact_markdown_revisions: false,
             shutdown: None,
             search: crate::search::SpaceSearch::in_memory(),
         }

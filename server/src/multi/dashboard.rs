@@ -501,6 +501,7 @@ mod tests {
             main_port: 3000,
             disable_service_worker: true,
             shell_disabled: false,
+            exact_markdown_revisions: false,
             shutdown: None,
             search: crate::search::SpaceSearch::in_memory(),
         };

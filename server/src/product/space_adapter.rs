@@ -56,6 +56,7 @@ impl NativeSpaces {
             main_port: port,
             disable_service_worker: true,
             shell_disabled: true,
+            exact_markdown_revisions: true,
             shutdown: None,
             search: SpaceSearch::in_root(search_root(root)),
         };

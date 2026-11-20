@@ -1,4 +1,4 @@
-use std::{fs, time::Duration};
+use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use axum::{
     body::{to_bytes, Body},
@@ -110,6 +110,25 @@ impl Fixture {
             .await;
         assert_eq!(status, StatusCode::OK, "{history}");
         history
+    }
+
+    fn repo(&self) -> PathBuf {
+        self.root.path().join("spaces/field")
+    }
+
+    fn git(&self, args: &[&str]) -> Vec<u8> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(self.repo())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
     }
 }
 
@@ -238,4 +257,123 @@ async fn revision_disabled_reports_unavailable() {
     assert_eq!(unavailable["code"], "revisions_disabled");
     let (_, previous) = f.request("GET", &document, Value::Null).await;
     assert_eq!(f.save(&document, &previous, NEXT).await["markdown"], NEXT);
+}
+
+#[tokio::test]
+async fn managed_versions_preserve_markdown_bytes_with_git_normalization() {
+    for use_attributes in [false, true] {
+        let f = Fixture::new("managed", 30);
+        if use_attributes {
+            fs::write(f.repo().join(".gitattributes"), "*.md text eol=lf\n").unwrap();
+        } else {
+            f.git(&["config", "--local", "core.autocrlf", "true"]);
+        }
+        let document = f.document().await;
+        let (_, original) = f.request("GET", &document, Value::Null).await;
+        let exact = "\u{feff}中文第一行\r\n第二行尾随空格  \r\n";
+        let saved = f.save(&document, &original, exact).await;
+        f.engine.as_ref().unwrap().commit_now();
+        assert_eq!(f.git(&["show", "HEAD:Journal.md"]), exact.as_bytes());
+        let previous = f.history(&document).await;
+        assert_eq!(previous["uncommitted"], false);
+        let target = previous["revisions"][0]["commitId"].as_str().unwrap();
+        let unsnapshotted = "第三稿\r\n仍应完整恢复  \r\n";
+        let next = f.save(&document, &saved, unsnapshotted).await;
+        let (status, restored) = f
+            .request(
+                "POST",
+                &format!("{document}/restore"),
+                json!({"baseRevision":next["revision"],"commitId":target}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{restored}");
+        assert_eq!(restored["snapshot"]["markdown"], exact);
+        assert_eq!(
+            fs::read(f.repo().join("Journal.md")).unwrap(),
+            exact.as_bytes()
+        );
+        assert_eq!(f.git(&["show", "HEAD:Journal.md"]), exact.as_bytes());
+        assert_eq!(
+            f.git(&["show", "HEAD^:Journal.md"]),
+            unsnapshotted.as_bytes()
+        );
+    }
+}
+
+#[tokio::test]
+async fn failed_restore_leaves_head_body_and_index_unchanged() {
+    for checkpoint_pending in [false, true] {
+        let f = Fixture::new("managed", 30);
+        let document = f.document().await;
+        let (_, original) = f.request("GET", &document, Value::Null).await;
+        let history = f.history(&document).await;
+        let target = history["revisions"][0]["commitId"].as_str().unwrap();
+        let saved = f.save(&document, &original, NEXT).await;
+        if !checkpoint_pending {
+            f.engine.as_ref().unwrap().commit_now();
+        }
+
+        let head = f.git(&["rev-parse", "HEAD"]);
+        let index = fs::read(f.repo().join(".git/index")).unwrap();
+        // Block publication of the commit after Git has already staged its paths.
+        let branch = String::from_utf8(f.git(&["symbolic-ref", "HEAD"])).unwrap();
+        let ref_lock = f
+            .repo()
+            .join(".git")
+            .join(format!("{}.lock", branch.trim()));
+        fs::write(&ref_lock, "").unwrap();
+        let (status, failure) = f
+            .request(
+                "POST",
+                &format!("{document}/restore"),
+                json!({"baseRevision":saved["revision"],"commitId":target}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{failure}");
+        assert_eq!(f.git(&["rev-parse", "HEAD"]), head);
+        assert_eq!(
+            fs::read(f.repo().join("Journal.md")).unwrap(),
+            NEXT.as_bytes()
+        );
+        assert_eq!(fs::read(f.repo().join(".git/index")).unwrap(), index);
+
+        if checkpoint_pending {
+            fs::remove_file(ref_lock).unwrap();
+            f.engine.as_ref().unwrap().commit_now();
+            assert_eq!(f.git(&["show", "HEAD:Journal.md"]), NEXT.as_bytes());
+        }
+    }
+}
+
+#[tokio::test]
+async fn restore_leaves_unrelated_staged_files_in_the_index() {
+    let f = Fixture::new("managed", 30);
+    let document = f.document().await;
+    let (_, original) = f.request("GET", &document, Value::Null).await;
+    let history = f.history(&document).await;
+    let target = history["revisions"][0]["commitId"].as_str().unwrap();
+    let saved = f.save(&document, &original, NEXT).await;
+    f.engine.as_ref().unwrap().commit_now();
+    // The Space watcher ignores this dot file. It only belongs to the Git index.
+    fs::write(f.repo().join(".staged-note"), "separately staged\n").unwrap();
+    f.git(&["add", "--", ".staged-note"]);
+    let (status, result) = f
+        .request(
+            "POST",
+            &format!("{document}/restore"),
+            json!({"baseRevision":saved["revision"],"commitId":target}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(f.git(&["show", "HEAD:Journal.md"]), ORIGINAL.as_bytes());
+    assert_eq!(f.git(&["show", "HEAD^:Journal.md"]), NEXT.as_bytes());
+    assert_eq!(
+        f.git(&["ls-tree", "-r", "--name-only", "HEAD", "--", ".staged-note"]),
+        b""
+    );
+    assert_eq!(
+        f.git(&["diff", "--cached", "--name-only"]),
+        b".staged-note\n"
+    );
+    assert_eq!(f.git(&["show", ":.staged-note"]), b"separately staged\n");
 }

@@ -112,6 +112,11 @@ pub(super) async fn history(
         }
         let result = read::file_history(engine.store(), &path, query.before.as_deref(), limit)
             .map_err(ApiError::internal)?;
+        let uncommitted = engine
+            .store()
+            .exact_markdown_uncommitted(&path)
+            .map_err(ApiError::internal)?
+            .unwrap_or(result.uncommitted);
         let revisions = result
             .revisions
             .into_iter()
@@ -126,7 +131,7 @@ pub(super) async fn history(
             .collect();
         Ok(Json(History {
             mode,
-            uncommitted: result.uncommitted,
+            uncommitted,
             revisions,
             more: result.more,
         }))
@@ -227,12 +232,11 @@ pub(super) async fn restore(
                     "This version matches the current document",
                 ));
             }
-            transaction.checkpoint(&path, &actor).map_err(ApiError::internal)?;
+            let prepared = transaction
+                .prepare_restore(&path, &actor, current.as_bytes(), restored.as_bytes())
+                .map_err(ApiError::internal)?;
             let file = state.space.write_file(&path, restored.as_bytes(), None)?;
-            let commit_id = match transaction
-                .commit_file(&path, &actor, "Restore document version")
-                .and_then(|id| id.ok_or_else(|| "Restoring the document produced no Git commit".to_string()))
-            {
+            let commit_id = match prepared.publish() {
                 Ok(id) => id,
                 Err(error) => {
                     let previous = state.space.write_file(&path, current.as_bytes(), None)
@@ -245,6 +249,7 @@ pub(super) async fn restore(
             };
             let revision = sha256_hex(restored.as_bytes());
             note_file_write(state, &path, &revision, actor, &file);
+            transaction.finish_restore(&path);
             engine.notify_file_saved();
             Ok(Json(Restored {
                 snapshot: snapshot(state, &workspace, document, path, restored, revision),

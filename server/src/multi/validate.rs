@@ -1,5 +1,5 @@
-//! Whole-config validation for multi-space mode. Pure — filesystem checks
-//! (folder accessibility) happen in the manager at apply time.
+//! Whole-config validation for multi-space mode. The manager checks folder
+//! accessibility at apply time.
 
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -343,7 +343,7 @@ pub fn validate_for_primary(
     // Resolved folders must not nest or collide. Resolution mirrors
     // instance::resolve_folder (empty -> spaces/<id>). Collected after the
     // per-space loop and compared pairwise since nesting is order-independent.
-    let resolved: Vec<(String, PathBuf)> = config
+    let resolved: Vec<_> = config
         .spaces
         .iter()
         .filter(|(id, _)| !skipped.contains_key(*id))
@@ -352,12 +352,17 @@ pub fn validate_for_primary(
                 Some(root) => crate::multi::instance::resolve_folder(root, id, &s.folder),
                 None => PathBuf::from(&s.folder),
             };
-            (id.clone(), folder)
+            let canonical = crate::multi::setup::canonicalize_best_effort(&folder);
+            (id, folder, canonical)
         })
         .collect();
-    for (i, (id_a, a)) in resolved.iter().enumerate() {
-        for (id_b, b) in resolved.iter().skip(i + 1) {
-            if a == b || a.starts_with(b) || b.starts_with(a) {
+    for (i, (id_a, a, canonical_a)) in resolved.iter().enumerate() {
+        for (id_b, b, canonical_b) in resolved.iter().skip(i + 1) {
+            if a.starts_with(b)
+                || b.starts_with(a)
+                || canonical_a.starts_with(canonical_b)
+                || canonical_b.starts_with(canonical_a)
+            {
                 err(
                     &mut errors,
                     format!("{id_a}.folder"),
@@ -865,6 +870,37 @@ mod tests {
         );
         b.folder = "spaces/b".into();
         assert!(validate(&cfg(vec![("a", a), ("b", b)]), dir.path(), &users(&[])).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_folders_must_have_distinct_physical_roots() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let one = root.join("one");
+        std::fs::create_dir_all(one.join("child")).unwrap();
+        std::os::unix::fs::symlink(&one, root.join("alias")).unwrap();
+        for alias in ["alias", "alias/child"] {
+            let mut a = space(
+                "A",
+                Binding::Prefix {
+                    prefix: "/a".into(),
+                },
+            );
+            a.folder = "one".into();
+            let mut b = space(
+                "B",
+                Binding::Prefix {
+                    prefix: "/b".into(),
+                },
+            );
+            b.folder = alias.into();
+            let errors = validate(&cfg(vec![("a", a), ("b", b)]), root, &users(&[]));
+            assert!(
+                errors.iter().any(|error| error.field.ends_with(".folder")),
+                "{errors:?}"
+            );
+        }
     }
 
     #[test]

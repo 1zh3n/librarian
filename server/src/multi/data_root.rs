@@ -472,7 +472,8 @@ mod tests {
         assert_eq!(
             watcher_ignore("*.tmp"),
             "*.tmp\n/[gG][iI][tT]-[kK][eE][yY][sS]/\n/[gG][iI][tT]-[dD][rR][aA][fF][tT][sS]/\
-             \n/[gG][iI][tT]-[cC][oO][nN][nN][eE][cC][tT][iI][oO][nN][sS]/\n/[sS][eE][aA][rR][cC][hH]/"
+             \n/[gG][iI][tT]-[cC][oO][nN][nN][eE][cC][tT][iI][oO][nN][sS]/\n/[sS][eE][aA][rR][cC][hH]/\
+             \n/.[lL][iI][bB][rR][aA][rR][iI][aA][nN]/"
         );
     }
 

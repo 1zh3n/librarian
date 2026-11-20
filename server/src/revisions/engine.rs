@@ -1,4 +1,4 @@
-use super::store::RevisionStore;
+use super::store::{PreparedCommit, RevisionStore};
 use super::sync::{self, SyncError, TickOutcome};
 use crate::watcher::{EventOrigin, EventOriginKind, FsAction, FsEvent};
 use serde::Serialize;
@@ -278,10 +278,6 @@ impl EngineInner {
             .mutation
             .write()
             .unwrap_or_else(|e| e.into_inner());
-        self.commit_mutation_locked()
-    }
-
-    fn commit_mutation_locked(&self) -> bool {
         let mut committed = self.ensure_initial_snapshot_locked();
         let (lock, _) = &self.state;
         let batch = {
@@ -726,22 +722,42 @@ fn account_attribution(actor: &crate::auth::Actor) -> Attribution {
 pub(crate) struct ManagedWrite<'a>(&'a EngineInner);
 
 impl ManagedWrite<'_> {
-    pub(crate) fn checkpoint(&self, path: &str, actor: &crate::auth::Actor) -> Result<(), String> {
-        self.0.commit_mutation_locked();
-        self.commit_file(path, actor, "Save before restoring version")?;
-        Ok(())
-    }
-
-    pub(crate) fn commit_file(
+    pub(crate) fn prepare_restore(
         &self,
         path: &str,
         actor: &crate::auth::Actor,
-        message: &str,
-    ) -> Result<Option<String>, String> {
+        current: &[u8],
+        restored: &[u8],
+    ) -> Result<PreparedCommit, String> {
+        let queued = self
+            .0
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .dirty
+            .get(path)
+            .cloned();
+        let checkpoint = queued.as_ref().map(|who| self.0.identity_for(who));
         let (name, email) = self.0.identity_for(&account_attribution(actor));
-        self.0
-            .store
-            .commit_batch(&name, &email, message, &[path.to_string()])
+        self.0.store.prepare_restore(
+            path,
+            (&name, &email),
+            checkpoint
+                .as_ref()
+                .map(|(name, email)| (name.as_str(), email.as_str())),
+            current,
+            restored,
+        )
+    }
+
+    pub(crate) fn finish_restore(&self, path: &str) {
+        let mut pending = self.0.state.0.lock().unwrap_or_else(|e| e.into_inner());
+        pending.dirty.remove(path);
+        if pending.dirty.is_empty() {
+            pending.first_mark = None;
+            pending.last_mark = None;
+        }
     }
 }
 

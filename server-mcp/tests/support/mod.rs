@@ -323,6 +323,7 @@ impl Fixture {
             version: "fixture".into(),
             main_port: 3000,
             disable_service_worker: true,
+            exact_markdown_revisions: false,
             shell_disabled: true,
             shutdown: None,
             search: silverbullet_server::search::SpaceSearch::in_memory(),

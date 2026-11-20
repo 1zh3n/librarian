@@ -1,6 +1,8 @@
 use super::git;
 use silverbullet_server_common::RevisionsMode;
 use std::collections::HashSet;
+use std::fs;
+use std::io::{self, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -28,6 +30,7 @@ pub struct RevisionStore {
     repo: Mutex<Option<PathBuf>>,
     mode: RevisionsMode,
     auto_commit: bool,
+    exact_markdown: bool,
 }
 
 /// The work-tree root of the repository containing `path`, if any.
@@ -143,7 +146,13 @@ impl RevisionStore {
             repo: Mutex::new(repo),
             mode,
             auto_commit,
+            exact_markdown: false,
         })
+    }
+
+    pub(crate) fn with_exact_markdown(mut self, enabled: bool) -> Self {
+        self.exact_markdown = enabled;
+        self
     }
 
     pub fn mode(&self) -> RevisionsMode {
@@ -233,7 +242,12 @@ impl RevisionStore {
         Ok(Some(id.trim().to_string()))
     }
 
-    fn stage_paths(&self, repo: &Path, paths: &[String]) -> Result<(), String> {
+    fn stage_paths(
+        &self,
+        repo: &Path,
+        paths: &[String],
+        env: &[(&str, &str)],
+    ) -> Result<(), String> {
         let rels: Vec<String> = paths.iter().map(|path| self.rel(path)).collect();
         let present: Vec<bool> = rels
             .iter()
@@ -254,7 +268,7 @@ impl RevisionStore {
         } else {
             let mut args: Vec<&str> = vec!["ls-files", "-z", "--cached", "--"];
             args.extend(missing_pathspecs.iter().map(String::as_str));
-            git::run_bytes(repo, &args, &[])?
+            git::run_bytes(repo, &args, env)?
                 .split(|byte| *byte == 0)
                 .filter(|path| !path.is_empty())
                 .map(<[u8]>::to_vec)
@@ -271,7 +285,35 @@ impl RevisionStore {
         }
         let mut add_args: Vec<&str> = vec!["add", "-A", "-f", "--"];
         add_args.extend(stageable.iter().map(String::as_str));
-        git::run(repo, &add_args, &[])?;
+        git::run(repo, &add_args, env)?;
+        Ok(())
+    }
+
+    fn stage_exact_paths(&self, index: &ExactIndex, paths: &[String]) -> Result<(), String> {
+        let mut ordinary = Vec::new();
+        for path in paths {
+            let relative = self.rel(path);
+            if path.ends_with(".md") {
+                let location = index.repo.join(&relative);
+                match fs::symlink_metadata(&location) {
+                    Ok(metadata) if metadata.is_file() => {
+                        // Git will not stage files inside a symlinked directory.
+                        if location.canonicalize().map_err(|error| error.to_string())? == location {
+                            index.stage_markdown(&relative, &metadata, None)?;
+                        }
+                        continue;
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.to_string()),
+                }
+            }
+            ordinary.push(path.clone());
+        }
+        // Limit argument count for bulk snapshots and keep the paths literal.
+        for batch in ordinary.chunks(8) {
+            self.stage_paths(&index.repo, batch, &index.env())?;
+        }
         Ok(())
     }
 
@@ -288,7 +330,13 @@ impl RevisionStore {
             return Ok(None);
         }
         let repo = self.prepare_commit()?;
-        self.stage_paths(&repo, paths)?;
+        if self.exact_markdown {
+            let mut index = ExactIndex::open(repo)?;
+            self.stage_exact_paths(&index, paths)?;
+            index.commit(author_name, author_email, message)?;
+            return index.publish();
+        }
+        self.stage_paths(&repo, paths, &[])?;
         self.commit_staged(&repo, author_name, author_email, message)
     }
 
@@ -306,25 +354,45 @@ impl RevisionStore {
             return Ok(None);
         }
         let repo = self.prepare_commit()?;
-        self.stage_paths(&repo, paths)?;
-        let message = self
-            .classify_staged(&repo, paths)
+        if self.exact_markdown {
+            let mut index = ExactIndex::open(repo)?;
+            self.stage_exact_paths(&index, paths)?;
+            let message = self.auto_message(&index.repo, paths, &index.env());
+            index.commit(author_name, author_email, &message)?;
+            return index.publish();
+        }
+        self.stage_paths(&repo, paths, &[])?;
+        let message = self.auto_message(&repo, paths, &[]);
+        self.commit_staged(&repo, author_name, author_email, &message)
+    }
+
+    fn auto_message(&self, repo: &Path, paths: &[String], env: &[(&str, &str)]) -> String {
+        self.classify_staged(repo, paths, env)
             .ok()
             .and_then(|c| derive_message(&c))
-            .unwrap_or_else(|| fallback_message(paths));
-        self.commit_staged(&repo, author_name, author_email, &message)
+            .unwrap_or_else(|| fallback_message(paths))
     }
 
     /// `-z` records are `<status>\0<path>`, except renames and copies, which
     /// carry a second path -- the destination, which is the one that now exists.
-    fn classify_staged(&self, repo: &Path, paths: &[String]) -> Result<Vec<StagedChange>, String> {
+    fn classify_staged(
+        &self,
+        repo: &Path,
+        paths: &[String],
+        env: &[(&str, &str)],
+    ) -> Result<Vec<StagedChange>, String> {
         let mut args: Vec<&str> = vec!["diff", "--cached", "--name-status", "-z", "--"];
-        let rels: Vec<String> = paths
-            .iter()
-            .map(|p| format!(":(literal){}", self.rel(p)))
-            .collect();
+        // A private index starts at HEAD and contains only this batch's paths.
+        let rels: Vec<String> = if env.is_empty() {
+            paths
+                .iter()
+                .map(|p| format!(":(literal){}", self.rel(p)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         args.extend(rels.iter().map(|s| s.as_str()));
-        let out = git::run(repo, &args, &[])?;
+        let out = git::run(repo, &args, env)?;
         let mut fields = out.split('\0').filter(|f| !f.is_empty());
         let mut changes = Vec::new();
         while let Some(status) = fields.next() {
@@ -362,6 +430,30 @@ impl RevisionStore {
         message: &str,
     ) -> Result<Option<String>, String> {
         let repo = self.prepare_commit()?;
+        if self.exact_markdown {
+            let mut index = ExactIndex::open(repo)?;
+            let files = git::run_bytes(
+                &index.repo,
+                &[
+                    "ls-files",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                    "-z",
+                ],
+                &index.env(),
+            )?;
+            let mut paths: Vec<_> = files
+                .split(|&byte| byte == 0)
+                .filter(|path| !path.is_empty())
+                .filter_map(|path| std::str::from_utf8(path).ok().map(str::to_owned))
+                .collect();
+            paths.sort_unstable();
+            paths.dedup();
+            self.stage_exact_paths(&index, &paths)?;
+            index.commit(author_name, author_email, message)?;
+            return index.publish();
+        }
 
         let prefix = self.rel("");
         let pathspec = format!(":(literal){prefix}");
@@ -372,6 +464,287 @@ impl RevisionStore {
         git::run(&repo, &add_args, &[])?;
 
         self.commit_staged(&repo, author_name, author_email, message)
+    }
+
+    pub(crate) fn prepare_restore(
+        &self,
+        path: &str,
+        author: (&str, &str),
+        checkpoint_author: Option<(&str, &str)>,
+        current: &[u8],
+        restored: &[u8],
+    ) -> Result<PreparedCommit, String> {
+        let mut index = ExactIndex::open(self.prepare_commit()?)?;
+        let relative = self.rel(path);
+        let metadata =
+            fs::symlink_metadata(index.repo.join(&relative)).map_err(|error| error.to_string())?;
+        index.stage_markdown(&relative, &metadata, Some(current))?;
+        let checkpoint_message = checkpoint_author
+            .map(|_| self.auto_message(&index.repo, &[path.to_owned()], &index.env()))
+            .unwrap_or_else(|| "Save before restoring version".to_string());
+        let (name, email) = checkpoint_author.unwrap_or(author);
+        index.commit(name, email, &checkpoint_message)?;
+        index.stage_markdown(&relative, &metadata, Some(restored))?;
+        index.commit(author.0, author.1, "Restore document version")?;
+        index
+            .prepare()?
+            .ok_or_else(|| "Restoring the document produced no Git commit".to_string())
+    }
+
+    pub(crate) fn exact_markdown_uncommitted(&self, path: &str) -> Result<Option<bool>, String> {
+        if !self.exact_markdown || !self.auto_commit_allowed() {
+            return Ok(None);
+        }
+        let repo = self.repo_root().ok_or("no repository")?;
+        let relative = self.rel(path);
+        let revision = format!("HEAD:{relative}");
+        if !git::check(&repo, &["rev-parse", "--verify", "--quiet", &revision], 1)? {
+            return Ok(Some(true));
+        }
+        let committed = git::run(&repo, &["rev-parse", &revision], &[])?;
+        let working = git::run(
+            &repo,
+            &["hash-object", "--no-filters", "--", &relative],
+            &[],
+        )?;
+        Ok(Some(committed.trim() != working.trim()))
+    }
+}
+
+struct IndexLock(PathBuf);
+
+impl IndexLock {
+    fn acquire(index: &Path) -> Result<Self, String> {
+        let mut path = index.as_os_str().to_owned();
+        path.push(".lock");
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| format!("Could not lock the Git index: {error}"))?;
+        Ok(Self(path.into()))
+    }
+}
+
+impl Drop for IndexLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+/// A private index starts at HEAD, so a revision contains only the paths
+/// Librarian stages. The Git index lock keeps external writes from changing
+/// the real index while we prepare its corresponding per-path update.
+struct ExactIndex {
+    repo: PathBuf,
+    directory: tempfile::TempDir,
+    index: PathBuf,
+    private_index: String,
+    branch: String,
+    base: Option<String>,
+    base_tree: String,
+    tip: Option<String>,
+    tree: String,
+}
+
+impl ExactIndex {
+    fn open(repo: PathBuf) -> Result<Self, String> {
+        let index = git::run(
+            &repo,
+            &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+            &[],
+        )?;
+        let index = PathBuf::from(index.trim_end_matches(['\n', '\r']));
+        let directory = tempfile::tempdir_in(index.parent().ok_or("missing Git index directory")?)
+            .map_err(|error| error.to_string())?;
+        let private_index = git_path(directory.path().join("commit-index"))?;
+        let branch = git::run(&repo, &["symbolic-ref", "--quiet", "HEAD"], &[])?
+            .trim()
+            .to_owned();
+        let base = git::check(&repo, &["rev-parse", "--verify", "--quiet", &branch], 1)?
+            .then(|| git::run(&repo, &["rev-parse", &branch], &[]))
+            .transpose()?
+            .map(|commit| commit.trim().to_owned());
+        let env = [("GIT_INDEX_FILE", private_index.as_str())];
+        git::run(
+            &repo,
+            &["read-tree", base.as_deref().unwrap_or("--empty")],
+            &env,
+        )?;
+        let tree = git::run(&repo, &["write-tree"], &env)?.trim().to_owned();
+        Ok(Self {
+            repo,
+            directory,
+            index,
+            private_index,
+            branch,
+            tip: base.clone(),
+            base,
+            base_tree: tree.clone(),
+            tree,
+        })
+    }
+
+    fn env(&self) -> [(&str, &str); 1] {
+        [("GIT_INDEX_FILE", &self.private_index)]
+    }
+
+    fn stage_markdown(
+        &self,
+        path: &str,
+        metadata: &fs::Metadata,
+        contents: Option<&[u8]>,
+    ) -> Result<(), String> {
+        let hash = if let Some(contents) = contents {
+            let mut input =
+                tempfile::tempfile_in(self.directory.path()).map_err(|error| error.to_string())?;
+            input
+                .write_all(contents)
+                .and_then(|()| input.rewind())
+                .map_err(|error| error.to_string())?;
+            git::run_with_input(
+                &self.repo,
+                &["hash-object", "-w", "--no-filters", "--stdin"],
+                &[],
+                input,
+            )?
+        } else {
+            git::run(
+                &self.repo,
+                &["hash-object", "-w", "--no-filters", "--", path],
+                &[],
+            )?
+        };
+        git::run(
+            &self.repo,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                markdown_mode(metadata),
+                hash.trim(),
+                path,
+            ],
+            &self.env(),
+        )?;
+        Ok(())
+    }
+
+    fn commit(&mut self, name: &str, email: &str, message: &str) -> Result<(), String> {
+        let tree = git::run(&self.repo, &["write-tree"], &self.env())?;
+        let tree = tree.trim();
+        if self.tree == tree {
+            return Ok(());
+        }
+        let mut args = vec![
+            "-c",
+            "commit.gpgsign=false",
+            "commit-tree",
+            tree,
+            "-m",
+            message,
+        ];
+        if let Some(parent) = self.tip.as_deref() {
+            args.extend(["-p", parent]);
+        }
+        let commit = git::run(&self.repo, &args, &commit_env(Some((name, email))))?;
+        self.tip = Some(commit.trim().to_owned());
+        self.tree = tree.to_owned();
+        Ok(())
+    }
+
+    fn prepare(self) -> Result<Option<PreparedCommit>, String> {
+        if self.tip == self.base {
+            return Ok(None);
+        }
+        let tip = self.tip.clone().ok_or("missing Git commit")?;
+        let lock = IndexLock::acquire(&self.index)?;
+        if git::run(&self.repo, &["symbolic-ref", "--quiet", "HEAD"], &[])?.trim() != self.branch
+            || merge_in_progress(&self.repo)
+        {
+            return Err(
+                "Git branch changed or a merge started while preparing the revision".into(),
+            );
+        }
+        let working_index = self.directory.path().join("working-index");
+        let working_path = git_path(working_index.clone())?;
+        let working_env = [("GIT_INDEX_FILE", working_path.as_str())];
+        match fs::copy(&self.index, &working_index) {
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                git::run(&self.repo, &["read-tree", "--empty"], &working_env)?;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+        // Apply only the committed tree transition to the copy. Git carries
+        // unrelated staged entries forward and keeps the worktree untouched.
+        git::run(
+            &self.repo,
+            &["read-tree", "-i", "-m", &self.base_tree, &self.tree],
+            &working_env,
+        )?;
+        Ok(Some(PreparedCommit {
+            index: self,
+            working_index,
+            tip,
+            _lock: lock,
+        }))
+    }
+
+    fn publish(self) -> Result<Option<String>, String> {
+        self.prepare()?.map(|commit| commit.publish()).transpose()
+    }
+}
+
+fn git_path(path: PathBuf) -> Result<String, String> {
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| "Git index path is not UTF-8".to_string())
+}
+
+fn markdown_mode(metadata: &fs::Metadata) -> &'static str {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o100 != 0 {
+            return "100755";
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    "100644"
+}
+
+pub(crate) struct PreparedCommit {
+    index: ExactIndex,
+    working_index: PathBuf,
+    tip: String,
+    _lock: IndexLock,
+}
+
+impl PreparedCommit {
+    pub(crate) fn publish(&self) -> Result<String, String> {
+        let index = &self.index;
+        git::run(
+            &index.repo,
+            &[
+                "update-ref",
+                "-m",
+                "Librarian revision",
+                &index.branch,
+                &self.tip,
+                index.base.as_deref().unwrap_or(""),
+            ],
+            &[("SB_GIT_NO_HOOKS", "1")],
+        )?;
+        // The branch is already published. A local filesystem failure here
+        // cannot roll back the document or report the commit as unwritten.
+        if let Err(error) = fs::rename(&self.working_index, &index.index) {
+            tracing::warn!(
+                "Librarian revision committed, but the Git index could not be refreshed: {error}"
+            );
+        }
+        Ok(self.tip.clone())
     }
 }
 

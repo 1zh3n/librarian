@@ -148,11 +148,19 @@ fn strip_progress(stderr: &str) -> String {
 }
 
 fn output(mut command: Command, limit: impl Into<Limit>) -> Result<Output, String> {
+    output_with_input(&mut command, limit, Stdio::null())
+}
+
+fn output_with_input(
+    command: &mut Command,
+    limit: impl Into<Limit>,
+    input: Stdio,
+) -> Result<Output, String> {
     let limit = limit.into();
     command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null());
+        .stdin(input);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -369,6 +377,26 @@ pub fn run_with_timeout(
 
 pub fn run_bytes(repo: &Path, args: &[&str], envs: &[(&str, &str)]) -> Result<Vec<u8>, String> {
     run_bytes_with_limit(repo, args, envs, Duration::from_secs(60))
+}
+
+/// Local index plumbing reads its input from a file so the process timeout
+/// remains effective even when Git stops consuming input.
+pub(super) fn run_with_input(
+    repo: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+    input: std::fs::File,
+) -> Result<String, String> {
+    let out = output_with_input(
+        &mut command(repo, args, envs),
+        Duration::from_secs(60),
+        Stdio::from(input),
+    )?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
 }
 
 fn run_bytes_with_limit(

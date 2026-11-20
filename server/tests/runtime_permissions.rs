@@ -153,6 +153,7 @@ impl Fixture {
             main_port: 3000,
             disable_service_worker: true,
             shell_disabled: true,
+            exact_markdown_revisions: false,
             shutdown: None,
             search: silverbullet_server::search::SpaceSearch::in_memory(),
         };
