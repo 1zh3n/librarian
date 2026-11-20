@@ -1,24 +1,10 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import type { DocumentSummary, Workspace } from "../../src/api/client";
+import type { DocumentSummary } from "../../src/api/client";
+import { openFieldWorkspace } from "./productFixture";
 
 async function fieldDocument(page: Page): Promise<string> {
-  await page.goto("/.auth/librarian/login");
-  await page.getByLabel("用户名").fill("reader");
-  await page.getByLabel("密码").fill("reader-test-password");
-  const [login] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" && response.url().includes("/.auth/librarian/login"),
-    ),
-    page.getByRole("button", { name: "登录" }).click(),
-  ]);
-  expect(login.status()).toBe(303);
-  const workspaceResponse = await page.request.get("/api/v1/workspaces");
-  expect(workspaceResponse.ok()).toBe(true);
-  const spaces = (await workspaceResponse.json()) as Workspace[];
-  const space = spaces.find((item) => item.name === "田野笔记");
-  if (!space) throw new Error("Missing test Space");
+  const space = await openFieldWorkspace(page);
   const documents = (await (
     await page.request.get(`/api/v1/workspaces/${space.id}/documents`)
   ).json()) as DocumentSummary[];

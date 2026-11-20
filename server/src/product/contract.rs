@@ -91,6 +91,7 @@ pub(crate) struct Workspace {
     pub origin: &'static str,
     pub retention: &'static str,
     pub revision_mode: &'static str,
+    pub can_write: bool,
     pub defaults: WorkspaceDefaults,
 }
 
@@ -115,6 +116,12 @@ pub(crate) struct DocumentSnapshot {
     pub document: DocumentSummary,
     pub markdown: String,
     pub revision: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct OutlineSnapshot {
+    pub markdown: String,
+    pub revision: Option<String>,
 }
 
 #[derive(Deserialize)]

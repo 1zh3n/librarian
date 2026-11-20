@@ -188,6 +188,66 @@ async fn workspace_search_is_scoped() {
 }
 
 #[tokio::test]
+async fn outline_and_body_save_independently() {
+    let f = Fixture::new(false);
+    let workspace = f.workspace("Left").await;
+    let document = f.document(&workspace, "Empty.md").await;
+    let body_path = format!("/documents/{document}");
+    let outline_path = format!("{body_path}/outline");
+    let read = |path| f.request("GET", path, Some(&f.reader), Value::Null);
+    let (status, outline) = read(&outline_path).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(outline, json!({"markdown":"","revision":null}));
+    let (_, body) = read(&body_path).await;
+    let text = "\u{feff}提纲\r\n正文待补  \n";
+    let write = |path, value| f.request("PUT", path, Some(&f.editor), value);
+    let (status, outline) =
+        write(&outline_path, json!({"markdown":text,"baseRevision":null})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(outline["markdown"], text);
+    assert!(outline["revision"]
+        .as_str()
+        .is_some_and(|hash| hash.len() == 64));
+    assert_eq!(read(&body_path).await.1["revision"], body["revision"]);
+    let (status, saved_body) = write(
+        &body_path,
+        json!({"markdown":"正文\r\n","baseRevision":body["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved_body["document"]["outlineEnabled"], true);
+    assert_eq!(read(&outline_path).await.1, outline);
+    assert_eq!(
+        fs::read(f.root.path().join("spaces/left/Empty.outline.md")).unwrap(),
+        text.as_bytes()
+    );
+    assert_eq!(
+        write(
+            &outline_path,
+            json!({"markdown":"冲突","baseRevision":null})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        f.request(
+            "PUT",
+            &outline_path,
+            Some(&f.reader),
+            json!({"markdown":"修改","baseRevision":outline["revision"]})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        write(&outline_path, json!({"markdown":"缺少条件"})).await.0,
+        StatusCode::PRECONDITION_REQUIRED
+    );
+}
+
+#[tokio::test]
 async fn workspace_list_is_member_filtered() {
     let f = Fixture::new(false);
     let (status, list) = f

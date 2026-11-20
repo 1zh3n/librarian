@@ -108,22 +108,29 @@ function minimalChange(before: string, after: string): TextEdit[] {
 }
 
 export interface ExternalPatch {
-  readonly baseRevision: string;
-  readonly revision: string;
+  readonly baseRevision: string | null;
+  readonly revision: string | null;
   readonly edits: readonly TextEdit[];
 }
 
 type ExternalResult = "applied" | "conflict";
 type SourceSelection = { readonly anchor: number; readonly head: number };
 type EditorOptions = {
-  readonly revision?: string;
+  readonly revision?: string | null;
   readonly selection?: SourceSelection;
-  readonly onDeferredExternalResult?: (revision: string, result: ExternalResult) => void;
+  readonly readOnly?: boolean;
+  readonly ariaLabel?: string;
+  readonly onDeferredExternalResult?: (revision: string | null, result: ExternalResult) => void;
+  readonly onBufferChange?: (source: string, composing: boolean) => void;
 };
 
 export interface EditorSession {
   source(): string;
   selection(): SourceSelection;
+  select(selection: SourceSelection): void;
+  focus(): void;
+  isComposing(): boolean;
+  acknowledge(markdown: string, revision: string | null): void;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
@@ -135,6 +142,7 @@ export interface EditorSession {
     blocks: readonly Block[],
     anchor: ScrollAnchor,
     sameRevision: boolean,
+    keepSelection?: boolean,
   ): Promise<boolean>;
   mount(parent: HTMLElement): () => void;
 }
@@ -168,17 +176,27 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       preview.of(livePreview),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
-      EditorView.contentAttributes.of({ "aria-label": "Markdown 正文" }),
+      EditorState.readOnly.of(options.readOnly ?? false),
+      EditorView.editable.of(!options.readOnly),
+      EditorView.contentAttributes.of({ "aria-label": options.ariaLabel ?? "Markdown 正文" }),
     ],
   });
   let view: EditorView | undefined;
   let tracked: { anchor: ScrollAnchor; position: number; source: string } | undefined;
 
   function record(transaction: Transaction) {
+    const priorSource = state.field(sourceField).value;
+    const priorComposition = state.field(composing);
     if (tracked && transaction.docChanged) {
       tracked.position = transaction.changes.mapPos(tracked.position);
     }
     state = transaction.state;
+    if (transaction.annotation(Transaction.remote)) return;
+    const markdown = state.field(sourceField).value;
+    const active = state.field(composing);
+    if (markdown !== priorSource || active !== priorComposition) {
+      options.onBufferChange?.(markdown, active);
+    }
   }
 
   function dispatch(transaction: Transaction) {
@@ -212,7 +230,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         effects: external
           ? [replaceSource.of(after), undoHistory.reconfigure([])]
           : replaceSource.of(after),
-        annotations: Transaction.addToHistory.of(!external),
+        annotations: [Transaction.addToHistory.of(!external), Transaction.remote.of(external)],
       }),
     );
     if (external) dispatch(state.update({ effects: undoHistory.reconfigure(history()) }));
@@ -247,6 +265,20 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       const { anchor, head } = state.selection.main;
       const current = state.field(sourceField);
       return { anchor: originalOffset(current, anchor), head: originalOffset(current, head) };
+    },
+    select({ anchor, head }) {
+      const current = state.field(sourceField);
+      dispatch(
+        state.update({
+          selection: { anchor: editorOffset(current, anchor), head: editorOffset(current, head) },
+        }),
+      );
+    },
+    isComposing: () => state.field(composing),
+    focus: () => view?.focus(),
+    acknowledge(markdown, savedRevision) {
+      confirmedSource = markdown;
+      revision = savedRevision;
     },
     applyChanges(edits) {
       applyEdits(edits, false);
@@ -303,13 +335,13 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         };
       }
     },
-    async restoreAnchor(viewport, blocks, anchor, sameRevision) {
+    async restoreAnchor(viewport, blocks, anchor, sameRevision, keepSelection = false) {
       const mounted = view;
       const block = resolveAnchor(blocks, anchor, sameRevision);
       if (!mounted || !block) return false;
       const at = editorOffset(state.field(sourceField), block.from);
       mounted.dispatch({
-        selection: { anchor: at },
+        ...(!keepSelection && { selection: { anchor: at } }),
         effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 0 }),
       });
       const targetDoc = mounted.state.doc;

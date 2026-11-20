@@ -19,8 +19,8 @@ use crate::{auth::Actor, multi::instance::SpaceInstance, state::ServerState};
 use super::{
     auth::Account,
     contract::{
-        ApiError, CreateDocument, DocumentSnapshot, DocumentSummary, Workspace, WorkspaceDefaults,
-        WriteMarkdown,
+        ApiError, CreateDocument, DocumentSnapshot, DocumentSummary, OutlineSnapshot, Workspace,
+        WorkspaceDefaults, WriteMarkdown,
     },
     db::Metadata,
     space_adapter::NativeSpaces,
@@ -62,9 +62,9 @@ impl DocumentService {
         let registry = self.spaces.manager.registry().current();
         let mut workspaces = Vec::new();
         for instance in registry.instances.values() {
-            if account.actor(&self.spaces, instance, false).is_err() {
+            let Ok(actor) = account.actor(&self.spaces, instance, false) else {
                 continue;
-            }
+            };
             let revision_mode = match instance
                 .revisions
                 .as_ref()
@@ -81,6 +81,7 @@ impl DocumentService {
                 origin: "native",
                 retention: "persistent",
                 revision_mode,
+                can_write: actor.level == crate::auth::AccessLevel::Write,
                 defaults: WorkspaceDefaults {
                     outline_enabled: false,
                 },
@@ -195,6 +196,61 @@ impl DocumentService {
             revision,
         ))
     }
+
+    fn get_outline(&self, account: &Account, id: &str) -> Result<OutlineSnapshot, ApiError> {
+        let (workspace, path) = self.metadata.document_path(id)?;
+        let (instance, _) = self.scope(account, &workspace, false)?;
+        let state = state(&instance)?;
+        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        check_file_path(state, &path)?;
+        state.space.get_file_meta(&path)?;
+        let sidecar = outline_path(&path);
+        check_file_path(state, &sidecar)?;
+        match state.space.get_file_meta(&sidecar) {
+            Ok(_) => {
+                let markdown = read_markdown(state, &sidecar)?;
+                Ok(OutlineSnapshot {
+                    revision: Some(sha256_hex(markdown.as_bytes())),
+                    markdown,
+                })
+            }
+            Err(SpaceError::NotFound) => Ok(OutlineSnapshot {
+                markdown: String::new(),
+                revision: None,
+            }),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn save_outline(
+        &self,
+        account: &Account,
+        id: &str,
+        request: WriteMarkdown,
+    ) -> Result<OutlineSnapshot, ApiError> {
+        let (workspace, path) = self.metadata.document_path(id)?;
+        let (instance, actor) = self.scope(account, &workspace, true)?;
+        let state = state(&instance)?;
+        let expected = request.precondition()?.map(str::to_owned);
+        let _mutation = state
+            .fs_guard
+            .mutation
+            .write()
+            .map_err(ApiError::internal)?;
+        check_file_path(state, &path)?;
+        state.space.get_file_meta(&path)?;
+        let (markdown, revision) = save_locked(
+            state,
+            &outline_path(&path),
+            request.markdown,
+            expected.as_deref(),
+            actor,
+        )?;
+        Ok(OutlineSnapshot {
+            markdown,
+            revision: Some(revision),
+        })
+    }
 }
 
 pub(crate) fn state(instance: &SpaceInstance) -> Result<&ServerState, ApiError> {
@@ -261,14 +317,24 @@ fn save(
     expected: Option<&str>,
     actor: Actor,
 ) -> Result<(String, String), ApiError> {
-    if markdown.len() > MARKDOWN_LIMIT {
-        return Err(too_large());
-    }
     let _mutation = state
         .fs_guard
         .mutation
         .write()
         .map_err(ApiError::internal)?;
+    save_locked(state, path, markdown, expected, actor)
+}
+
+fn save_locked(
+    state: &ServerState,
+    path: &str,
+    markdown: String,
+    expected: Option<&str>,
+    actor: Actor,
+) -> Result<(String, String), ApiError> {
+    if markdown.len() > MARKDOWN_LIMIT {
+        return Err(too_large());
+    }
     check_file_path(state, path)?;
     let current = match state.space.get_file_meta(path) {
         Ok(_) if expected.is_none() => return Err(ApiError::conflict(None)),
@@ -323,7 +389,7 @@ fn summary(
     title: Option<String>,
 ) -> DocumentSummary {
     let stem = path.strip_suffix(".md").unwrap_or(&path);
-    let sidecar = format!("{stem}.outline.md");
+    let sidecar = outline_path(&path);
     DocumentSummary {
         title: title.unwrap_or_else(|| stem.rsplit('/').next().unwrap_or(stem).to_owned()),
         outline_enabled: check_file_path(state, &sidecar).is_ok()
@@ -332,6 +398,10 @@ fn summary(
         workspace_id: workspace.to_owned(),
         path,
     }
+}
+
+fn outline_path(path: &str) -> String {
+    format!("{}.outline.md", path.strip_suffix(".md").unwrap_or(path))
 }
 
 fn title_from_front_matter(bytes: &[u8]) -> Option<String> {
@@ -374,6 +444,10 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .route("/workspaces/{workspace}/documents", get(list).post(create))
         .route("/workspaces/{workspace}/search", get(super::search::search))
         .route("/documents/{document}", get(document).put(edit))
+        .route(
+            "/documents/{document}/outline",
+            get(outline).put(save_outline),
+        )
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
             response
@@ -458,6 +532,30 @@ async fn edit(
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let request = body(request)?;
     run(move || service.edit(&account, &document, request))
+        .await
+        .map(Json)
+}
+
+async fn outline(
+    State(service): State<Arc<DocumentService>>,
+    RoutePath(document): RoutePath<String>,
+    headers: HeaderMap,
+) -> Result<Json<OutlineSnapshot>, ApiError> {
+    let account = Account::authenticate(&service.spaces, &headers, false)?;
+    run(move || service.get_outline(&account, &document))
+        .await
+        .map(Json)
+}
+
+async fn save_outline(
+    State(service): State<Arc<DocumentService>>,
+    RoutePath(document): RoutePath<String>,
+    headers: HeaderMap,
+    request: Result<Json<WriteMarkdown>, JsonRejection>,
+) -> Result<Json<OutlineSnapshot>, ApiError> {
+    let account = Account::authenticate(&service.spaces, &headers, true)?;
+    let request = body(request)?;
+    run(move || service.save_outline(&account, &document, request))
         .await
         .map(Json)
 }

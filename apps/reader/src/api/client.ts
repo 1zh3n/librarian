@@ -4,10 +4,12 @@ export type Workspace = components["schemas"]["Workspace"];
 export type DocumentSummary = components["schemas"]["DocumentSummary"];
 export type DocumentSnapshot = components["schemas"]["DocumentSnapshot"];
 export type SearchHit = components["schemas"]["SearchHit"];
+export type OutlineSnapshot = components["schemas"]["OutlineSnapshot"];
 
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
 type SaveDocument = operations["saveDocument"]["requestBody"]["content"]["application/json"];
+type SaveOutline = operations["saveOutline"]["requestBody"]["content"]["application/json"];
 type ErrorBody = components["schemas"]["ApiError"];
 
 export class ApiError extends Error {
@@ -27,7 +29,7 @@ export class ApiError extends Error {
 async function request<T>(
   path: string,
   signal?: AbortSignal,
-  write?: { method: "POST" | "PUT"; body: CreateDocument | SaveDocument },
+  write?: { method: "POST" | "PUT"; body: CreateDocument | SaveDocument | SaveOutline },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     signal: signal ?? null,
@@ -51,6 +53,7 @@ async function request<T>(
 
 const workspaceDocuments = (workspace: string) =>
   `/workspaces/${encodeURIComponent(workspace)}/documents`;
+const documentPath = (document: string) => `/documents/${encodeURIComponent(document)}`;
 
 export const api = {
   listWorkspaces(signal?: AbortSignal) {
@@ -77,10 +80,19 @@ export const api = {
     });
   },
   getDocument(document: string, signal?: AbortSignal) {
-    return request<DocumentSnapshot>(`/documents/${encodeURIComponent(document)}`, signal);
+    return request<DocumentSnapshot>(documentPath(document), signal);
   },
   saveDocument(document: string, body: SaveDocument, signal?: AbortSignal) {
-    return request<DocumentSnapshot>(`/documents/${encodeURIComponent(document)}`, signal, {
+    return request<DocumentSnapshot>(documentPath(document), signal, {
+      method: "PUT",
+      body,
+    });
+  },
+  getOutline(document: string, signal?: AbortSignal) {
+    return request<OutlineSnapshot>(`${documentPath(document)}/outline`, signal);
+  },
+  saveOutline(document: string, body: SaveOutline, signal?: AbortSignal) {
+    return request<OutlineSnapshot>(`${documentPath(document)}/outline`, signal, {
       method: "PUT",
       body,
     });

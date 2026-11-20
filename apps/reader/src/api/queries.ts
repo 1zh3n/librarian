@@ -8,6 +8,8 @@ export const workspaceKeys = {
   documents: (workspace: string) => ["workspaces", workspace, "documents"] as const,
   document: (workspace: string, document: string) =>
     ["workspaces", workspace, "document", document] as const,
+  outline: (workspace: string, document: string) =>
+    ["workspaces", workspace, "document", document, "outline"] as const,
   search: (workspace: string, query: string) => ["workspaces", workspace, "search", query] as const,
 };
 
@@ -56,5 +58,12 @@ export function searchQuery(workspace: string, query: string) {
     queryFn: ({ signal }) => api.searchDocuments(workspace, query, signal),
     retry: (count, error) => error instanceof ApiError && error.status === 503 && count < 4,
     retryDelay: 250,
+  });
+}
+
+export function outlineQuery(workspace: string, document: string) {
+  return queryOptions({
+    queryKey: workspaceKeys.outline(workspace, document),
+    queryFn: ({ signal }) => api.getOutline(document, signal),
   });
 }
