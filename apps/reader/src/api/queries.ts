@@ -10,6 +10,10 @@ export const workspaceKeys = {
     ["workspaces", workspace, "document", document] as const,
   outline: (workspace: string, document: string) =>
     ["workspaces", workspace, "document", document, "outline"] as const,
+  history: (workspace: string, document: string) =>
+    ["workspaces", workspace, "document", document, "history"] as const,
+  version: (workspace: string, document: string, commit: string) =>
+    ["workspaces", workspace, "document", document, "version", commit] as const,
   search: (workspace: string, query: string) => ["workspaces", workspace, "search", query] as const,
 };
 

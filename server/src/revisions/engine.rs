@@ -278,6 +278,10 @@ impl EngineInner {
             .mutation
             .write()
             .unwrap_or_else(|e| e.into_inner());
+        self.commit_mutation_locked()
+    }
+
+    fn commit_mutation_locked(&self) -> bool {
         let mut committed = self.ensure_initial_snapshot_locked();
         let (lock, _) = &self.state;
         let batch = {
@@ -709,6 +713,38 @@ fn name_from_email(email: &str) -> Option<String> {
     (!local.is_empty()).then(|| local.to_string())
 }
 
+fn account_attribution(actor: &crate::auth::Actor) -> Attribution {
+    match actor.full_name.as_ref().or(actor.username.as_ref()) {
+        Some(name) => Attribution::Account {
+            name: name.clone(),
+            email: actor.email.clone(),
+        },
+        None => Attribution::LocalUser,
+    }
+}
+
+pub(crate) struct ManagedWrite<'a>(&'a EngineInner);
+
+impl ManagedWrite<'_> {
+    pub(crate) fn checkpoint(&self, path: &str, actor: &crate::auth::Actor) -> Result<(), String> {
+        self.0.commit_mutation_locked();
+        self.commit_file(path, actor, "Save before restoring version")?;
+        Ok(())
+    }
+
+    pub(crate) fn commit_file(
+        &self,
+        path: &str,
+        actor: &crate::auth::Actor,
+        message: &str,
+    ) -> Result<Option<String>, String> {
+        let (name, email) = self.0.identity_for(&account_attribution(actor));
+        self.0
+            .store
+            .commit_batch(&name, &email, message, &[path.to_string()])
+    }
+}
+
 /// `kind` is a machine token the UI branches on; `message` only carries what
 /// `kind` does not already say, so a classified variant (its Debug form *is*
 /// the token) gets none, and only the catch-all keeps the stderr -- redacted,
@@ -1013,6 +1049,25 @@ impl RevisionEngine {
 
     pub fn mark(&self, space_path: &str, attribution: Attribution) {
         self.inner.mark(space_path, attribution);
+    }
+
+    pub(crate) fn mark_account_write(&self, path: &str, actor: &crate::auth::Actor) {
+        self.inner.mark(path, account_attribution(actor));
+    }
+
+    pub(crate) fn with_managed_write<T>(&self, write: impl FnOnce(ManagedWrite<'_>) -> T) -> T {
+        let _commit = self
+            .inner
+            .commit_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _mutation = self
+            .inner
+            .fs_guard
+            .mutation
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        write(ManagedWrite(&self.inner))
     }
 
     #[cfg(test)]

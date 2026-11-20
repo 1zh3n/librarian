@@ -18,9 +18,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         root.path().join("spaces.json"),
         json!({
             "field": {"name":"田野笔记","binding":{"prefix":"/field"},"access":"none",
-                      "members":{"reader":{"role":"write"}},"revisions":"managed"},
+                      "members":{"reader":{"role":"write"}},"revisions":"managed",
+                      "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}},
             "other": {"name":"另一空间","binding":{"prefix":"/other"},"access":"none",
-                      "members":{"reader":{"role":"write"}}}
+                      "members":{"reader":{"role":"write"}},"revisions":"managed",
+                      "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}}
         })
         .to_string(),
     )?;

@@ -8,11 +8,11 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware,
     response::Response,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
-use silverbullet_server_common::{revision::sha256_hex, RevisionsMode, SpaceError};
+use silverbullet_server_common::{revision::sha256_hex, FileMeta, SpaceError};
 
 use crate::{auth::Actor, multi::instance::SpaceInstance, state::ServerState};
 
@@ -26,7 +26,7 @@ use super::{
     space_adapter::NativeSpaces,
 };
 
-const MARKDOWN_LIMIT: usize = 4 * 1024 * 1024;
+pub(super) const MARKDOWN_LIMIT: usize = 4 * 1024 * 1024;
 const METADATA_LIMIT: usize = 32 * 1024;
 
 pub(crate) struct DocumentService {
@@ -58,6 +58,17 @@ impl DocumentService {
         Ok((instance, actor))
     }
 
+    pub(super) fn document_scope(
+        &self,
+        account: &Account,
+        document: &str,
+        write: bool,
+    ) -> Result<(Arc<SpaceInstance>, Actor, String, String), ApiError> {
+        let (workspace, path) = self.metadata.document_path(document)?;
+        let (instance, actor) = self.scope(account, &workspace, write)?;
+        Ok((instance, actor, workspace, path))
+    }
+
     fn workspaces(&self, account: &Account) -> Result<Vec<Workspace>, ApiError> {
         let registry = self.spaces.manager.registry().current();
         let mut workspaces = Vec::new();
@@ -65,15 +76,7 @@ impl DocumentService {
             let Ok(actor) = account.actor(&self.spaces, instance, false) else {
                 continue;
             };
-            let revision_mode = match instance
-                .revisions
-                .as_ref()
-                .map(|engine| engine.store().mode())
-            {
-                Some(RevisionsMode::Managed) => "managed",
-                Some(RevisionsMode::Unmanaged) => "repository",
-                _ => "disabled",
-            };
+            let revision_mode = super::revisions::mode(instance.revisions.as_deref());
             workspaces.push(Workspace {
                 id: self.metadata.workspace_id(&instance.id)?,
                 space_id: instance.id.clone(),
@@ -289,7 +292,7 @@ pub(crate) fn check_file_path(state: &ServerState, path: &str) -> Result<(), Api
     Ok(())
 }
 
-fn read_markdown(state: &ServerState, path: &str) -> Result<String, ApiError> {
+pub(super) fn read_markdown(state: &ServerState, path: &str) -> Result<String, ApiError> {
     check_file_path(state, path)?;
     let meta = state.space.get_file_meta(path)?;
     if meta.size > MARKDOWN_LIMIT as i64 {
@@ -302,7 +305,7 @@ fn read_markdown(state: &ServerState, path: &str) -> Result<String, ApiError> {
     String::from_utf8(bytes).map_err(|_| ApiError::invalid("Markdown file is not UTF-8"))
 }
 
-fn too_large() -> ApiError {
+pub(super) fn too_large() -> ApiError {
     ApiError::new(
         StatusCode::PAYLOAD_TOO_LARGE,
         "document_too_large",
@@ -348,24 +351,34 @@ fn save_locked(
     let revision = sha256_hex(markdown.as_bytes());
     if current.as_ref() != Some(&revision) {
         let file = state.space.write_file(path, markdown.as_bytes(), None)?;
-        state.fs_guard.record(path, &file, revision.clone());
-        state.fs_guard.record_expected_write_with_meta(
-            path,
-            &revision,
-            actor,
-            None,
-            Some("librarian".into()),
-            file.size,
-            file.last_modified,
-        );
         if let Some(engine) = &state.revisions {
-            engine.notify_file_saved();
+            engine.mark_account_write(path, &actor);
         }
+        note_file_write(state, path, &revision, actor, &file);
     }
     Ok((markdown, revision))
 }
 
-fn snapshot(
+pub(super) fn note_file_write(
+    state: &ServerState,
+    path: &str,
+    revision: &str,
+    actor: Actor,
+    file: &FileMeta,
+) {
+    state.fs_guard.record(path, file, revision.to_owned());
+    state.fs_guard.record_expected_write_with_meta(
+        path,
+        revision,
+        actor,
+        None,
+        Some("librarian".into()),
+        file.size,
+        file.last_modified,
+    );
+}
+
+pub(super) fn snapshot(
     state: &ServerState,
     workspace: &str,
     id: String,
@@ -448,6 +461,18 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
             "/documents/{document}/outline",
             get(outline).put(save_outline),
         )
+        .route(
+            "/documents/{document}/revisions",
+            get(super::revisions::history),
+        )
+        .route(
+            "/documents/{document}/revisions/{commit}/diff",
+            get(super::revisions::diff),
+        )
+        .route(
+            "/documents/{document}/restore",
+            post(super::revisions::restore),
+        )
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
             response
@@ -466,7 +491,7 @@ pub(crate) async fn run<T: Send + 'static>(
         .map_err(ApiError::internal)?
 }
 
-fn body<T>(request: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
+pub(super) fn body<T>(request: Result<Json<T>, JsonRejection>) -> Result<T, ApiError> {
     request.map(|Json(body)| body).map_err(|error| {
         if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
             too_large()

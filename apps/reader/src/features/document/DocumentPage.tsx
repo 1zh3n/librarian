@@ -9,6 +9,7 @@ import { captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
+import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
@@ -18,7 +19,7 @@ import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
-type Tool = "contents" | "outline" | "metadata";
+type Tool = "contents" | "outline" | "metadata" | "history";
 
 export function DocumentPage({
   workspace,
@@ -57,6 +58,20 @@ function DocumentWorkspace({
   const { id: documentId, title } = snapshot.document;
   const queryClient = useQueryClient();
   const bodyKey = workspaceKeys.document(workspace, documentId);
+
+  function setDocumentSnapshot(saved: DocumentSnapshot) {
+    void queryClient.cancelQueries(
+      { queryKey: bodyKey, exact: true },
+      { revert: false, silent: true },
+    );
+    queryClient.setQueryData(bodyKey, saved);
+    queryClient.setQueryData(
+      workspaceKeys.documents(workspace),
+      (documents: DocumentSnapshot["document"][] | undefined) =>
+        documents?.map((document) => (document.id === documentId ? saved.document : document)),
+    );
+  }
+
   const [body] = useState(() =>
     openMarkdownSession({
       initial: snapshot,
@@ -67,18 +82,7 @@ function DocumentWorkspace({
         await queryClient.cancelQueries({ queryKey: bodyKey, exact: true });
         return api.saveDocument(documentId, { markdown, baseRevision });
       },
-      confirmed: (saved) => {
-        void queryClient.cancelQueries(
-          { queryKey: bodyKey, exact: true },
-          { revert: false, silent: true },
-        );
-        queryClient.setQueryData(bodyKey, saved);
-        queryClient.setQueryData(
-          workspaceKeys.documents(workspace),
-          (documents: DocumentSnapshot["document"][] | undefined) =>
-            documents?.map((document) => (document.id === documentId ? saved.document : document)),
-        );
-      },
+      confirmed: setDocumentSnapshot,
     }),
   );
   const [reading, setReading] = useState(snapshot.markdown);
@@ -86,6 +90,7 @@ function DocumentWorkspace({
   const [mode, setMode] = useState<Mode>("read");
   const modeRef = useRef<Mode>("read");
   const [tool, setTool] = useState<Tool>();
+  const [restoringVersion, setRestoringVersion] = useState(false);
   const [outlineRequested, setOutlineRequested] = useState(false);
   const [outlineSession, setOutlineSession] = useState<OutlineSession>();
   const outlineEnabled = outlineRequested || snapshot.document.outlineEnabled;
@@ -143,7 +148,7 @@ function DocumentWorkspace({
 
   const enterEditor = useCallback(
     (next: "preview" | "source", position?: number) => {
-      if (!writable || body.editor.isComposing()) return;
+      if (!writable || restoringVersion || body.editor.isComposing()) return;
       if (mode === "read") {
         const viewport = canvas.current?.closest("main");
         const anchor = viewport ? captureReaderAnchor(viewport, analysis.blocks) : undefined;
@@ -161,7 +166,7 @@ function DocumentWorkspace({
         });
       }
     },
-    [analysis, body, mode, reading, writable],
+    [analysis, body, mode, reading, restoringVersion, writable],
   );
 
   const leaveEditor = useCallback(() => {
@@ -183,6 +188,23 @@ function DocumentWorkspace({
     setReading(source);
     setMode("read");
   }, [analysis, body, documentId, mode, reading]);
+
+  async function restore(commitId: string) {
+    if (body.editor.isComposing()) throw new Error("请先完成正在输入的内容");
+    setRestoringVersion(true);
+    leaveEditor();
+    try {
+      await body.saves.flush();
+      if (body.saves.isDirty()) throw new Error("请先保存本地修改");
+      const baseRevision = body.saves.confirmed().revision;
+      const result = await api.restoreDocument(documentId, { baseRevision, commitId });
+      if (body.sync(result.snapshot)) setReading(body.editor.source());
+      setDocumentSnapshot(result.snapshot);
+      return result;
+    } finally {
+      setRestoringVersion(false);
+    }
+  }
 
   const mountBody = useCallback(
     (parent: HTMLDivElement | null) => {
@@ -299,9 +321,20 @@ function DocumentWorkspace({
             提纲
           </ToggleButton>
         )}
+        <ToggleButton
+          isSelected={tool === "history"}
+          onChange={(selected) => setTool(selected ? "history" : undefined)}
+          className={styles.actionButton}
+        >
+          版本
+        </ToggleButton>
         {writable && (
           <MenuTrigger>
-            <Button aria-label="文档更多" className={styles.actionButton}>
+            <Button
+              aria-label="文档更多"
+              className={styles.actionButton}
+              isDisabled={restoringVersion}
+            >
               更多
             </Button>
             <Popover className={styles.menu}>
@@ -325,7 +358,7 @@ function DocumentWorkspace({
           </MenuTrigger>
         )}
       </div>
-      <div className={styles.documentGrid} data-contents={Boolean(tool) || undefined}>
+      <div className={styles.documentGrid} data-tool={tool}>
         <div className={styles.canvas} data-editable={writable || undefined} ref={canvas}>
           {mode === "read" ? (
             <ReaderSurface analysis={analysis} label={title} />
@@ -376,6 +409,14 @@ function DocumentWorkspace({
               setTool(undefined);
               enterEditor("source", 0);
             }}
+          />
+        )}
+        {tool === "history" && (
+          <VersionPanel
+            workspace={workspace}
+            documentId={documentId}
+            writable={writable}
+            onRestore={restore}
           />
         )}
       </div>

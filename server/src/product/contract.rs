@@ -140,27 +140,27 @@ fn present_revision<'de, D: Deserializer<'de>>(
 
 impl WriteMarkdown {
     pub(crate) fn precondition(&self) -> Result<Option<&str>, ApiError> {
-        let expected = self
-            .base_revision
-            .as_ref()
-            .map(Option::as_deref)
-            .ok_or_else(|| {
-                ApiError::new(
-                    StatusCode::PRECONDITION_REQUIRED,
-                    "precondition_required",
-                    "baseRevision is required",
-                )
-            })?;
-        if expected.is_some_and(|revision| {
-            revision.len() != 64
-                || !revision
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-        }) {
-            return Err(ApiError::invalid("Expected a SHA-256 content revision"));
-        }
-        Ok(expected)
+        content_precondition(self.base_revision.as_ref())
     }
+}
+
+fn content_precondition(base_revision: Option<&Option<String>>) -> Result<Option<&str>, ApiError> {
+    let expected = base_revision.map(Option::as_deref).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::PRECONDITION_REQUIRED,
+            "precondition_required",
+            "baseRevision is required",
+        )
+    })?;
+    if expected.is_some_and(|revision| {
+        revision.len() != 64
+            || !revision
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    }) {
+        return Err(ApiError::invalid("Expected a SHA-256 content revision"));
+    }
+    Ok(expected)
 }
 
 #[derive(Deserialize)]
@@ -168,4 +168,19 @@ pub(crate) struct CreateDocument {
     pub path: String,
     #[serde(flatten)]
     pub content: WriteMarkdown,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RestoreRevision {
+    pub commit_id: String,
+    #[serde(default, deserialize_with = "present_revision")]
+    base_revision: Option<Option<String>>,
+}
+
+impl RestoreRevision {
+    pub(crate) fn precondition(&self) -> Result<&str, ApiError> {
+        content_precondition(self.base_revision.as_ref())?
+            .ok_or_else(|| ApiError::invalid("Restoring requires a content revision"))
+    }
 }

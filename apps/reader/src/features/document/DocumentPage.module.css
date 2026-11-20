@@ -45,9 +45,13 @@
   align-items: start;
 }
 
-.documentGrid[data-contents] {
+.documentGrid[data-tool] {
   grid-template-columns: minmax(0, 1fr) minmax(9rem, 13rem);
   column-gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.documentGrid[data-tool="history"] {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, min(30vw, 24rem));
 }
 
 .canvas {
@@ -285,7 +289,7 @@
 }
 
 @media (max-width: 1000px) {
-  .documentGrid[data-contents] {
+  .documentGrid[data-tool] {
     grid-template-columns: minmax(0, 1fr);
   }
 

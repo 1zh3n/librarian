@@ -1,0 +1,82 @@
+.panel {
+  min-width: 0;
+  max-height: 70dvh;
+  overflow: auto;
+  padding: 0.25rem 0.625rem 0.75rem;
+  border-inline-start: 1px solid var(--border);
+  color: var(--ink);
+  font-size: var(--ui-size);
+}
+
+.panel > output {
+  display: block;
+  padding: 0.375rem;
+  color: var(--ink-secondary);
+}
+
+.versions {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: grid;
+  width: 100%;
+  gap: 0.25rem;
+  justify-items: start;
+  padding: 0.5rem;
+  border-radius: var(--radius);
+  text-align: start;
+}
+
+.entry[data-hovered] {
+  background: var(--surface-hover);
+}
+
+.entry[data-selected] {
+  color: var(--accent);
+  background: var(--surface-selected);
+}
+
+.name {
+  overflow-wrap: anywhere;
+}
+
+.details {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+}
+
+.diff {
+  max-height: min(38dvh, 26rem);
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  font-size: 0.8125rem;
+}
+
+.action {
+  min-height: 44px;
+  padding-inline: 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.action[data-hovered] {
+  background: var(--surface-hover);
+}
+
+@media (max-width: 1000px) {
+  .panel {
+    grid-row: 1;
+    max-height: 50dvh;
+    margin-block-end: 1rem;
+    border-block-end: 1px solid var(--border);
+    border-inline-start: 0;
+  }
+}

@@ -5,11 +5,15 @@ export type DocumentSummary = components["schemas"]["DocumentSummary"];
 export type DocumentSnapshot = components["schemas"]["DocumentSnapshot"];
 export type SearchHit = components["schemas"]["SearchHit"];
 export type OutlineSnapshot = components["schemas"]["OutlineSnapshot"];
+export type DocumentHistory = components["schemas"]["DocumentHistory"];
+export type VersionDiff = components["schemas"]["VersionDiff"];
+export type RestoredDocument = components["schemas"]["RestoredDocument"];
 
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
 type SaveDocument = operations["saveDocument"]["requestBody"]["content"]["application/json"];
 type SaveOutline = operations["saveOutline"]["requestBody"]["content"]["application/json"];
+type RestoreRevision = operations["restoreDocument"]["requestBody"]["content"]["application/json"];
 type ErrorBody = components["schemas"]["ApiError"];
 
 export class ApiError extends Error {
@@ -29,7 +33,10 @@ export class ApiError extends Error {
 async function request<T>(
   path: string,
   signal?: AbortSignal,
-  write?: { method: "POST" | "PUT"; body: CreateDocument | SaveDocument | SaveOutline },
+  write?: {
+    method: "POST" | "PUT";
+    body: CreateDocument | SaveDocument | SaveOutline | RestoreRevision;
+  },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     signal: signal ?? null,
@@ -94,6 +101,22 @@ export const api = {
   saveOutline(document: string, body: SaveOutline, signal?: AbortSignal) {
     return request<OutlineSnapshot>(`${documentPath(document)}/outline`, signal, {
       method: "PUT",
+      body,
+    });
+  },
+  getDocumentHistory(document: string, before?: string, signal?: AbortSignal) {
+    const suffix = before ? `?${new URLSearchParams({ before })}` : "";
+    return request<DocumentHistory>(`${documentPath(document)}/revisions${suffix}`, signal);
+  },
+  getVersionDiff(document: string, commit: string, signal?: AbortSignal) {
+    return request<VersionDiff>(
+      `${documentPath(document)}/revisions/${encodeURIComponent(commit)}/diff`,
+      signal,
+    );
+  },
+  restoreDocument(document: string, body: RestoreRevision, signal?: AbortSignal) {
+    return request<RestoredDocument>(`${documentPath(document)}/restore`, signal, {
+      method: "POST",
       body,
     });
   },
