@@ -18,8 +18,13 @@ use crate::search::SEARCH_DIR;
 
 /// The data root's own top-level directories, which [`ServerControlFileFilter`]
 /// hides from a space rooted there.
-pub(crate) const DATA_ROOT_DIRS: [&str; 4] =
-    ["git-keys", "git-drafts", "git-connections", SEARCH_DIR];
+pub(crate) const DATA_ROOT_DIRS: [&str; 5] = [
+    "git-keys",
+    "git-drafts",
+    "git-connections",
+    SEARCH_DIR,
+    crate::product::db::PRODUCT_DIR,
+];
 
 /// The reserved directory that `name`, one top-level path component, names:
 /// compared ASCII case-insensitively, as case-insensitive filesystems do.

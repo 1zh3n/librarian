@@ -165,6 +165,7 @@ pub struct SpaceInstance {
     pub status: InstanceStatus,
     /// `None` when errored.
     pub router: Option<axum::Router>,
+    pub(crate) state: Option<Arc<ServerState>>,
     /// `None` when errored, or when the space is not managed-revisions. The
     /// admin git-sync routes reach the live engine through this rather than
     /// through the space's own router, which they are not nested inside.
@@ -221,20 +222,24 @@ pub fn build_instance(id: &str, config: &SpaceConfig, deps: &InstanceDeps) -> Sp
         "space state built"
     );
     match result {
-        Ok((state, pages)) => SpaceInstance {
-            id: id.to_string(),
-            config: config.clone(),
-            prefix,
-            space_prefixes: state.space_prefixes.clone(),
-            status: InstanceStatus::Running,
-            runtime_authorizer: state.authorizer.clone(),
-            revisions: state.revisions.clone(),
-            runtime: state.runtime.clone(),
-            search: Some(state.search.clone()),
-            pages: Some(pages),
-            last_pages: None,
-            router: Some(crate::build_router(Arc::new(state))),
-        },
+        Ok((state, pages)) => {
+            let state = Arc::new(state);
+            SpaceInstance {
+                id: id.to_string(),
+                config: config.clone(),
+                prefix,
+                space_prefixes: state.space_prefixes.clone(),
+                status: InstanceStatus::Running,
+                runtime_authorizer: state.authorizer.clone(),
+                revisions: state.revisions.clone(),
+                runtime: state.runtime.clone(),
+                search: Some(state.search.clone()),
+                pages: Some(pages),
+                last_pages: None,
+                router: Some(crate::build_router(state.clone())),
+                state: Some(state),
+            }
+        }
         Err(reason) => {
             tracing::warn!("space {id} is errored: {reason}");
             SpaceInstance {
@@ -244,6 +249,7 @@ pub fn build_instance(id: &str, config: &SpaceConfig, deps: &InstanceDeps) -> Sp
                 status: InstanceStatus::Errored(reason),
                 space_prefixes: Default::default(),
                 router: None,
+                state: None,
                 revisions: None,
                 runtime: None,
                 runtime_authorizer: None,

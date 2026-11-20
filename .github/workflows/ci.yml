@@ -127,6 +127,7 @@ jobs:
           node-version-file: ".nvmrc"
       - run: npm ci
       - run: |
+          npm run api:check -w @librarian/reader
           npm run typecheck -w @librarian/reader
           npm run lint -w @librarian/reader
           npm run format:check -w @librarian/reader

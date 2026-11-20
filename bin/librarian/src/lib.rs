@@ -3,13 +3,19 @@ mod assets;
 use std::sync::Arc;
 
 use axum::Router;
-use silverbullet_server::product::router::{build_product_router, ProductState};
+use silverbullet_server::product::router::{
+    build_configured_product_router, build_product_router, ProductState,
+};
 
 pub fn router() -> Router {
-    build_product_router(Arc::new(ProductState {
+    build_product_router(product_state())
+}
+
+fn product_state() -> Arc<ProductState> {
+    Arc::new(ProductState {
         version: env!("CARGO_PKG_VERSION"),
         asset: assets::reader_asset,
-    }))
+    })
 }
 
 mod mcp;
@@ -29,10 +35,13 @@ impl Product {
     pub fn open(data_root: &Path, port: u16) -> Result<Self, String> {
         let spaces = NativeSpaces::open(data_root, port, env!("CARGO_PKG_VERSION"))?;
         let (host, mcp_router) = mcp::build(data_root, &spaces)?;
+        let manager = spaces.manager.clone();
+        let router =
+            build_configured_product_router(product_state(), data_root, spaces)?.merge(mcp_router);
         Ok(Self {
-            manager: spaces.manager,
+            manager,
             host,
-            router: router().merge(mcp_router),
+            router,
         })
     }
 

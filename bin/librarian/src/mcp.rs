@@ -34,6 +34,7 @@ use silverbullet_server_mcp::{
 
 const LOGIN_PATH: &str = "/.auth/librarian/login";
 const CONSENT_PATH: &str = "/.auth/mcp/authorize";
+type McpEnabled = Arc<dyn Fn() -> bool + Send + Sync>;
 const LOGIN_PAGE: &str = r#"<!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 Librarian</title></head>
@@ -85,7 +86,7 @@ pub fn build(root: &Path, spaces: &NativeSpaces) -> Result<(Arc<MultiHost>, Rout
     });
 
     let manager = spaces.manager.clone();
-    let enabled = Arc::new(move || {
+    let enabled: McpEnabled = Arc::new(move || {
         manager.mcp_enabled() && !matches!(std::env::var("SB_MCP").as_deref(), Ok("0" | "false"))
     });
     let tools = Arc::new(WorkspaceTools(host.clone()));
@@ -96,7 +97,10 @@ pub fn build(root: &Path, spaces: &NativeSpaces) -> Result<(Arc<MultiHost>, Rout
                 .post(login_submit)
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
-        .with_state(login);
+        .with_state(LoginState {
+            manager: login,
+            mcp_enabled: enabled.clone(),
+        });
     let router = mcp_router_gated(tools, host.clone(), enabled.clone())
         .merge(mcp_oauth::router(oauth, enabled))
         .merge(login_router);
@@ -141,19 +145,44 @@ impl ToolSet for WorkspaceTools {
 
 #[derive(Deserialize)]
 struct LoginQuery {
-    next: String,
+    next: Option<String>,
+}
+
+#[derive(Clone)]
+struct LoginState {
+    manager: Arc<LoginManager>,
+    mcp_enabled: McpEnabled,
 }
 
 impl LoginQuery {
-    fn consent_target(&self) -> Option<&str> {
-        let target = self.next.parse::<Uri>().ok()?;
-        (target.scheme().is_none() && target.authority().is_none() && target.path() == CONSENT_PATH)
-            .then_some(self.next.as_str())
+    fn target(&self, mcp_enabled: &dyn Fn() -> bool) -> Option<&str> {
+        let next = self.next.as_deref().unwrap_or("/");
+        let target = next.parse::<Uri>().ok()?;
+        if target.scheme().is_some() || target.authority().is_some() {
+            return None;
+        }
+        if target.path() == CONSENT_PATH {
+            return mcp_enabled().then_some(next);
+        }
+        let segments: Vec<_> = target.path().split('/').collect();
+        let id = |value: &str| {
+            !value.is_empty()
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        };
+        let known_route = match segments.as_slice() {
+            ["", ""] => true,
+            ["", "workspaces", workspace] => id(workspace),
+            ["", "workspaces", workspace, "documents", document] => id(workspace) && id(document),
+            _ => false,
+        };
+        known_route.then_some(next)
     }
 }
 
-async fn login_page(Query(query): Query<LoginQuery>) -> Response {
-    if query.consent_target().is_none() {
+async fn login_page(State(login): State<LoginState>, Query(query): Query<LoginQuery>) -> Response {
+    if query.target(&*login.mcp_enabled).is_none() {
         return StatusCode::BAD_REQUEST.into_response();
     }
     (
@@ -177,12 +206,12 @@ struct Credentials {
 }
 
 async fn login_submit(
-    State(login): State<Arc<LoginManager>>,
+    State(login): State<LoginState>,
     Query(query): Query<LoginQuery>,
     headers: HeaderMap,
     Form(credentials): Form<Credentials>,
 ) -> Response {
-    let Some(target) = query.consent_target() else {
+    let Some(target) = query.target(&*login.mcp_enabled) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     let origin = request_origin(&headers);
@@ -194,7 +223,7 @@ async fn login_submit(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let verifier = login.clone();
+    let verifier = login.manager.clone();
     let token = tokio::task::spawn_blocking(move || {
         if verifier.is_locked() {
             return Err(StatusCode::TOO_MANY_REQUESTS);
@@ -217,6 +246,7 @@ async fn login_submit(
     let options = CookieOptions {
         path: "/".into(),
         max_age_secs: login
+            .manager
             .cookie_max_age(&token)
             .and_then(|age| i64::try_from(age).ok()),
         http_only: true,

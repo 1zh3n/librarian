@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::{path::Path as FilePath, sync::Arc};
 
 use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
@@ -19,17 +19,32 @@ pub struct ProductState {
 }
 
 pub fn build_product_router(state: Arc<ProductState>) -> Router {
-    let api: Router<Arc<ProductState>> = Router::new()
+    build(state, Router::new())
+}
+
+pub fn build_configured_product_router(
+    state: Arc<ProductState>,
+    root: &FilePath,
+    spaces: super::space_adapter::NativeSpaces,
+) -> Result<Router, String> {
+    let service = super::documents::DocumentService::open(root, spaces)?;
+    Ok(build(state, super::documents::routes(Arc::new(service))))
+}
+
+fn build(state: Arc<ProductState>, routes: Router) -> Router {
+    let api = Router::new()
         .route("/health", get(health))
-        .fallback(api_not_found);
+        .fallback(api_not_found)
+        .with_state(state.clone())
+        .merge(routes);
 
     Router::new()
-        .nest("/api/v1", api)
         .route("/", get(index))
         .route("/workspaces/{workspace}", get(index))
         .route("/workspaces/{workspace}/documents/{document}", get(index))
         .route("/assets/{name}", get(asset))
         .with_state(state)
+        .nest("/api/v1", api)
 }
 
 async fn health(State(state): State<Arc<ProductState>>) -> impl IntoResponse {

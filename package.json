@@ -152,6 +152,7 @@
     "npm": ">=10.0.0"
   },
   "workspaces": [
-    "apps/reader"
+    "apps/reader",
+    "api"
   ]
 }

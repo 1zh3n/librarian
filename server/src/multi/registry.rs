@@ -182,6 +182,7 @@ mod tests {
             space_prefixes: Default::default(),
             status: InstanceStatus::Running,
             router: None,
+            state: None,
             revisions: None,
             runtime: None,
             runtime_authorizer: None,
