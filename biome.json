@@ -50,6 +50,7 @@
       "!**/test-results",
       "!**/.chrome-data",
       "!target",
+      "!apps/reader",
       "!**/*.html",
       "!**/*.plug.js",
       "!plugs/*/assets",

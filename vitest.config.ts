@@ -47,6 +47,7 @@ export default defineConfig({
       "e2e",
       "browser-tests",
       "docs",
+      "apps/reader/**",
       "server",
       // Exclude helper test files (no test() blocks, only export helper functions)
       "client/data/kv_primitives.test.ts",

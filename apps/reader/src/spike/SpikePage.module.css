@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light dark;
+  --paper: light-dark(#fbfaf6, #242321);
+  --ink: light-dark(#25241f, #f3efe7);
+  --text-width: 46rem;
+
+  color: var(--ink);
+  background: var(--paper);
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.canvas {
+  max-width: var(--text-width);
+  margin-inline: auto;
+  padding: 2rem 1rem;
+  line-height: 1.65;
+}
+
+.source {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 10rem;
+  margin-top: 1rem;
+  font: inherit;
+}
