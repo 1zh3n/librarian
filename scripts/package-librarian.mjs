@@ -43,6 +43,7 @@ const rustGraph = run("cargo", [
 ]);
 const includedCrates = new Set(rustGraph.split("\n").map((line) => line.split(" ").slice(0, 2).join(" ")));
 const reader = readJsonFrom("npm", ["ls", "--workspace", "@librarian/reader", "--omit=dev", "--all", "--long", "--json"]);
+const npmPaths = new Set();
 const inventory = [];
 const staging = mkdtempSync(join(tmpdir(), "librarian-package-"));
 const bundle = join(staging, name);
@@ -70,7 +71,6 @@ try {
     if (!pkg.source || !includedCrates.has(`${pkg.name} v${pkg.version}`)) continue;
     includeLicense("rust", pkg.name, pkg.version, pkg.license, dirname(pkg.manifest_path), pkg.license_file);
   }
-  const npmPaths = new Set();
   walkNpm(reader);
   for (const tool of ["vite", "rolldown"]) {
     walkNpm({ path: join(root, "node_modules", tool) });
