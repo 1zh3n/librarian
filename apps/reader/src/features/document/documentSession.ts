@@ -6,12 +6,14 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
   initial,
   write,
   confirmed,
+  readCurrent,
   readOnly,
   ariaLabel,
 }: {
   initial: Snapshot;
   write: (write: MarkdownWrite) => Promise<Snapshot>;
   confirmed: (snapshot: Snapshot) => void;
+  readCurrent: () => Promise<Snapshot>;
   readOnly: boolean;
   ariaLabel: string;
 }) {
@@ -24,10 +26,15 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
       else if (!readOnly) saves.change(markdown);
     },
   });
-  const saves = new SaveController(initial, write, (snapshot) => {
-    editor.acknowledge(snapshot.markdown, snapshot.revision);
-    confirmed(snapshot);
-  });
+  const saves = new SaveController(
+    initial,
+    write,
+    (snapshot) => {
+      editor.acknowledge(snapshot.markdown, snapshot.revision);
+      confirmed(snapshot);
+    },
+    readCurrent,
+  );
 
   function sync(snapshot: Snapshot) {
     if (editor.isComposing()) return false;

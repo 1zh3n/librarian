@@ -8,6 +8,7 @@ export type OutlineSnapshot = components["schemas"]["OutlineSnapshot"];
 export type DocumentHistory = components["schemas"]["DocumentHistory"];
 export type VersionDiff = components["schemas"]["VersionDiff"];
 export type RestoredDocument = components["schemas"]["RestoredDocument"];
+export type DevicePreferences = components["schemas"]["DevicePreferences"];
 
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
@@ -35,7 +36,7 @@ async function request<T>(
   signal?: AbortSignal,
   write?: {
     method: "POST" | "PUT";
-    body: CreateDocument | SaveDocument | SaveOutline | RestoreRevision;
+    body: CreateDocument | SaveDocument | SaveOutline | RestoreRevision | DevicePreferences;
   },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -119,5 +120,18 @@ export const api = {
       method: "POST",
       body,
     });
+  },
+  getDevicePreferences(device: string, signal?: AbortSignal) {
+    return request<DevicePreferences>(`/settings/devices/${encodeURIComponent(device)}`, signal);
+  },
+  saveDevicePreferences(device: string, body: DevicePreferences) {
+    return request<DevicePreferences>(
+      `/settings/devices/${encodeURIComponent(device)}`,
+      undefined,
+      {
+        method: "PUT",
+        body,
+      },
+    );
   },
 };

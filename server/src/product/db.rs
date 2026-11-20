@@ -64,7 +64,16 @@ impl Metadata {
                  );
                  PRAGMA user_version = 1;",
             )?;
-        } else if version != 1 {
+        }
+        if version <= 1 {
+            transaction.execute_batch(
+                "CREATE TABLE device_preferences (
+                   account TEXT NOT NULL, device_id TEXT NOT NULL, settings TEXT NOT NULL,
+                   PRIMARY KEY (account, device_id)
+                 );
+                 PRAGMA user_version = 2;",
+            )?;
+        } else if version != 2 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;
@@ -120,5 +129,34 @@ impl Metadata {
             )
             .optional()?
             .ok_or_else(ApiError::not_found)
+    }
+
+    pub(super) fn device_preferences(
+        &self,
+        account: &str,
+        device: &str,
+    ) -> Result<Option<String>, ApiError> {
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT settings FROM device_preferences WHERE account = ?1 AND device_id = ?2",
+                [account, device],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    pub(super) fn set_device_preferences(
+        &self,
+        account: &str,
+        device: &str,
+        settings: &str,
+    ) -> Result<(), ApiError> {
+        self.connection()?.execute(
+            "INSERT INTO device_preferences (account, device_id, settings) VALUES (?1, ?2, ?3)
+             ON CONFLICT(account, device_id) DO UPDATE SET settings = excluded.settings",
+            [account, device, settings],
+        )?;
+        Ok(())
     }
 }

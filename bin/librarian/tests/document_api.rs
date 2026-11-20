@@ -248,6 +248,58 @@ async fn outline_and_body_save_independently() {
 }
 
 #[tokio::test]
+async fn device_preferences_are_isolated_by_account_and_device() {
+    let mut f = Fixture::new(false);
+    let desktop = "/settings/devices/desktop-device";
+    let mobile = "/settings/devices/mobile-device";
+    let (status, defaults) = f
+        .request("GET", desktop, Some(&f.editor), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(defaults["theme"], "system");
+    let mut preferences = defaults.clone();
+    preferences["theme"] = json!("dark");
+    preferences["eink"] = json!(true);
+    preferences["fontSize"] = json!(20);
+    preferences["sidebarWidth"] = json!(276);
+    let (status, saved) = f
+        .request("PUT", desktop, Some(&f.editor), preferences.clone())
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved, preferences);
+    f.app = open(f.root.path());
+    assert_eq!(
+        f.request("GET", desktop, Some(&f.editor), Value::Null)
+            .await
+            .1,
+        preferences
+    );
+    assert_eq!(
+        f.request("GET", desktop, Some(&f.reader), Value::Null)
+            .await
+            .1,
+        defaults
+    );
+    assert_eq!(
+        f.request("GET", mobile, Some(&f.editor), Value::Null)
+            .await
+            .1,
+        defaults
+    );
+    assert_eq!(
+        f.request("GET", desktop, None, Value::Null).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    preferences["fontSize"] = json!(8);
+    assert_eq!(
+        f.request("PUT", desktop, Some(&f.editor), preferences)
+            .await
+            .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
 async fn workspace_list_is_member_filtered() {
     let f = Fixture::new(false);
     let (status, list) = f

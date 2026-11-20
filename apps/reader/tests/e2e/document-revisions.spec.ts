@@ -12,17 +12,20 @@ test("reads a saved diff and restores it as a new Git commit", async ({ page }) 
   await expect.poll(async () => (await history()).revisions?.length, { timeout: 10_000 }).toBe(1);
   const initialCommit = (await history()).revisions[0]?.commitId;
   expect(initialCommit).toBeDefined();
+  await page.getByRole("button", { name: "版本", exact: true }).click();
+  const panel = page.getByRole("region", { name: "版本历史" });
+  await expect(panel.getByRole("button", { name: /Create HistoryRoundTrip.md/ })).toBeVisible();
+  await expect(panel.getByText("当前修改等待归档")).toHaveCount(0);
 
   await page.getByRole("article").getByText("初始稿").click();
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+End");
   await page.keyboard.insertText("编辑的新版本");
   await expect(page.getByText("已保存")).toBeVisible();
+  await expect(panel.getByText("当前修改等待归档")).toBeVisible();
   await page.getByRole("button", { name: "返回阅读" }).click();
   await expect(page.getByRole("article")).toContainText("编辑的新版本");
 
-  await page.getByRole("button", { name: "版本", exact: true }).click();
-  const panel = page.getByRole("region", { name: "版本历史" });
   await panel.getByRole("button", { name: /Create HistoryRoundTrip.md/ }).click();
   await expect(panel.getByLabel("版本差异")).toContainText("+初始稿");
   await panel.getByRole("button", { name: "恢复这一版" }).click();

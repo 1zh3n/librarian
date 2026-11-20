@@ -1,0 +1,112 @@
+.overlay {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: var(--overlay);
+}
+
+.modal {
+  width: min(100%, 38rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dialog {
+  padding: 1rem;
+  outline: 0;
+}
+
+.dialog h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.875rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.input,
+.button {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+}
+
+.input {
+  text-align: start;
+}
+
+.options {
+  min-width: var(--trigger-width);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.option {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  padding-inline: 0.65rem;
+}
+
+.option[data-focused],
+.button[data-hovered] {
+  background: var(--surface-hover);
+}
+
+.checkbox {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: var(--radius);
+  font-size: var(--ui-size);
+}
+
+.mark {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+}
+
+.checkbox[data-selected] .mark::before {
+  content: "✓";
+}
+
+.actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: end;
+  gap: 0.5rem;
+}
+
+.actions .button {
+  width: auto;
+}
+
+.error {
+  grid-column: 1 / -1;
+}

@@ -138,3 +138,29 @@ test("adding a tag through the document uses a byte-preserving save", async ({ p
     .poll(async () => (await readNote(page, apiUrl)).markdown)
     .toBe(before.replace("note design ", "note design 河岸 "));
 });
+
+test("a failed workspace refetch leaves the live draft mounted", async ({ page }) => {
+  const { apiUrl } = await createNote(page, "RefetchDraft.md", "本地编辑");
+  await page.getByRole("article").getByText("本地编辑").click();
+  const body = editor(page, "Markdown 正文");
+  await body.press("Control+End");
+  await page.route(`**${apiUrl}`, (route) =>
+    route.request().method() === "PUT" ? route.abort("failed") : route.continue(),
+  );
+  await page.keyboard.insertText("继续保留");
+  await expect(page.getByRole("alert")).toContainText("保存失败");
+  await page.clock.install();
+  await page.clock.fastForward(21_000);
+  await page.route("**/api/v1/workspaces", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { code: "test_unavailable", message: "Temporary outage" },
+    }),
+  );
+  const request = page.waitForResponse(
+    (response) => response.url().endsWith("/api/v1/workspaces") && response.status() === 503,
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+  await request;
+  await expect(body).toContainText("本地编辑继续保留");
+});

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Button, Collection, Tree, TreeItem, TreeItemContent } from "react-aria-components";
+import { Button, Collection, Tree, TreeItem, TreeItemContent } from "../../ui/primitives";
 import type { DocumentSummary } from "../../api/client";
 import styles from "./SpaceTree.module.css";
 

@@ -31,7 +31,7 @@ const METADATA_LIMIT: usize = 32 * 1024;
 
 pub(crate) struct DocumentService {
     pub(crate) spaces: NativeSpaces,
-    metadata: Metadata,
+    pub(super) metadata: Metadata,
 }
 
 impl DocumentService {
@@ -472,6 +472,10 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .route(
             "/documents/{document}/restore",
             post(super::revisions::restore),
+        )
+        .route(
+            "/settings/devices/{device}",
+            get(super::settings::get_preferences).put(super::settings::save_preferences),
         )
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {

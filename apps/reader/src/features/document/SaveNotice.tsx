@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Button } from "react-aria-components";
+import { Button } from "../../ui/primitives";
 import type { EditorSession } from "../../editor/codemirror/adapter";
 import type { MarkdownSnapshot, SaveController } from "./saveController";
 import styles from "./DocumentPage.module.css";

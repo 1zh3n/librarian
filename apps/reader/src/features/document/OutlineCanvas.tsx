@@ -12,6 +12,7 @@ export function OutlineCanvas({
   visible,
   write,
   confirmed,
+  readCurrent,
   register,
 }: {
   snapshot: OutlineSnapshot;
@@ -19,6 +20,7 @@ export function OutlineCanvas({
   visible: boolean;
   write: (draft: MarkdownWrite) => Promise<OutlineSnapshot>;
   confirmed: (saved: OutlineSnapshot) => void;
+  readCurrent: () => Promise<OutlineSnapshot>;
   register: (session: OutlineSession | undefined) => void;
 }) {
   const [session] = useState(() =>
@@ -28,6 +30,7 @@ export function OutlineCanvas({
       ariaLabel: "Markdown 提纲",
       write,
       confirmed,
+      readCurrent,
     }),
   );
   useEffect(() => {

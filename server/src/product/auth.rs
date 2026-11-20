@@ -10,6 +10,10 @@ pub(crate) struct Account {
 }
 
 impl Account {
+    pub(super) fn username(&self) -> &str {
+        &self.username
+    }
+
     pub(crate) fn authenticate(
         spaces: &NativeSpaces,
         headers: &HeaderMap,

@@ -6,6 +6,10 @@ declare const styles: {
   readonly brand: string;
   readonly workspace: string;
   readonly columns: string;
+  readonly topActions: string;
+  readonly layoutMenu: string;
+  readonly separator: string;
+  readonly notice: string;
   readonly navigation: string;
   readonly popover: string;
   readonly spaces: string;

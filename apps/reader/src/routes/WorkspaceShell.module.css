@@ -46,16 +46,54 @@
 }
 
 .columns {
-  display: grid;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr);
 }
 
-.columns[data-navigation] {
-  grid-template-columns: clamp(12rem, 20vw, 16rem) minmax(0, 1fr);
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.layoutMenu {
+  padding: 0.25rem;
+}
+
+.separator {
+  width: 4px;
+  border-inline-start: 1px solid var(--border);
+  background: var(--paper);
+  outline-offset: -2px;
+}
+
+.separator:hover,
+.separator:focus-visible {
+  background: var(--border-strong);
+}
+
+.notice {
+  position: fixed;
+  inset-block-end: 1rem;
+  inset-inline-start: 50%;
+  z-index: 1;
+  max-width: calc(100% - 2rem);
+  margin: 0;
+  padding: 0.375rem 0.75rem;
+  translate: -50% 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: var(--ui-size);
+}
+
+.application[data-reading-focus] .bar {
+  color: var(--ink-secondary);
+  background: var(--paper);
 }
 
 .navigation {
+  height: 100%;
   min-height: 0;
   overflow: auto;
   border-inline-end: 1px solid var(--border);
@@ -109,6 +147,7 @@
 }
 
 .viewport {
+  height: 100%;
   min-width: 0;
   overflow: auto;
   scrollbar-gutter: stable;
@@ -137,11 +176,6 @@
 }
 
 @media (max-width: 800px) {
-  .columns[data-navigation] {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, min(33dvh, 12rem)) minmax(0, 1fr);
-  }
-
   .navigation {
     border-inline-end: 0;
     border-block-end: 1px solid var(--border);

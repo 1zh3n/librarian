@@ -15,6 +15,16 @@ function hash(text: string): string {
   return (value >>> 0).toString(36);
 }
 
+export function blockSignature(id: string): string {
+  return id.slice(0, id.lastIndexOf("-"));
+}
+
+export function nextBlockId(signature: string, occurrences: Map<string, number>): string {
+  const occurrence = (occurrences.get(signature) ?? 0) + 1;
+  occurrences.set(signature, occurrence);
+  return `${signature}-${occurrence}`;
+}
+
 export function collectBlocks(
   tree: Root,
   source: string,
@@ -38,9 +48,7 @@ export function collectBlocks(
     }
     const from = start + offset;
     const to = end + offset;
-    const signature = `${node.type}-${hash(source.slice(from, to))}`;
-    const occurrence = (occurrences.get(signature) ?? 0) + 1;
-    occurrences.set(signature, occurrence);
-    return [{ id: `${documentId}/${signature}-${occurrence}`, kind: node.type, from, to }];
+    const signature = `${documentId}/${node.type}-${hash(source.slice(from, to))}`;
+    return [{ id: nextBlockId(signature, occurrences), kind: node.type, from, to }];
   });
 }

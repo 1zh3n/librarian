@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button, ToggleButton } from "react-aria-components";
+import { Button, ToggleButton } from "../../ui/primitives";
 import { api, ApiError } from "../../api/client";
 import type { RestoredDocument } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";

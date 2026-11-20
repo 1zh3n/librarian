@@ -5,7 +5,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "document-*.spec.ts",
+  testMatch: ["document-*.spec.ts", "reading-focus.spec.ts"],
   use: { ...devices["Desktop Chrome"], baseURL, trace: "retain-on-failure" },
   webServer: {
     command: `cargo run --locked --quiet -p librarian --example reader_fixture -- ${port}`,

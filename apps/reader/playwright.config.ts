@@ -5,7 +5,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: "document-*.spec.ts",
+  testIgnore: ["document-*.spec.ts", "reading-focus.spec.ts"],
   use: { ...devices["Desktop Chrome"], baseURL, trace: "retain-on-failure" },
   webServer: {
     command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { DocumentSummary } from "../../src/api/client";
-import { openFieldWorkspace } from "./productFixture";
+import { createNote, openFieldWorkspace } from "./productFixture";
 
 async function fieldDocument(page: Page): Promise<string> {
   const space = await openFieldWorkspace(page);
@@ -71,4 +71,11 @@ test("scrolls wide tables and code within the 360 px canvas", async ({ page }) =
   expect(widths.page).toBe(widths.viewport);
   expect(widths.tableOverflow).toBeGreaterThan(0);
   expect(widths.codeOverflow).toBeGreaterThan(0);
+});
+
+test("opens a relative Markdown link through the existing document identity", async ({ page }) => {
+  await createNote(page, "野外/LinkSource.md", "[回到河岸](01.md)");
+  await page.getByRole("link", { name: "回到河岸" }).click();
+  await expect(page.getByRole("heading", { name: "河岸清晨", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/documents\/doc_[a-f0-9]+$/);
 });

@@ -160,6 +160,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/settings/devices/{device}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        device: string;
+      };
+      cookie?: never;
+    };
+    get: operations["getDevicePreferences"];
+    put: operations["saveDevicePreferences"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -244,6 +262,23 @@ export interface components {
     RestoredDocument: {
       commitId: string;
       snapshot: components["schemas"]["DocumentSnapshot"];
+    };
+    DevicePreferences: {
+      /** @enum {string} */
+      theme: "system" | "light" | "dark";
+      /** @enum {string} */
+      font: "serif" | "sans";
+      /** @enum {string} */
+      layout: "reading" | "writing" | "research" | "review" | "custom";
+      fontSize: number;
+      lineHeight: number;
+      measure: number;
+      navigation: boolean | null;
+      sidebarWidth: number;
+      toolsWidth: number;
+      eink: boolean;
+      reduceMotion: boolean;
+      focusKey: string;
     };
   };
   responses: never;
@@ -1191,6 +1226,126 @@ export interface operations {
       };
       /** @description Workspace unavailable */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getDevicePreferences: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        device: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Effective device preferences */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DevicePreferences"];
+        };
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Request failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  saveDevicePreferences: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        device: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DevicePreferences"];
+      };
+    };
+    responses: {
+      /** @description Saved device preferences */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DevicePreferences"];
+        };
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Request forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Payload too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Request failed */
+      500: {
         headers: {
           [name: string]: unknown;
         };

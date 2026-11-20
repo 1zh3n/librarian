@@ -61,4 +61,58 @@ describe("document saves", () => {
     expect(write).toHaveBeenCalledTimes(1);
     expect(saves.isDirty()).toBe(true);
   });
+
+  it("confirms the actual saved bytes after losing the write acknowledgement", async () => {
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("connection closed after write"))
+      .mockRejectedValueOnce(new ApiError(409, "revision_conflict", "Conflict", "persisted"));
+    const persisted = { markdown: "已写入磁盘", revision: "persisted" };
+    const readCurrent = vi.fn().mockResolvedValue(persisted);
+    const confirmed = vi.fn();
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      confirmed,
+      readCurrent,
+    );
+    saves.change(persisted.markdown);
+    await saves.flush();
+    expect(saves.status()).toBe("error");
+    await saves.flush();
+    expect(readCurrent).toHaveBeenCalledTimes(1);
+    expect(confirmed).toHaveBeenCalledWith(persisted);
+    expect(saves.status()).toBe("saved");
+    expect(saves.isDirty()).toBe(false);
+  });
+
+  it("uses the landed revision for later text after an in-flight response is lost", async () => {
+    let disconnect = () => {};
+    const pending = new Promise((_resolve, reject) => {
+      disconnect = () => reject(new TypeError("connection closed after write"));
+    });
+    const write = vi
+      .fn()
+      .mockReturnValueOnce(pending)
+      .mockImplementation(({ baseRevision }: { baseRevision: string }) =>
+        baseRevision === "first"
+          ? Promise.resolve({ markdown: "后续输入", revision: "second" })
+          : Promise.reject(new ApiError(409, "revision_conflict", "Conflict", "first")),
+      );
+    const readCurrent = vi.fn().mockResolvedValue({ markdown: "第一笔", revision: "first" });
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      vi.fn(),
+      readCurrent,
+    );
+    saves.change("第一笔");
+    const saving = saves.flush();
+    saves.change("后续输入");
+    disconnect();
+    await saving;
+    await saves.flush();
+    expect(saves.status()).toBe("saved");
+    expect(write).toHaveBeenLastCalledWith({ markdown: "后续输入", baseRevision: "first" });
+  });
 });

@@ -1145,6 +1145,139 @@
           }
         }
       }
+    },
+    "/settings/devices/{device}": {
+      "parameters": [
+        {
+          "name": "device",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{8,64}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDevicePreferences",
+        "responses": {
+          "200": {
+            "description": "Effective device preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicePreferences"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveDevicePreferences",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevicePreferences"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved device preferences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicePreferences"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1491,6 +1624,92 @@
             "$ref": "#/components/schemas/DocumentSnapshot"
           }
         }
+      },
+      "DevicePreferences": {
+        "type": "object",
+        "required": [
+          "theme",
+          "font",
+          "layout",
+          "fontSize",
+          "lineHeight",
+          "measure",
+          "navigation",
+          "sidebarWidth",
+          "toolsWidth",
+          "eink",
+          "reduceMotion",
+          "focusKey"
+        ],
+        "properties": {
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "font": {
+            "type": "string",
+            "enum": [
+              "serif",
+              "sans"
+            ]
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "reading",
+              "writing",
+              "research",
+              "review",
+              "custom"
+            ]
+          },
+          "fontSize": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 28
+          },
+          "lineHeight": {
+            "type": "number",
+            "minimum": 1.4,
+            "maximum": 2.4
+          },
+          "measure": {
+            "type": "integer",
+            "minimum": 28,
+            "maximum": 56
+          },
+          "navigation": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "sidebarWidth": {
+            "type": "integer",
+            "minimum": 176,
+            "maximum": 360
+          },
+          "toolsWidth": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 480
+          },
+          "eink": {
+            "type": "boolean"
+          },
+          "reduceMotion": {
+            "type": "boolean"
+          },
+          "focusKey": {
+            "type": "string",
+            "pattern": "^[a-z]?$"
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

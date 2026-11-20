@@ -9,7 +9,7 @@ import {
   Modal,
   ModalOverlay,
   SearchField,
-} from "react-aria-components";
+} from "../../ui/primitives";
 import type { DocumentSummary, SearchHit } from "../../api/client";
 import { searchQuery } from "../../api/queries";
 import styles from "./CommandPalette.module.css";
@@ -17,11 +17,13 @@ import styles from "./CommandPalette.module.css";
 export function CommandPalette({
   workspace,
   documents,
+  commands,
   onClose,
   openDocument,
 }: {
   workspace: string;
   documents: readonly DocumentSummary[];
+  commands: readonly { id: string; title: string; run: () => void }[];
   onClose: () => void;
   openDocument: (id: string) => void;
 }) {
@@ -56,6 +58,15 @@ export function CommandPalette({
     }
   }
   const searching = query && (query !== debounced || results.isFetching);
+  const visibleCommands = commands.filter((command) => command.title.includes(query));
+  const items = [
+    ...visibleCommands.map(({ id, title }) => ({ id, title, detail: "" })),
+    ...Array.from(options.values(), ({ document, excerpt }) => ({
+      id: document.id,
+      title: document.title,
+      detail: excerpt || document.path,
+    })),
+  ];
   const emptyMessage = searching
     ? "正在搜索…"
     : results.isError
@@ -78,17 +89,19 @@ export function CommandPalette({
             <ListBox
               aria-label="搜索结果"
               className={styles.results}
-              items={Array.from(options.values())}
+              items={items}
               renderEmptyState={() => <output className={styles.empty}>{emptyMessage}</output>}
               onAction={(id) => {
                 onClose();
-                openDocument(String(id));
+                const command = visibleCommands.find((item) => item.id === id);
+                if (command) command.run();
+                else openDocument(String(id));
               }}
             >
-              {({ document, excerpt }) => (
-                <ListBoxItem id={document.id} textValue={document.title} className={styles.result}>
-                  <span>{document.title}</span>
-                  <span className={styles.detail}>{excerpt || document.path}</span>
+              {({ id, title, detail }) => (
+                <ListBoxItem id={id} textValue={title} className={styles.result}>
+                  <span>{title}</span>
+                  {detail && <span className={styles.detail}>{detail}</span>}
                 </ListBoxItem>
               )}
             </ListBox>

@@ -15,16 +15,20 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
   #listeners = new Set<() => void>();
   #write: (change: MarkdownWrite) => Promise<Snapshot>;
   #onConfirmed: (snapshot: Snapshot) => void;
+  #readCurrent: (() => Promise<Snapshot>) | undefined;
+  #unacknowledged: string | undefined;
 
   constructor(
     initial: Snapshot,
     write: (change: MarkdownWrite) => Promise<Snapshot>,
     onConfirmed: (snapshot: Snapshot) => void,
+    readCurrent?: () => Promise<Snapshot>,
   ) {
     this.#confirmed = initial;
     this.#latest = { markdown: initial.markdown, generation: 0 };
     this.#write = write;
     this.#onConfirmed = onConfirmed;
+    this.#readCurrent = readCurrent;
   }
 
   status = (): SaveStatus => this.#status;
@@ -35,7 +39,11 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
   };
 
   isDirty() {
-    return this.#status === "saving" || this.#latest.markdown !== this.#confirmed.markdown;
+    return (
+      this.#status === "saving" ||
+      this.#unacknowledged !== undefined ||
+      this.#latest.markdown !== this.#confirmed.markdown
+    );
   }
 
   confirmed() {
@@ -85,6 +93,23 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
 
   async #writeChanges() {
     this.#setStatus("saving");
+    if (this.#unacknowledged !== undefined && this.#readCurrent) {
+      let remote: Snapshot;
+      try {
+        remote = await this.#readCurrent();
+      } catch {
+        this.#setStatus("error");
+        return;
+      }
+      if (remote.revision !== this.#confirmed.revision) {
+        if (remote.revision === null || remote.markdown !== this.#unacknowledged) {
+          this.#setStatus("conflict");
+          return;
+        }
+        this.#confirm(remote);
+      }
+      this.#unacknowledged = undefined;
+    }
     while (this.#latest.markdown !== this.#confirmed.markdown) {
       const snapshot = this.#latest;
       const baseRevision = this.#confirmed.revision;
@@ -95,14 +120,32 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
           throw new Error("Server did not confirm this Markdown snapshot");
         }
       } catch (error) {
-        this.#setStatus(error instanceof ApiError && error.status === 409 ? "conflict" : "error");
-        return;
+        const conflict = error instanceof ApiError && error.status === 409;
+        if (!conflict && this.#readCurrent) this.#unacknowledged = snapshot.markdown;
+        if (!conflict || !this.#readCurrent) {
+          this.#setStatus(conflict ? "conflict" : "error");
+          return;
+        }
+        try {
+          saved = await this.#readCurrent();
+        } catch {
+          this.#setStatus("error");
+          return;
+        }
+        if (saved.revision === null || saved.markdown !== snapshot.markdown) {
+          this.#setStatus("conflict");
+          return;
+        }
       }
-      this.#confirmed = saved;
-      this.#onConfirmed(saved);
+      this.#confirm(saved);
       if (snapshot.generation === this.#latest.generation) break;
     }
     this.#setStatus("saved");
+  }
+
+  #confirm(snapshot: Snapshot) {
+    this.#confirmed = snapshot;
+    this.#onConfirmed(snapshot);
   }
 
   #setStatus(value: SaveStatus) {

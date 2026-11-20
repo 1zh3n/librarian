@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Form, Input, Label, TextField } from "react-aria-components";
+import { Button, Form, Input, Label, TextField } from "../../ui/primitives";
 import type { EditorSession } from "../../editor/codemirror/adapter";
 import { metadataEdits, readMetadata } from "./metadata";
 import styles from "./DocumentPage.module.css";

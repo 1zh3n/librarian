@@ -2,6 +2,17 @@
   overflow-wrap: anywhere;
 }
 
+.article[data-semantic] > [data-block-id]:not([data-semantic-active]) {
+  --ink: var(--ink-secondary);
+  --accent: var(--muted-accent);
+  --surface-muted: var(--muted-code);
+  color: var(--ink);
+}
+
+.article > [data-block-id] {
+  transition: color var(--reading-transition, 0ms);
+}
+
 .article img {
   max-width: 100%;
   height: auto;
