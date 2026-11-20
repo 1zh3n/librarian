@@ -1,17 +1,18 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "react-aria-components/Button";
+import { openEditor } from "../editor/codemirror/adapter";
+import { analyzeMarkdown } from "../markdown/analyze";
+import { ReaderSurface } from "../markdown/ReaderSurface";
+import { spikeMarkdown } from "./fixture";
 import styles from "./SpikePage.module.css";
-
-const fixture = "# 河边的笔记\n\n清晨的水面很安静。";
 
 export function SpikePage() {
   const [editing, setEditing] = useState(false);
-  const body = useRef(fixture);
-  const [markdown, setMarkdown] = useState(fixture);
-  const [heading = "", ...paragraphs] = markdown.split("\n\n");
+  const [session] = useState(() => openEditor(spikeMarkdown));
+  const [analysis, setAnalysis] = useState(() => analyzeMarkdown(spikeMarkdown, "spike"));
 
   function leaveEditor() {
-    setMarkdown(body.current);
+    setAnalysis(analyzeMarkdown(session.source(), "spike"));
     setEditing(false);
   }
 
@@ -20,27 +21,19 @@ export function SpikePage() {
       {editing ? (
         <>
           <Button onPress={leaveEditor}>返回阅读</Button>
-          <textarea
-            ref={(field) => {
-              field?.focus();
-            }}
+          <div
             className={styles.source}
-            aria-label="Markdown 正文"
-            defaultValue={markdown}
-            onChange={(event) => {
-              body.current = event.currentTarget.value;
+            ref={(parent) => {
+              if (parent) {
+                return session.mount(parent);
+              }
             }}
           />
         </>
       ) : (
         <>
           <Button onPress={() => setEditing(true)}>编辑正文</Button>
-          <article aria-label="测试文档">
-            <h1>{heading.replace(/^# /, "")}</h1>
-            {paragraphs.map((paragraph, index) => (
-              <p key={index}>{paragraph}</p>
-            ))}
-          </article>
+          <ReaderSurface analysis={analysis} />
         </>
       )}
     </main>

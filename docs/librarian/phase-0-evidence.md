@@ -33,3 +33,12 @@
 - Arch Linux 的 Chromium 运行库从 Arch 官方包归档解包到本地隔离目录。执行浏览器测试时以该目录的 `usr/lib` 作为 `LD_LIBRARY_PATH`。系统包和浏览器版本由环境管理。
 
 - GREEN：`npm ci` 成功。Reader 的 `typecheck`、`lint`、`format:check`、`test`（1 项）、`test:e2e`（Chromium 2 项）和 `build` 均退出 0。
+
+- 上游客户端全量测试首次执行因缺少生成文件 `version.json` 导致 45 个测试文件加载失败。调用 `build/version.ts` 的 `updateVersionFile()` 后复跑 `npm test`，485 个文件和 5,104 项测试全部通过。
+
+## 任务 2 · 双表面与 Markdown 原文
+
+- RED：加入适配层前，`markdown-fidelity.test.ts` 因导入不存在失败。编辑后返回阅读的端到端用例在临时编辑框阶段没有语义块标记。
+- CodeMirror 使用 LF 视图和 UTF-16 坐标。适配层在 EditorState 中保存原始字符串，把每笔编辑投影回原文范围，并保存 CRLF 宽度。显式补丁可以写入 CR、LF 或 CRLF。编辑触发换行结合或拆分时，以补丁后原文决定 CodeMirror 的换行边界。
+- 阅读端使用 remark CommonMark、GFM、Front Matter、remark-rehype 和 rehype-sanitize。顶层可见块带稳定内容签名和同签名出现序号，位置含 BOM 偏移。原始 HTML 标签不渲染，危险 URL 属性被剥离；标记之间的 Markdown 文本仍可阅读。
+- GREEN：应用类型检查、lint、格式检查、Vitest 10 项、Playwright 3 项和生产构建通过。其中保真用例 9 项，覆盖空文本、混合换行、BOM、尾空白、无末尾换行、中文、emoji、注释及未知扩展。构建输出有 Vite 单 Chunk 超过 500 kB 的提示。

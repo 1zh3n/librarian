@@ -13,3 +13,16 @@ test("spike_startup", async ({ page }) => {
   await page.getByRole("button", { name: "编辑正文" }).click();
   await expect(page.getByRole("textbox", { name: "Markdown 正文" })).toBeFocused();
 });
+
+test("shows an editor change in the rendered document", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "编辑正文" }).click();
+  const editor = page.getByRole("textbox", { name: "Markdown 正文" });
+  await editor.press("End");
+  await page.keyboard.insertText("与潮汐");
+  await page.getByRole("button", { name: "返回阅读" }).click();
+  await expect(page.getByRole("heading", { name: "河边的笔记与潮汐" })).toHaveAttribute(
+    "data-block-id",
+    /^spike\//,
+  );
+});
