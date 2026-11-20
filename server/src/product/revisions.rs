@@ -20,8 +20,8 @@ use super::{
     auth::Account,
     contract::{ApiError, DocumentSnapshot, RestoreRevision},
     documents::{
-        body, check_file_path, note_file_write, read_markdown, run, snapshot, state, too_large,
-        DocumentService, MARKDOWN_LIMIT,
+        body, check_file_path, check_storage_recovery, product_read, read_markdown, run, snapshot,
+        state, too_large, DocumentService, MARKDOWN_LIMIT,
     },
 };
 
@@ -97,7 +97,7 @@ pub(super) async fn history(
     run(move || {
         let (instance, _, _, path) = service.document_scope(&account, &document, false)?;
         let state = state(&instance)?;
-        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        let _mutation = product_read(state)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let engine = engine(state)?;
@@ -157,7 +157,7 @@ pub(super) async fn diff(
     run(move || {
         let (instance, _, _, path) = service.document_scope(&account, &document, false)?;
         let state = state(&instance)?;
-        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        let _mutation = product_read(state)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let store = engine(state)?.store();
@@ -204,7 +204,8 @@ pub(super) async fn restore(
     let request = body(request)?;
     validate_commit(&request.commit_id)?;
     run(move || {
-        let (instance, actor, workspace, path) = service.document_scope(&account, &document, true)?;
+        let (instance, actor, workspace, path) =
+            service.document_scope(&account, &document, true)?;
         let state = state(&instance)?;
         let engine = engine(state)?;
         if !engine.store().auto_commit_allowed() {
@@ -216,6 +217,7 @@ pub(super) async fn restore(
         }
         let expected = request.precondition()?;
         engine.with_managed_write(|transaction| {
+            check_storage_recovery(state)?;
             let current = read_markdown(state, &path)?;
             let current_revision = sha256_hex(current.as_bytes());
             if current_revision != expected {
@@ -232,29 +234,29 @@ pub(super) async fn restore(
                     "This version matches the current document",
                 ));
             }
-            let prepared = transaction
-                .prepare_restore(&path, &actor, current.as_bytes(), restored.as_bytes())
-                .map_err(ApiError::internal)?;
-            let file = state.space.write_file(&path, restored.as_bytes(), None)?;
-            let commit_id = match prepared.publish() {
-                Ok(id) => id,
-                Err(error) => {
-                    let previous = state.space.write_file(&path, current.as_bytes(), None)
-                        .map_err(|rollback| ApiError::internal(format!(
-                            "Could not commit restoration ({error}) or roll back the file ({rollback})"
-                        )))?;
-                    note_file_write(state, &path, &current_revision, actor, &previous);
-                    return Err(ApiError::internal(error));
-                }
+            let operation = uuid::Uuid::new_v4().to_string();
+            let context = super::mutations::MutationContext {
+                metadata: &service.metadata,
+                state,
+                actor: &actor,
+                workspace: &workspace,
+                account: account.username(),
+                operation: &operation,
             };
+            let receipt = context.apply(
+                transaction,
+                vec![super::mutations::MutationEdit {
+                    path: path.clone(),
+                    base_revision: Some(current_revision),
+                    markdown: Some(restored.clone()),
+                }],
+            )?;
             let revision = sha256_hex(restored.as_bytes());
-            note_file_write(state, &path, &revision, actor, &file);
-            transaction.finish_restore(&path);
-            engine.notify_file_saved();
             Ok(Json(Restored {
                 snapshot: snapshot(state, &workspace, document, path, restored, revision),
-                commit_id,
+                commit_id: receipt.commit_id,
             }))
         })
-    }).await
+    })
+    .await
 }

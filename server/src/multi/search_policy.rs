@@ -6,10 +6,10 @@
 //! by ([`SpaceInstance::pages`]).
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLockReadGuard};
 
 use silverbullet_server_common::space::GitignoreMatcher;
-use silverbullet_server_common::SpacePrimitives;
+use silverbullet_server_common::{FileMeta, SpaceError, SpacePrimitives};
 use tokio::sync::broadcast;
 
 use silverbullet_server_search::semantic::catalog::{self, ModelSpec};
@@ -21,6 +21,52 @@ use crate::search::{
     folder_pages, SearchBackend, SemanticChoice, SemanticSpaceState, SpaceSearch, SpaceToOpen,
 };
 use crate::watcher::FsEvent;
+
+/// Search workers share the product's mutation boundary with direct readers.
+/// They index the final files after a batch is published or rolled back.
+pub(super) struct TransactionalSearchSpace {
+    pub inner: Arc<dyn SpacePrimitives>,
+    pub guard: Arc<crate::fs_guard::FsGuard>,
+}
+
+impl TransactionalSearchSpace {
+    fn read_guard(&self) -> Result<RwLockReadGuard<'_, ()>, SpaceError> {
+        let lock = self.guard.mutation.read().map_err(|_| {
+            SpaceError::Io(std::io::Error::other("Workspace storage lock was poisoned"))
+        })?;
+        if self.guard.storage_recovery_required() {
+            return Err(SpaceError::Io(std::io::Error::other(
+                "Workspace storage recovery is pending",
+            )));
+        }
+        Ok(lock)
+    }
+}
+
+impl SpacePrimitives for TransactionalSearchSpace {
+    fn fetch_file_list(&self) -> Result<Vec<FileMeta>, SpaceError> {
+        let _lock = self.read_guard()?;
+        self.inner.fetch_file_list()
+    }
+
+    fn get_file_meta(&self, path: &str) -> Result<FileMeta, SpaceError> {
+        let _lock = self.read_guard()?;
+        self.inner.get_file_meta(path)
+    }
+
+    fn read_file(&self, path: &str) -> Result<(Vec<u8>, FileMeta), SpaceError> {
+        let _lock = self.read_guard()?;
+        self.inner.read_file(path)
+    }
+
+    fn write_file(&self, _: &str, _: &[u8], _: Option<&FileMeta>) -> Result<FileMeta, SpaceError> {
+        Err(SpaceError::ReadOnly("Index storage is read-only".into()))
+    }
+
+    fn delete_file(&self, _: &str) -> Result<(), SpaceError> {
+        Err(SpaceError::ReadOnly("Index storage is read-only".into()))
+    }
+}
 
 /// `search` booted ([`SpaceSearch::boot`]) before any instance opens its
 /// index and before the admin API can create a space: with `sweep`

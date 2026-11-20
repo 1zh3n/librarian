@@ -267,6 +267,7 @@ async fn device_preferences_are_isolated_by_account_and_device() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(saved, preferences);
+    f.app = Router::new();
     f.app = open(f.root.path());
     assert_eq!(
         f.request("GET", desktop, Some(&f.editor), Value::Null)
@@ -334,6 +335,7 @@ async fn legacy_markdown_opens_without_front_matter() {
     let note = f.document(&left, "Note.md").await;
     let empty = f.document(&left, "Empty.md").await;
     let invalid = f.document(&left, "Invalid.md").await;
+    f.app = Router::new();
     f.app = open(f.root.path());
     assert_eq!(f.workspace("Left").await, left);
     assert_eq!(f.document(&left, "Note.md").await, note);

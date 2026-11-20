@@ -1,4 +1,8 @@
-use std::{io, path::Path, sync::Arc};
+use std::{
+    io,
+    path::Path,
+    sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
+};
 
 use axum::{
     extract::{
@@ -102,7 +106,7 @@ impl DocumentService {
     ) -> Result<Vec<DocumentSummary>, ApiError> {
         let (instance, _) = self.scope(account, workspace, false)?;
         let state = state(&instance)?;
-        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        let _mutation = product_read(state)?;
         let mut files = state.space.fetch_file_list()?;
         files.sort_unstable_by(|a, b| a.name.cmp(&b.name));
 
@@ -116,7 +120,7 @@ impl DocumentService {
             .collect()
     }
 
-    pub(crate) fn summary_from_meta(
+    fn summary_from_meta(
         &self,
         state: &ServerState,
         workspace: &str,
@@ -137,11 +141,23 @@ impl DocumentService {
         Ok(summary(state, workspace, id, path, title))
     }
 
+    pub(super) fn summary_from_markdown(
+        &self,
+        state: &ServerState,
+        workspace: &str,
+        path: String,
+        markdown: &str,
+    ) -> Result<DocumentSummary, ApiError> {
+        let id = self.metadata.document_id(workspace, &path)?;
+        let title = title_from_front_matter(markdown.as_bytes());
+        Ok(summary(state, workspace, id, path, title))
+    }
+
     fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
         let (workspace, path) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
         let state = state(&instance)?;
-        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        let _mutation = product_read(state)?;
         let markdown = read_markdown(state, &path)?;
         let revision = sha256_hex(markdown.as_bytes());
         Ok(snapshot(
@@ -171,7 +187,9 @@ impl DocumentService {
             ));
         }
         let state = state(&instance)?;
-        let (markdown, revision) = save(state, &path, request.content.markdown, None, actor)?;
+        let _mutation = product_write(state)?;
+        let (markdown, revision) =
+            save_locked(state, &path, request.content.markdown, None, actor)?;
         let id = self.metadata.document_id(workspace, &path)?;
         Ok(snapshot(state, workspace, id, path, markdown, revision))
     }
@@ -189,7 +207,9 @@ impl DocumentService {
             .ok_or_else(|| ApiError::invalid("Saving requires a content revision"))?
             .to_owned();
         let state = state(&instance)?;
-        let (markdown, revision) = save(state, &path, request.markdown, Some(&expected), actor)?;
+        let _mutation = product_write(state)?;
+        let (markdown, revision) =
+            save_locked(state, &path, request.markdown, Some(&expected), actor)?;
         Ok(snapshot(
             state,
             &workspace,
@@ -204,7 +224,7 @@ impl DocumentService {
         let (workspace, path) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
         let state = state(&instance)?;
-        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        let _mutation = product_read(state)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let sidecar = outline_path(&path);
@@ -235,11 +255,7 @@ impl DocumentService {
         let (instance, actor) = self.scope(account, &workspace, true)?;
         let state = state(&instance)?;
         let expected = request.precondition()?.map(str::to_owned);
-        let _mutation = state
-            .fs_guard
-            .mutation
-            .write()
-            .map_err(ApiError::internal)?;
+        let _mutation = product_write(state)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let (markdown, revision) = save_locked(
@@ -266,6 +282,33 @@ pub(crate) fn state(instance: &SpaceInstance) -> Result<&ServerState, ApiError> 
     })
 }
 
+pub(super) fn product_read(state: &ServerState) -> Result<RwLockReadGuard<'_, ()>, ApiError> {
+    let lock = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+    check_storage_recovery(state)?;
+    Ok(lock)
+}
+
+fn product_write(state: &ServerState) -> Result<RwLockWriteGuard<'_, ()>, ApiError> {
+    let lock = state
+        .fs_guard
+        .mutation
+        .write()
+        .map_err(ApiError::internal)?;
+    check_storage_recovery(state)?;
+    Ok(lock)
+}
+
+pub(super) fn check_storage_recovery(state: &ServerState) -> Result<(), ApiError> {
+    if state.fs_guard.storage_recovery_required() {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "storage_recovery_pending",
+            "Workspace storage recovery is pending",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn is_document_path(path: &str) -> bool {
     path.ends_with(".md")
         && !path.ends_with(".outline.md")
@@ -279,7 +322,11 @@ pub(crate) fn is_document_path(path: &str) -> bool {
 }
 
 pub(crate) fn check_file_path(state: &ServerState, path: &str) -> Result<(), ApiError> {
-    let mut location = std::path::PathBuf::from(&state.space_folder_path);
+    check_native_path(Path::new(&state.space_folder_path), path)
+}
+
+pub(super) fn check_native_path(root: &Path, path: &str) -> Result<(), ApiError> {
+    let mut location = root.to_path_buf();
     for part in path.split('/') {
         location.push(part);
         match std::fs::symlink_metadata(&location) {
@@ -311,21 +358,6 @@ pub(super) fn too_large() -> ApiError {
         "document_too_large",
         "Markdown exceeds the size limit",
     )
-}
-
-fn save(
-    state: &ServerState,
-    path: &str,
-    markdown: String,
-    expected: Option<&str>,
-    actor: Actor,
-) -> Result<(String, String), ApiError> {
-    let _mutation = state
-        .fs_guard
-        .mutation
-        .write()
-        .map_err(ApiError::internal)?;
-    save_locked(state, path, markdown, expected, actor)
 }
 
 fn save_locked(

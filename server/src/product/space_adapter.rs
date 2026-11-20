@@ -17,10 +17,14 @@ pub struct NativeSpaces {
     pub users: Arc<UserStore>,
     pub authenticator: Arc<Authenticator>,
     pub session: SessionPolicy,
+    _data_lock: super::db::DataRootLock,
 }
 
 impl NativeSpaces {
     pub fn open(root: &Path, port: u16, version: &str) -> Result<Self, String> {
+        let data_lock = super::db::Metadata::lock_root(root)?;
+        let metadata = super::db::Metadata::open(root)?;
+        super::mutations::recover_startup(root, &metadata)?;
         let users = UserStore::open(root)?
             .ok_or_else(|| "Missing users.json in the Librarian data folder".to_string())?;
         let authenticator = Arc::new(
@@ -62,6 +66,7 @@ impl NativeSpaces {
         };
         let manager = MultiManager::boot(root.to_owned(), deps, users.usernames())?;
         Ok(Self {
+            _data_lock: data_lock,
             manager,
             users,
             authenticator,

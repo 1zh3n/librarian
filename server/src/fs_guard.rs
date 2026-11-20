@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
@@ -54,6 +55,7 @@ struct HashCache {
 #[derive(Default)]
 pub struct FsGuard {
     pub mutation: RwLock<()>,
+    storage_recovery_required: AtomicBool,
     cache: RwLock<HashCache>,
     locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     expected_writes: Mutex<HashMap<(String, String), ExpectedWrite>>,
@@ -65,6 +67,15 @@ pub struct FsGuard {
 }
 
 impl FsGuard {
+    pub(crate) fn require_storage_recovery(&self) {
+        self.storage_recovery_required
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn storage_recovery_required(&self) -> bool {
+        self.storage_recovery_required.load(Ordering::Acquire)
+    }
+
     /// Cached hash for the path, validated against (mtime, size); on miss,
     /// reads the file through `space` and hashes it.
     pub fn hash_for(&self, space: &dyn SpacePrimitives, path: &str) -> Result<String, SpaceError> {

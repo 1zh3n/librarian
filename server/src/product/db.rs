@@ -1,6 +1,6 @@
 use std::{
-    io,
-    path::Path,
+    fs, io,
+    path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
     time::Duration,
 };
@@ -12,10 +12,21 @@ use super::contract::ApiError;
 
 pub(crate) const PRODUCT_DIR: &str = ".librarian";
 
-pub(crate) struct Metadata(Mutex<Connection>);
+pub(crate) struct Metadata {
+    directory: PathBuf,
+    connection: Mutex<Connection>,
+}
+
+pub(super) struct DataRootLock(fs::File);
+
+impl Drop for DataRootLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
 
 impl Metadata {
-    pub(crate) fn open(root: &Path) -> Result<Self, String> {
+    pub(super) fn directory(root: &Path) -> Result<PathBuf, String> {
         let path = root.join(PRODUCT_DIR);
         match std::fs::symlink_metadata(&path) {
             Ok(meta) if !meta.is_dir() || meta.is_symlink() => {
@@ -33,7 +44,12 @@ impl Metadata {
             }
             Err(error) => return Err(error.to_string()),
         }
-        let database = path.join("metadata.sqlite3");
+        Ok(path)
+    }
+
+    pub(crate) fn open(root: &Path) -> Result<Self, String> {
+        let directory = Self::directory(root)?;
+        let database = directory.join("metadata.sqlite3");
         match std::fs::symlink_metadata(&database) {
             Ok(meta) if !meta.is_file() || meta.is_symlink() => {
                 return Err("Invalid Librarian metadata database".into())
@@ -42,10 +58,40 @@ impl Metadata {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.to_string()),
         }
-        Self::initialize(&database).map_err(|error| error.to_string())
+        let connection = Self::initialize(&database).map_err(|error| error.to_string())?;
+        Ok(Self {
+            directory,
+            connection: Mutex::new(connection),
+        })
     }
 
-    fn initialize(path: &Path) -> rusqlite::Result<Self> {
+    pub(super) fn lock_root(root: &Path) -> Result<DataRootLock, String> {
+        let lock = Self::directory(root)?.join("server.lock");
+        match fs::symlink_metadata(&lock) {
+            Ok(meta) if !meta.is_file() || meta.is_symlink() => {
+                return Err("Invalid Librarian data lock".into())
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock)
+            .map_err(|error| error.to_string())?;
+        file.try_lock()
+            .map_err(|error| format!("Could not lock the Librarian data folder: {error}"))?;
+        Ok(DataRootLock(file))
+    }
+
+    pub(super) fn operation_directory(&self, operation: &str) -> PathBuf {
+        self.directory.join("mutations").join(operation)
+    }
+
+    fn initialize(path: &Path) -> rusqlite::Result<Connection> {
         let mut connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -73,15 +119,29 @@ impl Metadata {
                  );
                  PRAGMA user_version = 2;",
             )?;
-        } else if version != 2 {
+        }
+        if version <= 2 {
+            transaction.execute_batch(
+                "CREATE TABLE mutations (
+                   operation_id TEXT PRIMARY KEY,
+                   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+                   account TEXT NOT NULL,
+                   fingerprint TEXT NOT NULL,
+                   state TEXT NOT NULL CHECK(state IN ('pending', 'committed', 'conflict')),
+                   attempted INTEGER NOT NULL DEFAULT 0,
+                   manifest TEXT NOT NULL
+                 );
+                 PRAGMA user_version = 3;",
+            )?;
+        } else if version != 3 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;
-        Ok(Self(Mutex::new(connection)))
+        Ok(connection)
     }
 
-    fn connection(&self) -> Result<MutexGuard<'_, Connection>, ApiError> {
-        self.0.lock().map_err(ApiError::internal)
+    pub(super) fn connection(&self) -> Result<MutexGuard<'_, Connection>, ApiError> {
+        self.connection.lock().map_err(ApiError::internal)
     }
 
     pub(crate) fn workspace_id(&self, space_id: &str) -> Result<String, ApiError> {

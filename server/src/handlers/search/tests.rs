@@ -152,6 +152,7 @@ fn one_match() -> Result<QueryResult, SearchError> {
     Ok(QueryResult {
         items: vec![Match {
             page: "Stub Page".into(),
+            source_revision: None,
             pos: 0,
             line: 1,
             heading: None,

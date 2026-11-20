@@ -98,6 +98,8 @@ pub struct RelatedRequest {
 #[serde(rename_all = "camelCase")]
 pub struct Match {
     pub page: String,
+    #[serde(skip)]
+    pub source_revision: Option<String>,
     /// UTF-16 offset of the match in the page's text.
     pub pos: u32,
     /// One-based line number of the passage.
@@ -255,6 +257,7 @@ mod tests {
     fn match_omits_missing_heading() {
         let m = Match {
             page: "Notes/Garden".into(),
+            source_revision: None,
             pos: 12,
             line: 2,
             heading: None,

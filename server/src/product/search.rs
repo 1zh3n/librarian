@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use silverbullet_server_common::revision::sha256_hex;
 use silverbullet_server_search::{limits, QueryMode, QueryRequest, SearchError};
 
 use crate::handlers::search::run_query;
@@ -13,7 +14,7 @@ use crate::handlers::search::run_query;
 use super::{
     auth::Account,
     contract::{ApiError, DocumentSummary},
-    documents::{check_file_path, is_document_path, run, state, DocumentService},
+    documents::{is_document_path, product_read, read_markdown, run, state, DocumentService},
 };
 
 const MAX_QUERY_CHARS: usize = 256;
@@ -67,22 +68,22 @@ pub(super) async fn search(
     }
     run(move || {
         let state = state(&instance)?;
-        let _mutation = state.fs_guard.mutation.read().map_err(ApiError::internal)?;
+        let _mutation = product_read(state)?;
         let mut seen = HashSet::new();
         let mut hits = Vec::new();
         for hit in result.items {
             let path = format!("{}.md", hit.page);
-            if !is_document_path(&path)
-                || !seen.insert(hit.page)
-                || check_file_path(state, &path).is_err()
-            {
+            if !is_document_path(&path) || !seen.insert(hit.page) {
                 continue;
             }
-            let Ok(meta) = state.space.get_file_meta(&path) else {
+            let Ok(markdown) = read_markdown(state, &path) else {
                 continue;
             };
+            if hit.source_revision.as_deref() != Some(sha256_hex(markdown.as_bytes()).as_str()) {
+                continue;
+            }
             hits.push(SearchHit {
-                document: service.summary_from_meta(state, &workspace, path, meta.size)?,
+                document: service.summary_from_markdown(state, &workspace, path, &markdown)?,
                 excerpt: hit.excerpt,
             });
             if hits.len() == RESULT_LIMIT {

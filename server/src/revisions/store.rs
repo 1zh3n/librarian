@@ -1,4 +1,5 @@
 use super::git;
+use serde::{Deserialize, Serialize};
 use silverbullet_server_common::RevisionsMode;
 use std::collections::HashSet;
 use std::fs;
@@ -466,31 +467,6 @@ impl RevisionStore {
         self.commit_staged(&repo, author_name, author_email, message)
     }
 
-    pub(crate) fn prepare_restore(
-        &self,
-        path: &str,
-        author: (&str, &str),
-        checkpoint_author: Option<(&str, &str)>,
-        current: &[u8],
-        restored: &[u8],
-    ) -> Result<PreparedCommit, String> {
-        let mut index = ExactIndex::open(self.prepare_commit()?)?;
-        let relative = self.rel(path);
-        let metadata =
-            fs::symlink_metadata(index.repo.join(&relative)).map_err(|error| error.to_string())?;
-        index.stage_markdown(&relative, &metadata, Some(current))?;
-        let checkpoint_message = checkpoint_author
-            .map(|_| self.auto_message(&index.repo, &[path.to_owned()], &index.env()))
-            .unwrap_or_else(|| "Save before restoring version".to_string());
-        let (name, email) = checkpoint_author.unwrap_or(author);
-        index.commit(name, email, &checkpoint_message)?;
-        index.stage_markdown(&relative, &metadata, Some(restored))?;
-        index.commit(author.0, author.1, "Restore document version")?;
-        index
-            .prepare()?
-            .ok_or_else(|| "Restoring the document produced no Git commit".to_string())
-    }
-
     pub(crate) fn exact_markdown_uncommitted(&self, path: &str) -> Result<Option<bool>, String> {
         if !self.exact_markdown || !self.auto_commit_allowed() {
             return Ok(None);
@@ -509,26 +485,289 @@ impl RevisionStore {
         )?;
         Ok(Some(committed.trim() != working.trim()))
     }
+
+    pub(crate) fn plan_operation(
+        &self,
+        operation: &str,
+        author: (&str, &str),
+        changes: &[OperationFile<'_>],
+        checkpoint_authors: &[Option<(String, String)>],
+    ) -> Result<OperationCommit, String> {
+        let mut index = ExactIndex::open(self.prepare_commit()?)?;
+        let mut modes = Vec::with_capacity(changes.len());
+        for (file, checkpoint) in changes.iter().zip(checkpoint_authors) {
+            let relative = self.rel(file.path);
+            let mode = match fs::symlink_metadata(index.repo.join(&relative)) {
+                Ok(metadata) if metadata.is_file() => markdown_mode(&metadata),
+                Ok(_) => return Err("Expected a regular file".into()),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => "100644",
+                Err(error) => return Err(error.to_string()),
+            };
+            index.stage_snapshot(&relative, mode, file.before)?;
+            if let Some((name, email)) = checkpoint {
+                index.commit(name, email, "Save before Librarian operation")?;
+            }
+            modes.push(mode);
+        }
+        index.commit(author.0, author.1, "Save before Librarian operation")?;
+        for (file, mode) in changes.iter().zip(modes) {
+            index.stage_snapshot(&self.rel(file.path), mode, file.after)?;
+        }
+        let parent = index.tip.clone();
+        index.commit(
+            author.0,
+            author.1,
+            &format!("Apply Librarian operation\n\nLibrarian-Operation-Id: {operation}"),
+        )?;
+        if index.tip == parent {
+            return Err("Operation produced no revision".into());
+        }
+        Ok(OperationCommit {
+            index,
+            attempt: uuid::Uuid::new_v4().to_string(),
+        })
+    }
 }
 
-struct IndexLock(PathBuf);
+pub(crate) struct OperationFile<'a> {
+    pub path: &'a str,
+    pub before: Option<&'a [u8]>,
+    pub after: Option<&'a [u8]>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct OperationGit {
+    pub branch: String,
+    pub commit_id: String,
+    base: Option<String>,
+    attempt: String,
+}
+
+pub(crate) struct OperationCommit {
+    index: ExactIndex,
+    attempt: String,
+}
+
+impl OperationCommit {
+    pub(crate) fn publication(&self) -> OperationGit {
+        OperationGit {
+            branch: self.index.branch.clone(),
+            commit_id: self.index.tip.clone().expect("operation commit"),
+            base: self.index.base.clone(),
+            attempt: self.attempt.clone(),
+        }
+    }
+
+    pub(crate) fn prepare(self) -> Result<PreparedCommit, String> {
+        self.index
+            .prepare_with_owner(Some(&self.attempt))?
+            .ok_or_else(|| "Missing prepared operation commit".to_string())
+    }
+}
+
+impl OperationGit {
+    fn gate(&self) -> String {
+        format!("refs/librarian/pending/{}", self.attempt)
+    }
+
+    pub(crate) fn recover_index(&self, repo: &Path, after_restart: bool) -> Result<bool, String> {
+        let settled_head = if after_restart {
+            self.revoke_publication(repo)?
+        } else {
+            // The caller already waited for its Git child. A held external
+            // branch lock need not block rollback of an unpublished write.
+            reference_transaction(repo, &format!("delete {}\n", self.gate()))?;
+            self.branch_head(repo)?
+        };
+        let committed = settled_head == self.commit_id
+            || (settled_head.bytes().any(|byte| byte != b'0')
+                && git::check(
+                    repo,
+                    &[
+                        "merge-base",
+                        "--is-ancestor",
+                        &self.commit_id,
+                        &settled_head,
+                    ],
+                    1,
+                )?);
+        let install = settled_head == self.commit_id
+            && git::run(repo, &["symbolic-ref", "--quiet", "HEAD"], &[])
+                .is_ok_and(|head| head.trim() == self.branch);
+        let index = git_index_path(repo)?;
+        IndexOwner::new(&index, &self.attempt)?.recover(&index, install.then_some((repo, self)))?;
+        Ok(committed)
+    }
+
+    fn revoke_publication(&self, repo: &Path) -> Result<String, String> {
+        // The Git child can outlive the server. With the branch locked,
+        // revoke this attempt's gate and verify the HEAD that recovery uses.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let gate = self.gate();
+        loop {
+            let head = self.branch_head(repo)?;
+            match reference_transaction(
+                repo,
+                &format!("verify {} {head}\ndelete {gate}\n", self.branch),
+            ) {
+                Ok(()) => return Ok(head),
+                Err(error) if std::time::Instant::now() >= deadline => return Err(error),
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            }
+        }
+    }
+
+    fn branch_head(&self, repo: &Path) -> Result<String, String> {
+        if git::check(repo, &["rev-parse", "--verify", "--quiet", &self.branch], 1)? {
+            Ok(git::run(repo, &["rev-parse", &self.branch], &[])?
+                .trim()
+                .to_owned())
+        } else {
+            Ok("0".repeat(self.commit_id.len()))
+        }
+    }
+}
+
+fn reference_transaction(repo: &Path, commands: &str) -> Result<(), String> {
+    let mut input = tempfile::tempfile().map_err(|error| error.to_string())?;
+    input
+        .write_all(commands.as_bytes())
+        .and_then(|()| input.rewind())
+        .map_err(|error| error.to_string())?;
+    git::run_with_input(
+        repo,
+        &["update-ref", "-m", "Librarian operation", "--stdin"],
+        &[("SB_GIT_NO_HOOKS", "1")],
+        input,
+    )
+    .map(drop)
+}
+
+struct IndexOwner {
+    marker: PathBuf,
+    working: PathBuf,
+    operation: String,
+}
+
+impl IndexOwner {
+    fn new(index: &Path, operation: &str) -> Result<Self, String> {
+        let id = uuid::Uuid::parse_str(operation).map_err(|error| error.to_string())?;
+        Ok(Self {
+            marker: index.with_file_name(format!(".librarian-index-{id}-owner")),
+            working: index.with_file_name(format!(".librarian-index-{id}-working")),
+            operation: id.to_string(),
+        })
+    }
+
+    fn acquire(&self, lock: &Path) -> io::Result<()> {
+        let mut marker = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&self.marker)?;
+        if let Err(error) = marker
+            .write_all(self.operation.as_bytes())
+            .and_then(|()| marker.sync_all())
+            .and_then(|()| fs::hard_link(&self.marker, lock))
+        {
+            let _ = fs::remove_file(&self.marker);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn recover(&self, index: &Path, install: Option<(&Path, &OperationGit)>) -> Result<(), String> {
+        let lock = lock_path(index);
+        if self.matches(&self.marker) && self.matches(&lock) {
+            if let Some((repo, publication)) = install {
+                if !self.working.exists() {
+                    remove_if_present(&lock_path(&self.working))
+                        .map_err(|error| error.to_string())?;
+                    let base_tree = match publication.base.as_deref() {
+                        Some(base) => {
+                            git::run(repo, &["rev-parse", &format!("{base}^{{tree}}")], &[])?
+                        }
+                        None => {
+                            let path = git_path(self.working.clone())?;
+                            let env = [("GIT_INDEX_FILE", path.as_str())];
+                            git::run(repo, &["read-tree", "--empty"], &env)?;
+                            git::run(repo, &["write-tree"], &env)?
+                        }
+                    };
+                    prepare_working_index(
+                        repo,
+                        index,
+                        &self.working,
+                        base_tree.trim(),
+                        &publication.commit_id,
+                    )?;
+                }
+                fs::rename(&self.working, index).map_err(|error| error.to_string())?;
+            }
+            remove_if_present(&lock).map_err(|error| error.to_string())?;
+        }
+        remove_if_present(&lock_path(&self.working)).map_err(|error| error.to_string())?;
+        remove_if_present(&self.working).map_err(|error| error.to_string())?;
+        remove_if_present(&self.marker).map_err(|error| error.to_string())
+    }
+
+    fn matches(&self, path: &Path) -> bool {
+        fs::symlink_metadata(path).is_ok_and(|metadata| {
+            metadata.is_file() && metadata.len() == self.operation.len() as u64
+        }) && fs::read_to_string(path).is_ok_and(|value| value == self.operation)
+    }
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+fn lock_path(index: &Path) -> PathBuf {
+    let mut path = index.as_os_str().to_owned();
+    path.push(".lock");
+    path.into()
+}
+
+struct IndexLock {
+    path: PathBuf,
+    owner: Option<IndexOwner>,
+    keep_for_recovery: bool,
+}
 
 impl IndexLock {
-    fn acquire(index: &Path) -> Result<Self, String> {
-        let mut path = index.as_os_str().to_owned();
-        path.push(".lock");
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|error| format!("Could not lock the Git index: {error}"))?;
-        Ok(Self(path.into()))
+    fn acquire(index: &Path, operation: Option<&str>) -> Result<Self, String> {
+        let path = lock_path(index);
+        let owner = operation.map(|id| IndexOwner::new(index, id)).transpose()?;
+        match &owner {
+            Some(owner) => owner.acquire(&path),
+            None => fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map(drop),
+        }
+        .map_err(|error| format!("Could not lock the Git index: {error}"))?;
+        Ok(Self {
+            path,
+            owner,
+            keep_for_recovery: false,
+        })
     }
 }
 
 impl Drop for IndexLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        if self.keep_for_recovery {
+            return;
+        }
+        let _ = fs::remove_file(&self.path);
+        if let Some(owner) = &self.owner {
+            let _ = fs::remove_file(lock_path(&owner.working));
+            let _ = fs::remove_file(&owner.working);
+            let _ = fs::remove_file(&owner.marker);
+        }
     }
 }
 
@@ -549,12 +788,7 @@ struct ExactIndex {
 
 impl ExactIndex {
     fn open(repo: PathBuf) -> Result<Self, String> {
-        let index = git::run(
-            &repo,
-            &["rev-parse", "--path-format=absolute", "--git-path", "index"],
-            &[],
-        )?;
-        let index = PathBuf::from(index.trim_end_matches(['\n', '\r']));
+        let index = git_index_path(&repo)?;
         let directory = tempfile::tempdir_in(index.parent().ok_or("missing Git index directory")?)
             .map_err(|error| error.to_string())?;
         let private_index = git_path(directory.path().join("commit-index"))?;
@@ -595,6 +829,34 @@ impl ExactIndex {
         metadata: &fs::Metadata,
         contents: Option<&[u8]>,
     ) -> Result<(), String> {
+        self.stage_contents(path, markdown_mode(metadata), contents)
+    }
+
+    fn stage_snapshot(
+        &self,
+        path: &str,
+        mode: &str,
+        contents: Option<&[u8]>,
+    ) -> Result<(), String> {
+        match contents {
+            Some(contents) => self.stage_contents(path, mode, Some(contents)),
+            None => {
+                git::run(
+                    &self.repo,
+                    &["update-index", "--force-remove", "--", path],
+                    &self.env(),
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    fn stage_contents(
+        &self,
+        path: &str,
+        mode: &str,
+        contents: Option<&[u8]>,
+    ) -> Result<(), String> {
         let hash = if let Some(contents) = contents {
             let mut input =
                 tempfile::tempfile_in(self.directory.path()).map_err(|error| error.to_string())?;
@@ -621,7 +883,7 @@ impl ExactIndex {
                 "update-index",
                 "--add",
                 "--cacheinfo",
-                markdown_mode(metadata),
+                mode,
                 hash.trim(),
                 path,
             ],
@@ -654,11 +916,15 @@ impl ExactIndex {
     }
 
     fn prepare(self) -> Result<Option<PreparedCommit>, String> {
+        self.prepare_with_owner(None)
+    }
+
+    fn prepare_with_owner(self, operation: Option<&str>) -> Result<Option<PreparedCommit>, String> {
         if self.tip == self.base {
             return Ok(None);
         }
         let tip = self.tip.clone().ok_or("missing Git commit")?;
-        let lock = IndexLock::acquire(&self.index)?;
+        let lock = IndexLock::acquire(&self.index, operation)?;
         if git::run(&self.repo, &["symbolic-ref", "--quiet", "HEAD"], &[])?.trim() != self.branch
             || merge_in_progress(&self.repo)
         {
@@ -666,34 +932,64 @@ impl ExactIndex {
                 "Git branch changed or a merge started while preparing the revision".into(),
             );
         }
-        let working_index = self.directory.path().join("working-index");
-        let working_path = git_path(working_index.clone())?;
-        let working_env = [("GIT_INDEX_FILE", working_path.as_str())];
-        match fs::copy(&self.index, &working_index) {
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                git::run(&self.repo, &["read-tree", "--empty"], &working_env)?;
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-        // Apply only the committed tree transition to the copy. Git carries
-        // unrelated staged entries forward and keeps the worktree untouched.
-        git::run(
+        let working_index = lock
+            .owner
+            .as_ref()
+            .map(|owner| owner.working.clone())
+            .unwrap_or_else(|| self.directory.path().join("working-index"));
+        prepare_working_index(
             &self.repo,
-            &["read-tree", "-i", "-m", &self.base_tree, &self.tree],
-            &working_env,
+            &self.index,
+            &working_index,
+            &self.base_tree,
+            &self.tree,
         )?;
+        if operation.is_some() {
+            fs::File::open(&working_index)
+                .and_then(|file| file.sync_all())
+                .map_err(|error| error.to_string())?;
+        }
         Ok(Some(PreparedCommit {
             index: self,
             working_index,
             tip,
-            _lock: lock,
+            lock,
         }))
     }
 
     fn publish(self) -> Result<Option<String>, String> {
         self.prepare()?.map(|commit| commit.publish()).transpose()
     }
+}
+
+fn prepare_working_index(
+    repo: &Path,
+    index: &Path,
+    working: &Path,
+    base: &str,
+    updated: &str,
+) -> Result<(), String> {
+    let working_path = git_path(working.to_path_buf())?;
+    let env = [("GIT_INDEX_FILE", working_path.as_str())];
+    match fs::copy(index, working) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            git::run(repo, &["read-tree", "--empty"], &env)?;
+        }
+        Err(error) => return Err(error.to_string()),
+    }
+    // Git applies these tree changes to a copy without touching unrelated
+    // staged entries or the worktree.
+    git::run(repo, &["read-tree", "-i", "-m", base, updated], &env).map(drop)
+}
+
+fn git_index_path(repo: &Path) -> Result<PathBuf, String> {
+    let index = git::run(
+        repo,
+        &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+        &[],
+    )?;
+    Ok(PathBuf::from(index.trim_end_matches(['\n', '\r'])))
 }
 
 fn git_path(path: PathBuf) -> Result<String, String> {
@@ -719,11 +1015,40 @@ pub(crate) struct PreparedCommit {
     index: ExactIndex,
     working_index: PathBuf,
     tip: String,
-    _lock: IndexLock,
+    lock: IndexLock,
 }
 
 impl PreparedCommit {
     pub(crate) fn publish(&self) -> Result<String, String> {
+        self.update_ref()?;
+        self.install_index();
+        Ok(self.tip.clone())
+    }
+
+    pub(crate) fn publish_operation(
+        mut self,
+        publication: &OperationGit,
+        on_published: impl FnOnce(),
+    ) -> Result<bool, String> {
+        let index = &self.index;
+        let gate = publication.gate();
+        let empty = "0".repeat(self.tip.len());
+        reference_transaction(&index.repo, &format!("create {gate} {}\n", self.tip))?;
+        let base = index.base.as_deref().unwrap_or(&empty);
+        reference_transaction(
+            &index.repo,
+            &format!(
+                "update {} {} {base}\ndelete {gate} {}\n",
+                index.branch, self.tip, self.tip
+            ),
+        )?;
+        on_published();
+        let installed = self.install_index();
+        self.lock.keep_for_recovery = !installed;
+        Ok(installed)
+    }
+
+    fn update_ref(&self) -> Result<(), String> {
         let index = &self.index;
         git::run(
             &index.repo,
@@ -736,15 +1061,18 @@ impl PreparedCommit {
                 index.base.as_deref().unwrap_or(""),
             ],
             &[("SB_GIT_NO_HOOKS", "1")],
-        )?;
-        // The branch is already published. A local filesystem failure here
-        // cannot roll back the document or report the commit as unwritten.
-        if let Err(error) = fs::rename(&self.working_index, &index.index) {
+        )
+        .map(drop)
+    }
+
+    fn install_index(&self) -> bool {
+        if let Err(error) = fs::rename(&self.working_index, &self.index.index) {
             tracing::warn!(
                 "Librarian revision committed, but the Git index could not be refreshed: {error}"
             );
+            return false;
         }
-        Ok(self.tip.clone())
+        true
     }
 }
 

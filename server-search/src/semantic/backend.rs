@@ -109,6 +109,7 @@ pub(super) fn chunk_passages(view: &dyn SpaceView, path: &str, spots: &[Spot]) -
             let body = text.get(c.start as usize..(c.start + c.len) as usize)?;
             (chunk::hash(c.heading.as_deref(), body) == c.hash).then(|| Match {
                 page: name.to_string(),
+                source_revision: None,
                 pos: c.pos,
                 line: c.line,
                 heading: c.heading.clone(),

@@ -22,6 +22,19 @@ struct ErrorBody {
 }
 
 impl ApiError {
+    pub(super) fn code(&self) -> &'static str {
+        self.body.code
+    }
+
+    pub(super) fn is_file_conflict(&self) -> bool {
+        matches!(
+            self.status,
+            StatusCode::NOT_FOUND
+                | StatusCode::PAYLOAD_TOO_LARGE
+                | StatusCode::UNPROCESSABLE_ENTITY
+        )
+    }
+
     pub(crate) fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
         Self {
             status,

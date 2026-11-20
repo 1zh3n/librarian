@@ -528,6 +528,14 @@ fn try_build_parts(
     );
 
     let (space, search_events) = crate::search::change_events(space, fs_events.as_ref());
+    let search_space: Arc<dyn SpacePrimitives> = if deps.exact_markdown_revisions {
+        Arc::new(super::search_policy::TransactionalSearchSpace {
+            inner: search_space,
+            guard: fs_guard.clone(),
+        })
+    } else {
+        search_space
+    };
     let pages = crate::search::PageSource::new(
         Arc::new(crate::search::SpaceSearchView::new(
             search_space.clone(),

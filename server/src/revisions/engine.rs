@@ -1,4 +1,4 @@
-use super::store::{PreparedCommit, RevisionStore};
+use super::store::{OperationFile, RevisionStore};
 use super::sync::{self, SyncError, TickOutcome};
 use crate::watcher::{EventOrigin, EventOriginKind, FsAction, FsEvent};
 use serde::Serialize;
@@ -278,6 +278,9 @@ impl EngineInner {
             .mutation
             .write()
             .unwrap_or_else(|e| e.into_inner());
+        if self.fs_guard.storage_recovery_required() {
+            return false;
+        }
         let mut committed = self.ensure_initial_snapshot_locked();
         let (lock, _) = &self.state;
         let batch = {
@@ -330,6 +333,9 @@ impl EngineInner {
         }
         let committed = self.commit_now();
         let _commit_guard = self.commit_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if self.fs_guard.storage_recovery_required() {
+            return Err("Workspace storage recovery is pending".into());
+        }
         let (name, email) = self.identity_for(&Attribution::System);
         let swept = self.store.commit_all(&name, &email, "Manual snapshot")?;
         Ok(committed || swept.is_some())
@@ -352,6 +358,9 @@ impl EngineInner {
             return false;
         }
         let _commit_guard = self.commit_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if self.fs_guard.storage_recovery_required() {
+            return false;
+        }
         // Read-only probe first. `git.rs` sets GIT_OPTIONAL_LOCKS=0, so this
         // `git status` will not write the index: an idle space costs one stat
         // walk per sweep and no writes at all.
@@ -463,7 +472,7 @@ impl EngineInner {
         }
         let _flight = Flight(&self.sync_running);
         let _guard = self.commit_lock.lock().unwrap_or_else(|e| e.into_inner());
-        if self.sync_paused.load(Ordering::Acquire) {
+        if self.sync_paused.load(Ordering::Acquire) || self.fs_guard.storage_recovery_required() {
             return Ok(TickOutcome::Idle);
         }
         self.sync_requested.store(false, Ordering::Release);
@@ -722,38 +731,35 @@ fn account_attribution(actor: &crate::auth::Actor) -> Attribution {
 pub(crate) struct ManagedWrite<'a>(&'a EngineInner);
 
 impl ManagedWrite<'_> {
-    pub(crate) fn prepare_restore(
+    pub(crate) fn plan_operation(
         &self,
-        path: &str,
+        operation: &str,
         actor: &crate::auth::Actor,
-        current: &[u8],
-        restored: &[u8],
-    ) -> Result<PreparedCommit, String> {
-        let queued = self
-            .0
-            .state
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .dirty
-            .get(path)
-            .cloned();
-        let checkpoint = queued.as_ref().map(|who| self.0.identity_for(who));
+        changes: &[OperationFile<'_>],
+    ) -> Result<super::store::OperationCommit, String> {
+        let authors: Vec<_> = {
+            let pending = self.0.state.0.lock().unwrap_or_else(|e| e.into_inner());
+            changes
+                .iter()
+                .map(|file| {
+                    pending
+                        .dirty
+                        .get(file.path)
+                        .map(|who| self.0.identity_for(who))
+                })
+                .collect()
+        };
         let (name, email) = self.0.identity_for(&account_attribution(actor));
-        self.0.store.prepare_restore(
-            path,
-            (&name, &email),
-            checkpoint
-                .as_ref()
-                .map(|(name, email)| (name.as_str(), email.as_str())),
-            current,
-            restored,
-        )
+        self.0
+            .store
+            .plan_operation(operation, (&name, &email), changes, &authors)
     }
 
-    pub(crate) fn finish_restore(&self, path: &str) {
+    pub(crate) fn finish_operation<'a>(&self, paths: impl IntoIterator<Item = &'a str>) {
         let mut pending = self.0.state.0.lock().unwrap_or_else(|e| e.into_inner());
-        pending.dirty.remove(path);
+        for path in paths {
+            pending.dirty.remove(path);
+        }
         if pending.dirty.is_empty() {
             pending.first_mark = None;
             pending.last_mark = None;
@@ -953,6 +959,13 @@ impl RevisionEngine {
                         let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
                         if guard.stopping {
                             return;
+                        }
+                        if tick_inner.fs_guard.storage_recovery_required() {
+                            drop(
+                                cv.wait_timeout(guard, Duration::from_secs(1))
+                                    .unwrap_or_else(|e| e.into_inner()),
+                            );
+                            continue;
                         }
                         if first_pass {
                             first_pass = false;

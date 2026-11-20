@@ -572,6 +572,7 @@ fn excerpt(line: &str, hits: &[Range<usize>], lead: bool) -> (String, Vec<[u32; 
 ///
 /// `lang` is the page's language as indexed (the document's `lang`).
 pub fn passages(page: &str, text: &str, lang: Lang, m: &Matcher) -> Vec<Match> {
+    let revision = silverbullet_server_common::revision::sha256_hex(text.as_bytes());
     let hits = m.hits(text, lang, false);
     if hits.is_empty() {
         let name: String = page.chars().take(EXCERPT_CHARS).collect();
@@ -583,6 +584,7 @@ pub fn passages(page: &str, text: &str, lang: Lang, m: &Matcher) -> Vec<Match> {
         let (excerpt, highlights) = excerpt(&name, &ranges, false);
         return vec![Match {
             page: page.to_string(),
+            source_revision: Some(revision),
             pos: 0,
             line: 1,
             heading: None,
@@ -628,6 +630,7 @@ pub fn passages(page: &str, text: &str, lang: Lang, m: &Matcher) -> Vec<Match> {
             let (excerpt, highlights) = excerpt(line, &ranges, true);
             Match {
                 page: page.to_string(),
+                source_revision: Some(revision.clone()),
                 pos: utf16_len(&text[..hs[0].range.start]),
                 line: i as u32 + 1,
                 heading,

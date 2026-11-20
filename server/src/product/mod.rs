@@ -2,6 +2,7 @@ mod auth;
 mod contract;
 pub(crate) mod db;
 mod documents;
+mod mutations;
 mod revisions;
 pub mod router;
 mod search;
