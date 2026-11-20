@@ -1,7 +1,10 @@
+mod ai;
+mod ai_runner;
 mod auth;
 mod contract;
 pub(crate) mod db;
 mod documents;
+pub mod mcp_bridge;
 mod mutations;
 mod revisions;
 pub mod router;

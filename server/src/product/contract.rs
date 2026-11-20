@@ -22,6 +22,14 @@ struct ErrorBody {
 }
 
 impl ApiError {
+    pub(super) fn payload(self) -> serde_json::Value {
+        serde_json::json!(self.body)
+    }
+
+    pub(super) fn status(&self) -> StatusCode {
+        self.status
+    }
+
     pub(super) fn code(&self) -> &'static str {
         self.body.code
     }
@@ -145,7 +153,7 @@ pub(crate) struct WriteMarkdown {
     pub base_revision: Option<Option<String>>,
 }
 
-fn present_revision<'de, D: Deserializer<'de>>(
+pub(super) fn present_revision<'de, D: Deserializer<'de>>(
     value: D,
 ) -> Result<Option<Option<String>>, D::Error> {
     Option::deserialize(value).map(Some)
@@ -157,7 +165,9 @@ impl WriteMarkdown {
     }
 }
 
-fn content_precondition(base_revision: Option<&Option<String>>) -> Result<Option<&str>, ApiError> {
+pub(super) fn content_precondition(
+    base_revision: Option<&Option<String>>,
+) -> Result<Option<&str>, ApiError> {
     let expected = base_revision.map(Option::as_deref).ok_or_else(|| {
         ApiError::new(
             StatusCode::PRECONDITION_REQUIRED,

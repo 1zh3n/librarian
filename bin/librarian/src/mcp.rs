@@ -22,14 +22,14 @@ use silverbullet_server::{
     },
     handlers::mcp_oauth::{self, SessionConsent},
     multi::access::AnyUserAuth,
-    product::space_adapter::NativeSpaces,
+    product::mcp_bridge::McpBridge,
 };
 use silverbullet_server_common::space::EmbeddedSpace;
 
 use crate::assets::ConsentAssets;
 use silverbullet_server_mcp::{
-    error_result, json_result, mcp_router_gated, Caller, McpHost, MultiHost, ToolDef, ToolResult,
-    ToolSet,
+    error_result, json_result, mcp_router_gated, Caller, CallerCredential, MultiHost, ToolDef,
+    ToolResult, ToolSet,
 };
 
 const LOGIN_PATH: &str = "/.auth/librarian/login";
@@ -47,7 +47,8 @@ const LOGIN_PAGE: &str = r#"<!doctype html>
 </form>
 </main></body></html>"#;
 
-pub fn build(root: &Path, spaces: &NativeSpaces) -> Result<(Arc<MultiHost>, Router), String> {
+pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router), String> {
+    let spaces = bridge.spaces();
     let clients = Arc::new(ClientRegistry::load(root).map_err(|err| err.to_string())?);
     let grants = Arc::new(GrantStore::load(root).map_err(|err| err.to_string())?);
     let host = Arc::new(
@@ -89,7 +90,7 @@ pub fn build(root: &Path, spaces: &NativeSpaces) -> Result<(Arc<MultiHost>, Rout
     let enabled: McpEnabled = Arc::new(move || {
         manager.mcp_enabled() && !matches!(std::env::var("SB_MCP").as_deref(), Ok("0" | "false"))
     });
-    let tools = Arc::new(WorkspaceTools(host.clone()));
+    let tools = Arc::new(ProductTools(bridge));
     let login_router = Router::new()
         .route(
             LOGIN_PATH,
@@ -107,22 +108,102 @@ pub fn build(root: &Path, spaces: &NativeSpaces) -> Result<(Arc<MultiHost>, Rout
     Ok((host, router))
 }
 
-struct WorkspaceTools(Arc<MultiHost>);
+struct ProductTools(McpBridge);
+
+fn tool(
+    name: &'static str,
+    title: &'static str,
+    description: &str,
+    properties: Value,
+    required: &[&str],
+    read_only: bool,
+) -> ToolDef {
+    ToolDef {
+        name,
+        title,
+        description: description.into(),
+        input_schema: json!({
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": false,
+        }),
+        annotations: json!({
+            "readOnlyHint": read_only,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+        }),
+    }
+}
 
 #[async_trait::async_trait]
-impl ToolSet for WorkspaceTools {
+impl ToolSet for ProductTools {
     fn tools(&self) -> Vec<ToolDef> {
-        vec![ToolDef {
-            name: "workspace_list",
-            title: "List workspaces",
-            description: "List Librarian workspaces covered by the current grant.".into(),
-            input_schema: json!({"type": "object", "properties": {}, "additionalProperties": false}),
-            annotations: json!({"readOnlyHint": true}),
-        }]
+        let workspace = json!({"type": "string", "description": "Stable workspace ID returned by workspace_list."});
+        let document = json!({"type": "string", "description": "Stable document ID returned by document_list, document_search, or document_create."});
+        let commit = json!({"type": "string", "pattern": "^[0-9A-Fa-f]{40}$", "description": "Git commit ID from revision_list."});
+        let operation = json!({"type": "string", "format": "uuid", "description": "Canonical operation UUID. Reuse it for an identical retry."});
+        let revision = json!({"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 content revision from document_read."});
+        let markdown = json!({"type": "string", "description": "Complete original Markdown, with line endings preserved."});
+        vec![
+            tool(
+                "workspace_list", "List workspaces", "List the workspaces accessible under the current grant.",
+                json!({}), &[], true,
+            ),
+            tool(
+                "document_list", "List documents", "List documents in a granted workspace in path order.",
+                json!({"workspaceId": workspace, "after": {"type": "string", "description": "List paths strictly after this document path."}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
+                &["workspaceId"], true,
+            ),
+            tool(
+                "document_read", "Read document", "Read the current original Markdown and its content revision.",
+                json!({"documentId": document}), &["documentId"], true,
+            ),
+            tool(
+                "document_search", "Search documents", "Search current documents in the specified granted workspace.",
+                json!({"workspaceId": workspace, "query": {"type": "string", "minLength": 1, "maxLength": 256}}),
+                &["workspaceId", "query"], true,
+            ),
+            tool(
+                "document_create", "Create document", "Create a new Markdown document with an immediate Git revision. The path must be unused.",
+                json!({"workspaceId": workspace, "operationId": operation, "path": {"type": "string", "description": "Relative document path ending in .md."}, "markdown": markdown}),
+                &["workspaceId", "operationId", "path", "markdown"], false,
+            ),
+            tool(
+                "document_update", "Update document", "Replace a document conditionally on its current content revision and create a Git revision.",
+                json!({"documentId": document, "operationId": operation, "baseRevision": revision, "markdown": markdown}),
+                &["documentId", "operationId", "baseRevision", "markdown"], false,
+            ),
+            tool(
+                "document_outline_read", "Read document outline", "Read the independent outline Markdown and its content revision. The revision is null when the outline is absent.",
+                json!({"documentId": document}), &["documentId"], true,
+            ),
+            tool(
+                "document_outline_update", "Update document outline", "Write the independent outline conditionally and create a Git revision.",
+                json!({"documentId": document, "operationId": operation,
+                    "baseRevision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "Content revision from document_outline_read, or null to create the outline."}, "markdown": markdown}),
+                &["documentId", "operationId", "baseRevision", "markdown"], false,
+            ),
+            tool(
+                "revision_list", "List document revisions", "List the Git revisions that changed this document.",
+                json!({"documentId": document, "before": commit, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}}),
+                &["documentId"], true,
+            ),
+            tool(
+                "revision_diff", "Read document revision diff", "Read what a Git revision changed in this document and the original Markdown at that revision.",
+                json!({"documentId": document, "commitId": commit}), &["documentId", "commitId"], true,
+            ),
+            tool(
+                "revision_restore", "Restore document revision", "Restore historical Markdown if the current content revision matches. This creates a new Git revision.",
+                json!({"documentId": document, "operationId": operation, "baseRevision": revision, "commitId": commit}),
+                &["documentId", "operationId", "baseRevision", "commitId"], false,
+            ),
+        ]
     }
 
     fn instructions(&self) -> String {
-        "List the Librarian workspaces available to this connection.".into()
+        "Use workspace_list and document_list to discover stable Librarian IDs. Read the current content revision before an update or restore, and reuse an operation ID only for an identical retry.".into()
     }
 
     fn version(&self) -> String {
@@ -130,16 +211,32 @@ impl ToolSet for WorkspaceTools {
     }
 
     async fn call(&self, caller: &Caller, name: &str, args: Value) -> ToolResult {
-        if name != "workspace_list" || !args.as_object().is_some_and(|object| object.is_empty()) {
-            return error_result("workspace_list does not accept arguments");
-        }
-        let workspaces: Vec<_> = self
+        let CallerCredential::Grant {
+            spaces,
+            credential_version,
+            ..
+        } = &caller.credential
+        else {
+            return error_result("A current OAuth grant is required");
+        };
+        match self
             .0
-            .spaces(caller)
-            .into_iter()
-            .map(|space| json!({"id": space.id, "name": space.name}))
-            .collect();
-        json_result(json!({"workspaces": workspaces}))
+            .call(
+                &caller.username,
+                spaces,
+                credential_version.as_deref(),
+                name,
+                args,
+            )
+            .await
+        {
+            Ok(result) => json_result(result),
+            Err(error) => {
+                let mut result = json_result(error);
+                result["isError"] = json!(true);
+                result
+            }
+        }
     }
 }
 

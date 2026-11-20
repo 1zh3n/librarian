@@ -34,14 +34,14 @@ pub struct Product {
 impl Product {
     pub fn open(data_root: &Path, port: u16) -> Result<Self, String> {
         let spaces = NativeSpaces::open(data_root, port, env!("CARGO_PKG_VERSION"))?;
-        let (host, mcp_router) = mcp::build(data_root, &spaces)?;
         let manager = spaces.manager.clone();
-        let router =
-            build_configured_product_router(product_state(), data_root, spaces)?.merge(mcp_router);
+        let (product_router, bridge) =
+            build_configured_product_router(product_state(), data_root, spaces)?;
+        let (host, mcp_router) = mcp::build(data_root, bridge)?;
         Ok(Self {
             manager,
             host,
-            router,
+            router: product_router.merge(mcp_router),
         })
     }
 

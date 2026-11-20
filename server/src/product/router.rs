@@ -8,6 +8,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
 
+use super::mcp_bridge::McpBridge;
+
 pub struct ProductAsset {
     pub bytes: Cow<'static, [u8]>,
     pub content_type: String,
@@ -26,9 +28,10 @@ pub fn build_configured_product_router(
     state: Arc<ProductState>,
     root: &FilePath,
     spaces: super::space_adapter::NativeSpaces,
-) -> Result<Router, String> {
-    let service = super::documents::DocumentService::open(root, spaces)?;
-    Ok(build(state, super::documents::routes(Arc::new(service))))
+) -> Result<(Router, McpBridge), String> {
+    let service = Arc::new(super::documents::DocumentService::open(root, spaces)?);
+    let routes = super::documents::routes(service.clone());
+    Ok((build(state, routes), McpBridge::new(service)))
 }
 
 fn build(state: Arc<ProductState>, routes: Router) -> Router {

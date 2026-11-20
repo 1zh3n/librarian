@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use axum::http::{header, HeaderMap, StatusCode};
 
 use crate::auth::{request_origin, AccessLevel, Actor};
@@ -7,6 +9,12 @@ use super::{contract::ApiError, space_adapter::NativeSpaces};
 
 pub(crate) struct Account {
     username: String,
+    bound: Option<BoundIdentity>,
+}
+
+struct BoundIdentity {
+    credential_version: String,
+    allowed_spaces: BTreeSet<String>,
 }
 
 impl Account {
@@ -54,7 +62,34 @@ impl Account {
             }
             username
         };
-        Ok(Self { username })
+        Ok(Self {
+            username,
+            bound: None,
+        })
+    }
+
+    pub(super) fn from_bound_identity(
+        spaces: &NativeSpaces,
+        username: &str,
+        credential_version: Option<&str>,
+        allowed_spaces: BTreeSet<String>,
+    ) -> Result<Self, ApiError> {
+        let version = credential_version
+            .filter(|version| spaces.users.session_is_current(username, Some(version)))
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::UNAUTHORIZED,
+                    "unauthorized",
+                    "The account credentials have changed",
+                )
+            })?;
+        Ok(Self {
+            username: username.to_owned(),
+            bound: Some(BoundIdentity {
+                credential_version: version.to_owned(),
+                allowed_spaces,
+            }),
+        })
     }
 
     pub(crate) fn actor(
@@ -63,6 +98,15 @@ impl Account {
         instance: &SpaceInstance,
         write: bool,
     ) -> Result<Actor, ApiError> {
+        if let Some(bound) = &self.bound {
+            if !bound.allowed_spaces.contains(&instance.id)
+                || !spaces
+                    .users
+                    .session_is_current(&self.username, Some(&bound.credential_version))
+            {
+                return Err(ApiError::not_found());
+            }
+        }
         if !spaces.users.is_enabled(&self.username) {
             return Err(ApiError::not_found());
         }

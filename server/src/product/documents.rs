@@ -73,7 +73,7 @@ impl DocumentService {
         Ok((instance, actor, workspace, path))
     }
 
-    fn workspaces(&self, account: &Account) -> Result<Vec<Workspace>, ApiError> {
+    pub(super) fn workspaces(&self, account: &Account) -> Result<Vec<Workspace>, ApiError> {
         let registry = self.spaces.manager.registry().current();
         let mut workspaces = Vec::new();
         for instance in registry.instances.values() {
@@ -98,12 +98,15 @@ impl DocumentService {
         Ok(workspaces)
     }
 
-    fn list(
+    pub(super) fn list(
         &self,
         account: &Account,
         workspace: &str,
         query: DocumentList,
     ) -> Result<Vec<DocumentSummary>, ApiError> {
+        if query.limit.is_some_and(|limit| !(1..=500).contains(&limit)) {
+            return Err(ApiError::invalid("limit must be between 1 and 500"));
+        }
         let (instance, _) = self.scope(account, workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
@@ -153,7 +156,7 @@ impl DocumentService {
         Ok(summary(state, workspace, id, path, title))
     }
 
-    fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
+    pub(super) fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
         let (workspace, path) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
         let state = state(&instance)?;
@@ -220,7 +223,11 @@ impl DocumentService {
         ))
     }
 
-    fn get_outline(&self, account: &Account, id: &str) -> Result<OutlineSnapshot, ApiError> {
+    pub(super) fn get_outline(
+        &self,
+        account: &Account,
+        id: &str,
+    ) -> Result<OutlineSnapshot, ApiError> {
         let (workspace, path) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
         let state = state(&instance)?;
@@ -445,7 +452,7 @@ fn summary(
     }
 }
 
-fn outline_path(path: &str) -> String {
+pub(super) fn outline_path(path: &str) -> String {
     format!("{}.outline.md", path.strip_suffix(".md").unwrap_or(path))
 }
 
@@ -478,9 +485,9 @@ fn is_front_matter_delimiter(line: &[u8]) -> bool {
 }
 
 #[derive(Deserialize)]
-struct DocumentList {
-    after: Option<String>,
-    limit: Option<usize>,
+pub(super) struct DocumentList {
+    pub after: Option<String>,
+    pub limit: Option<usize>,
 }
 
 pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
@@ -509,6 +516,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
             "/settings/devices/{device}",
             get(super::settings::get_preferences).put(super::settings::save_preferences),
         )
+        .merge(super::ai::routes())
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
             response
@@ -553,9 +561,6 @@ async fn list(
 ) -> Result<Json<Vec<DocumentSummary>>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, false)?;
     let Query(query) = query.map_err(|_| ApiError::invalid("Invalid document list query"))?;
-    if query.limit.is_some_and(|limit| !(1..=500).contains(&limit)) {
-        return Err(ApiError::invalid("limit must be between 1 and 500"));
-    }
     run(move || service.list(&account, &workspace, query))
         .await
         .map(Json)

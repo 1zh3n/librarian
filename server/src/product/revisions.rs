@@ -47,7 +47,7 @@ fn engine(state: &ServerState) -> Result<&RevisionEngine, ApiError> {
         })
 }
 
-fn validate_commit(value: &str) -> Result<(), ApiError> {
+pub(super) fn validate_commit(value: &str) -> Result<(), ApiError> {
     if value.len() != 40 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(ApiError::invalid("Expected a Git commit ID"));
     }
@@ -56,8 +56,8 @@ fn validate_commit(value: &str) -> Result<(), ApiError> {
 
 #[derive(Deserialize)]
 pub(super) struct HistoryQuery {
-    before: Option<String>,
-    limit: Option<usize>,
+    pub before: Option<String>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -87,6 +87,17 @@ pub(super) async fn history(
 ) -> Result<Json<History>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, false)?;
     let Query(query) = query.map_err(|_| ApiError::invalid("Invalid history query"))?;
+    run(move || document_history(&service, &account, &document, query))
+        .await
+        .map(Json)
+}
+
+pub(super) fn document_history(
+    service: &DocumentService,
+    account: &Account,
+    document: &str,
+    query: HistoryQuery,
+) -> Result<History, ApiError> {
     let limit = query.limit.unwrap_or(50);
     if !(1..=100).contains(&limit) {
         return Err(ApiError::invalid("limit must be between 1 and 100"));
@@ -94,49 +105,46 @@ pub(super) async fn history(
     if let Some(before) = &query.before {
         validate_commit(before)?;
     }
-    run(move || {
-        let (instance, _, _, path) = service.document_scope(&account, &document, false)?;
-        let state = state(&instance)?;
-        let _mutation = product_read(state)?;
-        check_file_path(state, &path)?;
-        state.space.get_file_meta(&path)?;
-        let engine = engine(state)?;
-        let mode = mode(Some(engine));
-        if !engine.store().head_exists() {
-            return Ok(Json(History {
-                mode,
-                uncommitted: true,
-                revisions: Vec::new(),
-                more: false,
-            }));
-        }
-        let result = read::file_history(engine.store(), &path, query.before.as_deref(), limit)
-            .map_err(ApiError::internal)?;
-        let uncommitted = engine
-            .store()
-            .exact_markdown_uncommitted(&path)
-            .map_err(ApiError::internal)?
-            .unwrap_or(result.uncommitted);
-        let revisions = result
-            .revisions
-            .into_iter()
-            .map(|entry| HistoryEntry {
-                commit_id: entry.rev,
-                timestamp: entry.timestamp,
-                author: entry.author,
-                message: entry.message,
-                added: entry.added,
-                removed: entry.removed,
-            })
-            .collect();
-        Ok(Json(History {
+    let (instance, _, _, path) = service.document_scope(account, document, false)?;
+    let state = state(&instance)?;
+    let _mutation = product_read(state)?;
+    check_file_path(state, &path)?;
+    state.space.get_file_meta(&path)?;
+    let engine = engine(state)?;
+    let mode = mode(Some(engine));
+    if !engine.store().head_exists() {
+        return Ok(History {
             mode,
-            uncommitted,
-            revisions,
-            more: result.more,
-        }))
+            uncommitted: true,
+            revisions: Vec::new(),
+            more: false,
+        });
+    }
+    let result = read::file_history(engine.store(), &path, query.before.as_deref(), limit)
+        .map_err(ApiError::internal)?;
+    let uncommitted = engine
+        .store()
+        .exact_markdown_uncommitted(&path)
+        .map_err(ApiError::internal)?
+        .unwrap_or(result.uncommitted);
+    let revisions = result
+        .revisions
+        .into_iter()
+        .map(|entry| HistoryEntry {
+            commit_id: entry.rev,
+            timestamp: entry.timestamp,
+            author: entry.author,
+            message: entry.message,
+            added: entry.added,
+            removed: entry.removed,
+        })
+        .collect();
+    Ok(History {
+        mode,
+        uncommitted,
+        revisions,
+        more: result.more,
     })
-    .await
 }
 
 #[derive(Serialize)]
@@ -153,31 +161,47 @@ pub(super) async fn diff(
     headers: HeaderMap,
 ) -> Result<Json<VersionDiff>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, false)?;
+    run(move || document_diff(&service, &account, &document, commit))
+        .await
+        .map(Json)
+}
+
+pub(super) fn document_diff(
+    service: &DocumentService,
+    account: &Account,
+    document: &str,
+    commit: String,
+) -> Result<VersionDiff, ApiError> {
     validate_commit(&commit)?;
-    run(move || {
-        let (instance, _, _, path) = service.document_scope(&account, &document, false)?;
-        let state = state(&instance)?;
-        let _mutation = product_read(state)?;
-        check_file_path(state, &path)?;
-        state.space.get_file_meta(&path)?;
-        let store = engine(state)?.store();
-        let diff = read::file_diff(store, &path, &commit, false)
-            .map_err(ApiError::internal)?
-            .ok_or_else(ApiError::not_found)?;
-        let markdown = read::file_at(store, &path, &commit, false)
-            .map_err(ApiError::internal)?
-            .map(text)
-            .transpose()?;
-        if diff.len() > MARKDOWN_LIMIT * 3 {
-            return Err(too_large());
-        }
-        Ok(Json(VersionDiff {
-            commit_id: commit,
-            diff,
-            markdown,
-        }))
+    let (instance, _, _, path) = service.document_scope(account, document, false)?;
+    let state = state(&instance)?;
+    let _mutation = product_read(state)?;
+    check_file_path(state, &path)?;
+    state.space.get_file_meta(&path)?;
+    let engine = engine(state)?;
+    let diff = read::file_diff(engine.store(), &path, &commit, false)
+        .map_err(ApiError::internal)?
+        .ok_or_else(ApiError::not_found)?;
+    let markdown = historical_markdown(engine, &path, &commit)?;
+    if diff.len() > MARKDOWN_LIMIT * 3 {
+        return Err(too_large());
+    }
+    Ok(VersionDiff {
+        commit_id: commit,
+        diff,
+        markdown,
     })
-    .await
+}
+
+pub(super) fn historical_markdown(
+    engine: &RevisionEngine,
+    path: &str,
+    commit: &str,
+) -> Result<Option<String>, ApiError> {
+    read::file_at(engine.store(), path, commit, false)
+        .map_err(ApiError::internal)?
+        .map(text)
+        .transpose()
 }
 
 fn text(bytes: Vec<u8>) -> Result<String, ApiError> {
@@ -223,10 +247,8 @@ pub(super) async fn restore(
             if current_revision != expected {
                 return Err(ApiError::conflict(Some(current_revision)));
             }
-            let restored = read::file_at(engine.store(), &path, &request.commit_id, false)
-                .map_err(ApiError::internal)?
-                .ok_or_else(ApiError::not_found)
-                .and_then(text)?;
+            let restored = historical_markdown(engine, &path, &request.commit_id)?
+                .ok_or_else(ApiError::not_found)?;
             if current == restored {
                 return Err(ApiError::new(
                     StatusCode::CONFLICT,

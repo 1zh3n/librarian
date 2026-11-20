@@ -1278,6 +1278,347 @@
           }
         }
       }
+    },
+    "/ai/operations": {
+      "post": {
+        "operationId": "createAiOperation",
+        "responses": {
+          "202": {
+            "description": "Operation registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiTask"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/operations/{operation}": {
+      "get": {
+        "operationId": "getAiOperation",
+        "responses": {
+          "200": {
+            "description": "Current operation state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/operations/{operation}/events": {
+      "get": {
+        "operationId": "replayAiEvents",
+        "responses": {
+          "200": {
+            "description": "Finite stream of durable events after the supplied cursor",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/operations/{operation}/confirm": {
+      "post": {
+        "operationId": "confirmAiOperation",
+        "responses": {
+          "200": {
+            "description": "Confirmed operation state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiConfirmRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/operations/{operation}/undo": {
+      "post": {
+        "operationId": "undoAiOperation",
+        "responses": {
+          "200": {
+            "description": "New reverse version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/runner/claims": {
+      "post": {
+        "operationId": "claimAiOperation",
+        "responses": {
+          "200": {
+            "description": "Leased operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiClaim"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No queued operation"
+          }
+        },
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/claims/{lease}/sources": {
+      "post": {
+        "operationId": "readAiSource",
+        "responses": {
+          "200": {
+            "description": "Authorized source snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSourceData"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSourceRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/claims/{lease}/result": {
+      "put": {
+        "operationId": "finishAiOperation",
+        "responses": {
+          "200": {
+            "description": "Operation result or confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiRunnerResult"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1290,6 +1631,10 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "auth_<host>"
+      },
+      "runnerToken": {
+        "type": "http",
+        "scheme": "bearer"
       }
     },
     "schemas": {
@@ -1710,6 +2055,369 @@
           }
         },
         "additionalProperties": false
+      },
+      "AiMode": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "edit"
+        ]
+      },
+      "AiContext": {
+        "type": "object",
+        "required": [
+          "documentId"
+        ],
+        "properties": {
+          "documentId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "to": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blockId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AiTask": {
+        "type": "object",
+        "required": [
+          "workspaceId",
+          "mode",
+          "prompt"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AiMode"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "context": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiContext"
+            }
+          }
+        }
+      },
+      "AiSourceReference": {
+        "type": "object",
+        "required": [
+          "id",
+          "documentId",
+          "path",
+          "revision"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "blockId": {
+            "type": "string"
+          }
+        }
+      },
+      "MutationFileChange": {
+        "type": "object",
+        "required": [
+          "path",
+          "beforeRevision",
+          "revision"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "beforeRevision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MutationReceipt": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "workspaceId",
+          "commitId",
+          "changes"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "commitId": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MutationFileChange"
+            }
+          }
+        }
+      },
+      "AiConfirmation": {
+        "type": "object",
+        "required": [
+          "id",
+          "paths"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AiOperation": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "documentId",
+          "mode",
+          "status",
+          "answer",
+          "sources",
+          "commitId",
+          "confirmation",
+          "undoCommitId",
+          "changes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AiMode"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "conflict",
+              "needs_confirmation",
+              "canceled"
+            ]
+          },
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiSourceReference"
+            }
+          },
+          "commitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirmation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AiConfirmation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "undoCommitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MutationFileChange"
+            }
+          }
+        }
+      },
+      "AiClaim": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "leaseId",
+          "expiresAt",
+          "input"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "leaseId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "input": {
+            "$ref": "#/components/schemas/AiTask"
+          }
+        }
+      },
+      "AiSourceRequest": {
+        "type": "object",
+        "required": [
+          "documentId"
+        ],
+        "properties": {
+          "documentId": {
+            "type": "string"
+          },
+          "outline": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiSourceData": {
+        "type": "object",
+        "required": [
+          "source",
+          "markdown"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/AiSourceReference"
+          },
+          "markdown": {
+            "type": "string"
+          }
+        }
+      },
+      "AiFileEdit": {
+        "type": "object",
+        "required": [
+          "path",
+          "baseRevision",
+          "markdown"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "baseRevision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "markdown": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AiRunnerResult": {
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiFileEdit"
+            }
+          }
+        }
+      },
+      "AiConfirmRequest": {
+        "type": "object",
+        "required": [
+          "confirmationId"
+        ],
+        "properties": {
+          "confirmationId": {
+            "type": "string"
+          }
+        }
       }
     }
   }

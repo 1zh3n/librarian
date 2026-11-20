@@ -34,7 +34,7 @@ use super::{
 const MAX_FILES: usize = 64;
 const MAX_BATCH_BYTES: usize = 24 * 1024 * 1024;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct MutationEdit {
     pub path: String,
@@ -345,7 +345,7 @@ fn valid_path(path: &str) -> bool {
         }
 }
 
-fn validate_edits(edits: &[MutationEdit]) -> Result<(), ApiError> {
+pub(super) fn validate_edits(edits: &[MutationEdit]) -> Result<(), ApiError> {
     if edits.is_empty() || edits.len() > MAX_FILES {
         return Err(ApiError::invalid("Expected between 1 and 64 file changes"));
     }

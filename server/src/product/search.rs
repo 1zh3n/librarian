@@ -39,7 +39,19 @@ pub(super) async fn search(
 ) -> Result<Json<Vec<SearchHit>>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, false)?;
     let Query(query) = query.map_err(|_| ApiError::invalid("A search query is required"))?;
-    let q = query.q.trim();
+    find_documents(service, account, workspace, query.q, &headers)
+        .await
+        .map(Json)
+}
+
+pub(super) async fn find_documents(
+    service: Arc<DocumentService>,
+    account: Account,
+    workspace: String,
+    query: String,
+    headers: &HeaderMap,
+) -> Result<Vec<SearchHit>, ApiError> {
+    let q = query.trim();
     if q.is_empty() || q.chars().count() > MAX_QUERY_CHARS {
         return Err(ApiError::invalid(
             "Search query must be between 1 and 256 characters",
@@ -47,8 +59,11 @@ pub(super) async fn search(
     }
     let requested_workspace = workspace.clone();
     let lookup = service.clone();
-    let (instance, actor) =
-        run(move || lookup.scope(&account, &requested_workspace, false)).await?;
+    let ((instance, actor), account) = run(move || {
+        let scope = lookup.scope(&account, &requested_workspace, false)?;
+        Ok((scope, account))
+    })
+    .await?;
     let mode = QueryMode::Words;
     let request = QueryRequest {
         query: q.to_owned(),
@@ -56,7 +71,7 @@ pub(super) async fn search(
         limit: Some(limits::MAX_RESULTS),
         ..QueryRequest::default()
     };
-    let Json(result) = run_query(state(&instance)?, &actor, &headers, request, mode)
+    let Json(result) = run_query(state(&instance)?, &actor, headers, request, mode)
         .await
         .map_err(|error| search_error(error.0))?;
     if result.partial && result.items.is_empty() {
@@ -67,6 +82,7 @@ pub(super) async fn search(
         ));
     }
     run(move || {
+        let (instance, _) = service.scope(&account, &workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
         let mut seen = HashSet::new();
@@ -90,7 +106,7 @@ pub(super) async fn search(
                 break;
             }
         }
-        Ok(Json(hits))
+        Ok(hits)
     })
     .await
 }

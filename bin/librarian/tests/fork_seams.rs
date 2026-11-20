@@ -244,6 +244,7 @@ impl Server {
             client: client.into(),
             access: tokens["access_token"].as_str().unwrap().into(),
             refresh: tokens["refresh_token"].as_str().unwrap().into(),
+            cookie: cookie.into(),
         }
     }
 
@@ -256,6 +257,32 @@ impl Server {
             .send()
             .await
             .unwrap()
+    }
+
+    async fn tool(&self, session: &Session, name: &str, arguments: Value) -> Value {
+        let response = self
+            .rpc(
+                &session.access,
+                "tools/call",
+                json!({"name": name, "arguments": arguments}),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response: Value = response.json().await.unwrap();
+        assert!(response.get("result").is_some(), "{response}");
+        response["result"].clone()
+    }
+
+    async fn product_get(&self, session: &Session, path: &str) -> Value {
+        let response = self
+            .client
+            .get(format!("{}/api/v1{path}", self.url))
+            .header(header::COOKIE, &session.cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        response.json().await.unwrap()
     }
 
     fn caller(&self, session: &Session) -> Caller {
@@ -315,6 +342,7 @@ struct Session {
     client: String,
     access: String,
     refresh: String,
+    cookie: String,
 }
 
 #[tokio::test]
@@ -363,7 +391,7 @@ async fn spaces_isolate_reads_and_grants() {
             .as_array()
             .unwrap();
         assert_eq!(allowed.len(), 1);
-        assert_eq!(allowed[0]["id"], expected);
+        assert_eq!(allowed[0]["spaceId"], expected);
     }
     let public_read = server
         .client
@@ -549,15 +577,61 @@ async fn search_finds_chinese_fixture() {
 }
 
 #[tokio::test]
-async fn mcp_lists_only_product_tools_and_revokes_grant() {
+async fn mcp_lists_only_product_tools_and_their_input_contracts() {
     let server = Server::boot().await;
     let session = server.connect("alice", "left").await;
     let response = server.rpc(&session.access, "tools/list", json!({})).await;
     let tools: Value = response.json().await.unwrap();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0]["name"], "workspace_list");
-    assert_eq!(tools[0]["annotations"]["readOnlyHint"], true);
+    let expected: [(&str, bool, &[&str]); 11] = [
+        ("workspace_list", true, &[]),
+        ("document_list", true, &["workspaceId"]),
+        ("document_read", true, &["documentId"]),
+        ("document_search", true, &["workspaceId", "query"]),
+        (
+            "document_create",
+            false,
+            &["workspaceId", "operationId", "path", "markdown"],
+        ),
+        (
+            "document_update",
+            false,
+            &["documentId", "operationId", "baseRevision", "markdown"],
+        ),
+        ("document_outline_read", true, &["documentId"]),
+        (
+            "document_outline_update",
+            false,
+            &["documentId", "operationId", "baseRevision", "markdown"],
+        ),
+        ("revision_list", true, &["documentId"]),
+        ("revision_diff", true, &["documentId", "commitId"]),
+        (
+            "revision_restore",
+            false,
+            &["documentId", "operationId", "baseRevision", "commitId"],
+        ),
+    ];
+    assert_eq!(tools.len(), expected.len());
+    for (name, read_only, required) in expected {
+        let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"], read_only, "{name}");
+        assert_eq!(tool["inputSchema"]["type"], "object", "{name}");
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{name}");
+        assert_eq!(tool["inputSchema"]["required"], json!(required), "{name}");
+        for property in required {
+            assert!(
+                tool["inputSchema"]["properties"].get(property).is_some(),
+                "{name}.{property}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn revoke_grant_mid_session_blocks_further_reads() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
     let resource = format!("{}/.mcp", server.url);
     let refreshed = server
         .client
@@ -580,10 +654,21 @@ async fn mcp_lists_only_product_tools_and_revokes_grant() {
         .rpc(access, "tools/call", json!({"name": "workspace_list"}))
         .await;
     let listed: Value = connected.json().await.unwrap();
-    assert_eq!(
-        listed["result"]["structuredContent"]["workspaces"],
-        json!([{"id":"left","name":"Left"}])
-    );
+    let workspace = &listed["result"]["structuredContent"]["workspaces"][0];
+    let workspace_id = workspace["id"].as_str().unwrap();
+    assert_eq!(workspace["spaceId"], "left");
+    assert_eq!(workspace["name"], "Left");
+    let documents = server
+        .rpc(
+            access,
+            "tools/call",
+            json!({"name": "document_list", "arguments": {"workspaceId": workspace_id}}),
+        )
+        .await;
+    assert_eq!(documents.status(), StatusCode::OK);
+    let documents: Value = documents.json().await.unwrap();
+    let document = &documents["result"]["structuredContent"]["documents"][0]["id"];
+    assert!(document.is_string(), "{documents}");
     let revoked = server
         .client
         .post(format!("{}/.auth/revoke", server.url))
@@ -593,7 +678,261 @@ async fn mcp_lists_only_product_tools_and_revokes_grant() {
         .unwrap();
     assert_eq!(revoked.status(), StatusCode::OK);
     for bearer in [&session.access, access] {
-        let result = server.rpc(bearer, "tools/list", json!({})).await;
+        let result = server
+            .rpc(
+                bearer,
+                "tools/call",
+                json!({"name": "document_read", "arguments": {"documentId": document}}),
+            )
+            .await;
         assert_eq!(result.status(), StatusCode::UNAUTHORIZED);
     }
+}
+
+#[tokio::test]
+async fn mcp_reuses_product_ids_and_checks_live_workspace_membership() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let http_workspaces = server.product_get(&session, "/workspaces").await;
+    let find = |native: &str| {
+        http_workspaces
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["spaceId"] == native)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+    };
+    let (left, right) = (find("left"), find("right"));
+    let listed = server.tool(&session, "workspace_list", json!({})).await;
+    let workspaces = listed["structuredContent"]["workspaces"]
+        .as_array()
+        .unwrap();
+    assert_eq!(workspaces.len(), 1);
+    assert_eq!(workspaces[0]["id"], left);
+    assert_ne!(left, "left");
+
+    let list_path = |workspace| format!("/workspaces/{workspace}/documents");
+    let http_docs = server.product_get(&session, &list_path(left)).await;
+    let documents = server
+        .tool(&session, "document_list", json!({"workspaceId": left}))
+        .await;
+    assert_eq!(documents["structuredContent"]["documents"], http_docs);
+    let same = |documents: Value| {
+        documents
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|document| document["path"] == "Same.md")
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let document_id = same(http_docs);
+    let other_id = same(server.product_get(&session, &list_path(right)).await);
+    let read_args = json!({"documentId": document_id});
+    let fresh = "\u{feff}清晨，河岸鸟鸣。\r\n引文在这里。  \r";
+    fs::write(server.root.path().join("spaces/left/Same.md"), fresh).unwrap();
+    let read = server
+        .tool(&session, "document_read", read_args.clone())
+        .await;
+    assert_eq!(read["structuredContent"]["markdown"], fresh);
+    assert_eq!(read["structuredContent"]["document"]["id"], document_id);
+
+    for (tool, args) in [
+        ("document_list", json!({"workspaceId": right})),
+        (
+            "document_search",
+            json!({"workspaceId": right, "query": "Private"}),
+        ),
+        ("document_read", json!({"documentId": other_id})),
+        (
+            "document_update",
+            json!({"documentId": other_id, "operationId": "b91c447e-3687-4421-8a47-8cedca187105", "baseRevision": "0".repeat(64), "markdown": "no"}),
+        ),
+    ] {
+        let error = server.tool(&session, tool, args).await;
+        assert_eq!(error["isError"], true, "{tool}: {error}");
+        assert_eq!(error["structuredContent"]["code"], "not_found", "{error}");
+    }
+
+    let manager = server.app.manager();
+    let mut config = manager.instance("left").unwrap().config.clone();
+    config.members.get_mut("alice").unwrap().role =
+        silverbullet_server::multi::config::MemberRole::Read;
+    manager.update("left", config.clone()).unwrap();
+    let still_readable = server
+        .tool(&session, "document_read", read_args.clone())
+        .await;
+    assert_eq!(still_readable["structuredContent"]["markdown"], fresh);
+    let write = server.tool(&session, "document_update", json!({"documentId": document_id, "operationId": "da277684-0f06-47e7-9ee9-5cc84cdc1aec", "baseRevision": read["structuredContent"]["revision"], "markdown": "no"})).await;
+    assert_eq!(write["structuredContent"]["code"], "read_only", "{write}");
+    config.members.remove("alice");
+    manager.update("left", config).unwrap();
+    let read = server.tool(&session, "document_read", read_args).await;
+    assert_eq!(read["structuredContent"]["code"], "not_found", "{read}");
+    let listed = server.tool(&session, "workspace_list", json!({})).await;
+    assert_eq!(listed["structuredContent"]["workspaces"], json!([]));
+}
+
+#[tokio::test]
+async fn mcp_writes_create_immediate_versions_and_retries_reuse_receipts() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.tool(&session, "workspace_list", json!({})).await;
+    let workspace = &workspaces["structuredContent"]["workspaces"][0]["id"];
+    let first = "\u{feff}岷江鹭鸟。\r\n最后一行  \r";
+    let second = "更新：江流。\r\n";
+    let create = json!({"workspaceId": workspace, "operationId": "0e57ea0d-1e50-4fbf-b071-e76bce261a5c", "path": "New.md", "markdown": first});
+    let created = server
+        .tool(&session, "document_create", create.clone())
+        .await;
+    assert_ne!(created["isError"], true, "{created}");
+    let created = &created["structuredContent"];
+    let document = &created["documentId"];
+    assert!(document.is_string(), "{created}");
+    let read_args = json!({"documentId": document});
+    let head = &created["commitId"];
+    let history = server
+        .tool(&session, "revision_list", read_args.clone())
+        .await;
+    assert_eq!(
+        history["structuredContent"]["revisions"][0]["commitId"],
+        *head
+    );
+    let read = server
+        .tool(&session, "document_read", read_args.clone())
+        .await;
+    assert_eq!(read["structuredContent"]["markdown"], first);
+    assert_eq!(
+        read["structuredContent"]["revision"],
+        created["changes"][0]["revision"]
+    );
+    let update = json!({"documentId": document, "operationId": "1a8d9c91-6a1d-4c4d-98d6-f2602f1cac00", "baseRevision": read["structuredContent"]["revision"], "markdown": second});
+    let updated = server
+        .tool(&session, "document_update", update.clone())
+        .await;
+    assert_ne!(updated["isError"], true, "{updated}");
+    let updated = &updated["structuredContent"];
+    assert_ne!(&updated["commitId"], head);
+    let retry = server.tool(&session, "document_create", create).await;
+    assert_eq!(&retry["structuredContent"], created);
+    let retry = server
+        .tool(&session, "document_update", update.clone())
+        .await;
+    assert_eq!(&retry["structuredContent"], updated);
+    let mut changed_retry = update.clone();
+    changed_retry["markdown"] = json!("different request");
+    let changed_retry = server
+        .tool(&session, "document_update", changed_retry)
+        .await;
+    assert_eq!(
+        changed_retry["structuredContent"]["code"],
+        "operation_id_reused"
+    );
+    let history = server
+        .tool(&session, "revision_list", read_args.clone())
+        .await;
+    let revisions = history["structuredContent"]["revisions"]
+        .as_array()
+        .unwrap();
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[0]["commitId"], updated["commitId"]);
+    let diff = server
+        .tool(
+            &session,
+            "revision_diff",
+            json!({"documentId": document, "commitId": updated["commitId"]}),
+        )
+        .await;
+    assert_eq!(diff["structuredContent"]["markdown"], second);
+    assert!(diff["structuredContent"]["diff"]
+        .as_str()
+        .unwrap()
+        .contains("岷江鹭鸟"));
+
+    let mut stale = update.clone();
+    stale["operationId"] = json!("a7bb3d84-c92a-465c-8860-46a33473cd34");
+    stale["markdown"] = json!("stale");
+    let conflict = server
+        .tool(&session, "document_update", stale.clone())
+        .await;
+    assert_eq!(
+        conflict["structuredContent"]["code"], "revision_conflict",
+        "{conflict}"
+    );
+    assert_eq!(
+        conflict["structuredContent"]["currentRevision"],
+        updated["changes"][0]["revision"]
+    );
+    stale["force"] = json!(true);
+    let forced = server.tool(&session, "document_update", stale).await;
+    assert_eq!(
+        forced["structuredContent"]["code"], "invalid_request",
+        "{forced}"
+    );
+
+    let outline = "## 独立提纲\r\n";
+    let outline_args = json!({"documentId": document, "operationId": "2257e20f-6903-4ebb-9896-6629cea03f00", "baseRevision": null, "markdown": outline});
+    let outline_write = server
+        .tool(&session, "document_outline_update", outline_args.clone())
+        .await;
+    assert_eq!(
+        outline_write["structuredContent"]["changes"][0]["path"], "New.outline.md",
+        "{outline_write}"
+    );
+    let retry = server
+        .tool(&session, "document_outline_update", outline_args)
+        .await;
+    assert_eq!(
+        retry["structuredContent"],
+        outline_write["structuredContent"]
+    );
+    let outline_read = server
+        .tool(&session, "document_outline_read", read_args.clone())
+        .await;
+    assert_eq!(outline_read["structuredContent"]["markdown"], outline);
+
+    let restore = json!({"documentId": document, "operationId": "9b6bdb8c-c89d-4a1f-be11-14688426758a", "baseRevision": updated["changes"][0]["revision"], "commitId": head});
+    let restored = server
+        .tool(&session, "revision_restore", restore.clone())
+        .await;
+    assert_ne!(restored["isError"], true, "{restored}");
+    let retry = server.tool(&session, "revision_restore", restore).await;
+    assert_eq!(retry["structuredContent"], restored["structuredContent"]);
+    let history = server.tool(&session, "revision_list", read_args).await;
+    assert_eq!(
+        history["structuredContent"]["revisions"][0]["commitId"],
+        restored["structuredContent"]["commitId"]
+    );
+    assert_eq!(
+        fs::read(server.root.path().join("spaces/left/New.md")).unwrap(),
+        first.as_bytes()
+    );
+    assert_eq!(
+        fs::read(server.root.path().join("spaces/left/New.outline.md")).unwrap(),
+        outline.as_bytes()
+    );
+    let search = tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let response = server
+                .tool(
+                    &session,
+                    "document_search",
+                    json!({"workspaceId": workspace, "query": "鹭鸟"}),
+                )
+                .await;
+            if let Some(hits) = response["structuredContent"]["hits"].as_array() {
+                if let Some(hit) = hits.iter().find(|hit| hit["document"]["id"] == *document) {
+                    break hit.clone();
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("MCP search returned the current document");
+    assert!(search["excerpt"].as_str().unwrap().contains("鹭鸟"));
 }

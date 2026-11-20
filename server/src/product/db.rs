@@ -15,6 +15,7 @@ pub(crate) const PRODUCT_DIR: &str = ".librarian";
 pub(crate) struct Metadata {
     directory: PathBuf,
     connection: Mutex<Connection>,
+    ai_gate: Mutex<()>,
 }
 
 pub(super) struct DataRootLock(fs::File);
@@ -62,6 +63,7 @@ impl Metadata {
         Ok(Self {
             directory,
             connection: Mutex::new(connection),
+            ai_gate: Mutex::new(()),
         })
     }
 
@@ -91,10 +93,33 @@ impl Metadata {
         self.directory.join("mutations").join(operation)
     }
 
+    pub(super) fn ai_guard(&self) -> Result<MutexGuard<'_, ()>, ApiError> {
+        self.ai_gate.lock().map_err(ApiError::internal)
+    }
+
+    pub(super) fn runner_digest(&self) -> Result<Option<String>, ApiError> {
+        let path = self.directory.join("runner-token.sha256");
+        match fs::symlink_metadata(&path) {
+            Ok(meta) if meta.is_file() && meta.len() <= 66 => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            _ => return Err(ApiError::internal("Invalid runner credential file")),
+        }
+        let digest = fs::read_to_string(path).map_err(ApiError::internal)?;
+        let digest = digest.trim();
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(ApiError::internal("Invalid runner credential digest"));
+        }
+        Ok(Some(digest.to_owned()))
+    }
+
     fn initialize(path: &Path) -> rusqlite::Result<Connection> {
         let mut connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
-        connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;")?;
         let transaction =
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 =
@@ -133,7 +158,28 @@ impl Metadata {
                  );
                  PRAGMA user_version = 3;",
             )?;
-        } else if version != 3 {
+        }
+        if version <= 3 {
+            transaction.execute_batch(
+                "CREATE TABLE ai_operations (
+                   id TEXT PRIMARY KEY,
+                   workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+                   status TEXT NOT NULL,
+                   lease_id TEXT UNIQUE,
+                   expires_at INTEGER,
+                   entry TEXT NOT NULL
+                 );
+                 CREATE INDEX ai_operations_queue ON ai_operations(status, expires_at);
+                 CREATE TABLE ai_events (
+                   seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                   operation_id TEXT NOT NULL REFERENCES ai_operations(id),
+                   kind TEXT NOT NULL,
+                   payload TEXT NOT NULL
+                 );
+                 CREATE INDEX ai_events_cursor ON ai_events(operation_id, seq);
+                 PRAGMA user_version = 4;",
+            )?;
+        } else if version != 4 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;
