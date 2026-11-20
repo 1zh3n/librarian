@@ -1,0 +1,19 @@
+.article {
+  overflow-wrap: anywhere;
+}
+
+.article img {
+  max-width: 100%;
+  height: auto;
+}
+
+.article pre,
+.tableScroll {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.tableScroll table {
+  width: max-content;
+  min-width: 100%;
+}

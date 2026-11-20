@@ -7,6 +7,7 @@ import {
   StateEffect,
   StateField,
   Text,
+  Transaction,
 } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
@@ -68,8 +69,24 @@ function minimalChange(before: string, after: string): TextEdit[] {
     : [{ from, to, insert: after.slice(from, insertTo) }];
 }
 
+export interface ExternalPatch {
+  readonly baseRevision: string;
+  readonly revision: string;
+  readonly edits: readonly TextEdit[];
+}
+
+type ExternalResult = "applied" | "conflict";
+type SourceSelection = { readonly anchor: number; readonly head: number };
+type EditorOptions = {
+  readonly revision?: string;
+  readonly selection?: SourceSelection;
+  readonly onDeferredExternalResult?: (revision: string, result: ExternalResult) => void;
+};
+
 export interface EditorSession {
   source(): string;
+  selection(): SourceSelection;
+  applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
   captureAnchor(viewport: HTMLElement, blocks: readonly Block[]): ScrollAnchor | undefined;
@@ -81,17 +98,27 @@ export interface EditorSession {
   mount(parent: HTMLElement): () => void;
 }
 
-export function openEditor(initial: string): EditorSession {
+export function openEditor(initial: string, options: EditorOptions = {}): EditorSession {
   const source = readSource(initial);
   const doc = Text.of(editorText(initial).split("\n"));
   const metadata = frontMatterRange(doc);
   const preview = new Compartment();
+  const undoHistory = new Compartment();
+  const selection = options.selection;
+  let revision = options.revision;
+  let confirmedSource = initial;
+  let pendingExternal: ExternalPatch | undefined;
   let state = EditorState.create({
     doc,
-    selection: { anchor: metadata ? Math.min(metadata.to + 1, doc.length) : 0 },
+    selection: selection
+      ? {
+          anchor: editorOffset(source, selection.anchor),
+          head: editorOffset(source, selection.head),
+        }
+      : { anchor: metadata ? Math.min(metadata.to + 1, doc.length) : 0 },
     extensions: [
       sourceField.init(() => source),
-      history(),
+      undoHistory.of(history()),
       markdown({ extensions: GFM, completeHTMLTags: false }),
       composing,
       compositionEvents,
@@ -103,32 +130,83 @@ export function openEditor(initial: string): EditorSession {
   });
   let view: EditorView | undefined;
 
+  function dispatch(transaction: Transaction) {
+    if (view) {
+      view.dispatch(transaction);
+    } else {
+      state = transaction.state;
+    }
+  }
+
+  function applyEdits(edits: readonly TextEdit[], external: boolean) {
+    const before = state.field(sourceField);
+    const next = applyTextEdits(before.value, edits);
+    if (next === before.value) return;
+
+    const after = readSource(next);
+    const normalized = editorText(next);
+    const mappedEdits = edits.map(({ from, to, insert }) => ({
+      from: editorOffset(before, from),
+      to: editorOffset(before, to),
+      insert: editorText(insert),
+    }));
+    let changes = state.changes(mappedEdits);
+    if (changes.apply(state.doc).toString() !== normalized) {
+      // Edits at a CRLF boundary can join or split a normalized line break.
+      changes = state.changes(minimalChange(state.doc.toString(), normalized));
+    }
+    dispatch(
+      state.update({
+        changes,
+        effects: external
+          ? [replaceSource.of(after), undoHistory.reconfigure([])]
+          : replaceSource.of(after),
+        annotations: Transaction.addToHistory.of(!external),
+      }),
+    );
+    if (external) dispatch(state.update({ effects: undoHistory.reconfigure(history()) }));
+  }
+
+  function applyCommitted(change: ExternalPatch): ExternalResult {
+    if (change.baseRevision !== revision || state.field(sourceField).value !== confirmedSource) {
+      return "conflict";
+    }
+    try {
+      applyEdits(change.edits, true);
+    } catch (error) {
+      if (error instanceof RangeError) return "conflict";
+      throw error;
+    }
+    confirmedSource = state.field(sourceField).value;
+    revision = change.revision;
+    return "applied";
+  }
+
+  function settleDeferred() {
+    const change = pendingExternal;
+    if (!change || state.field(composing)) return;
+    pendingExternal = undefined;
+    const result = applyCommitted(change);
+    options.onDeferredExternalResult?.(change.revision, result);
+  }
+
   return {
     source: () => state.field(sourceField).value,
+    selection() {
+      const { anchor, head } = state.selection.main;
+      const current = state.field(sourceField);
+      return { anchor: originalOffset(current, anchor), head: originalOffset(current, head) };
+    },
     applyChanges(edits) {
-      const before = state.field(sourceField);
-      const next = applyTextEdits(before.value, edits);
-      if (next === before.value) {
-        return;
+      applyEdits(edits, false);
+    },
+    applyExternal(change) {
+      if (change.baseRevision !== revision || pendingExternal) return "conflict";
+      if (state.field(composing)) {
+        pendingExternal = change;
+        return "deferred";
       }
-      const after = readSource(next);
-      const normalized = editorText(next);
-      const mappedEdits = edits.map(({ from, to, insert }) => ({
-        from: editorOffset(before, from),
-        to: editorOffset(before, to),
-        insert: editorText(insert),
-      }));
-      let changes = state.changes(mappedEdits);
-      if (changes.apply(state.doc).toString() !== normalized) {
-        // Edits at a CRLF boundary can join or split a normalized line break.
-        changes = state.changes(minimalChange(state.doc.toString(), normalized));
-      }
-      const transaction = state.update({ changes, effects: replaceSource.of(after) });
-      if (view) {
-        view.dispatch(transaction);
-      } else {
-        state = transaction.state;
-      }
+      return applyCommitted(change);
     },
     setSourceMode(enabled) {
       if (state.field(composing)) {
@@ -186,8 +264,12 @@ export function openEditor(initial: string): EditorSession {
         state,
         parent,
         dispatchTransactions(transactions, editor) {
+          const wasComposing = state.field(composing);
           editor.update(transactions);
           state = editor.state;
+          if (wasComposing && !state.field(composing) && pendingExternal) {
+            queueMicrotask(settleDeferred);
+          }
         },
       });
       view = mounted;
@@ -196,7 +278,12 @@ export function openEditor(initial: string): EditorSession {
         mounted.destroy();
         if (view === mounted) {
           view = undefined;
+          const unfinished = state.field(composing) && pendingExternal;
           state = state.update({ effects: setComposing.of(false) }).state;
+          if (unfinished) {
+            pendingExternal = undefined;
+            options.onDeferredExternalResult?.(unfinished.revision, "conflict");
+          }
         }
       };
     },

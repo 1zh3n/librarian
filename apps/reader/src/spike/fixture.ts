@@ -23,6 +23,17 @@ export const spikeMarkdown = [
 export function spikeFixture(): string {
   const fixture = new URLSearchParams(window.location.search).get("fixture");
   if (fixture === "empty") return "";
+  if (fixture === "narrow") {
+    const wide = "潮水退了。".repeat(30);
+    return (
+      spikeMarkdown +
+      `\n\n| ${wide} | ${wide} |\n| --- | --- |\n| 海边 | 低 |\n\n\`\`\`text\n${wide}\n\`\`\``
+    );
+  }
+  if (fixture === "performance") {
+    const sample = "## 河边的笔记\n\n清晨潮水尚低，芦苇间有几只鸟。**记录**风向和水位。\n\n";
+    return sample.repeat(Math.ceil(100_000 / sample.length)).slice(0, 100_000);
+  }
   if (fixture !== "anchors") return spikeMarkdown;
   return [
     "# 锚点测试",
