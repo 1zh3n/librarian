@@ -117,6 +117,23 @@ jobs:
           npm run check
           npm test
 
+  test-reader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+      - run: npm ci
+      - run: |
+          npm run typecheck -w @librarian/reader
+          npm run lint -w @librarian/reader
+          npm run format:check -w @librarian/reader
+          npm run test -w @librarian/reader
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e -w @librarian/reader
+
   # Debug rust-embed serves from disk, so runtime tests need a built client bundle.
   test-rust:
     # Playwright 1.58 can't install browsers on Ubuntu 26.04 (ubuntu-latest

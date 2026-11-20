@@ -16,7 +16,7 @@ const LEFT: &str = "清晨，河岸鸟鸣。\r\n";
 const RIGHT: &str = "Private test space B.\n";
 
 struct Server {
-    _root: TempDir,
+    root: TempDir,
     _task: ServerTask,
     app: librarian::Product,
     url: String,
@@ -83,7 +83,7 @@ impl Server {
             .build()
             .unwrap();
         Self {
-            _root: root,
+            root,
             _task: ServerTask(task),
             app,
             url,
@@ -521,6 +521,31 @@ async fn search_finds_chinese_fixture() {
     let result = host.request(&caller, "left", search("微光")).await.unwrap();
     let text = String::from_utf8(result.body).unwrap();
     assert!(text.contains("Indexed"), "{text}");
+
+    let external = "纸本文档，迟到的鹭鸟。\n";
+    fs::write(server.root.path().join("spaces/left/External.md"), external).unwrap();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let result = host.request(&caller, "left", search("鹭鸟")).await.unwrap();
+            if String::from_utf8_lossy(&result.body).contains("External") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("external disk write reached the live full-text index");
+    let instance = server.app.manager().instance("left").unwrap();
+    let engine = instance.revisions.as_ref().unwrap();
+    engine.snapshot_now().unwrap();
+    let store = engine.store();
+    let history = file_history(store, "External.md", None, 1).unwrap();
+    assert_eq!(
+        file_at(store, "External.md", &history.revisions[0].rev, false)
+            .unwrap()
+            .unwrap(),
+        external.as_bytes()
+    );
 }
 
 #[tokio::test]
@@ -533,17 +558,42 @@ async fn mcp_lists_only_product_tools_and_revokes_grant() {
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0]["name"], "workspace_list");
     assert_eq!(tools[0]["annotations"]["readOnlyHint"], true);
-    let revoked = server
+    let resource = format!("{}/.mcp", server.url);
+    let refreshed = server
         .client
-        .post(format!("{}/.auth/revoke", server.url))
+        .post(format!("{}/.auth/mcp/token", server.url))
         .form(&[
-            ("token", session.refresh.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", session.refresh.as_str()),
             ("client_id", session.client.as_str()),
+            ("resource", resource.as_str()),
         ])
         .send()
         .await
         .unwrap();
+    assert_eq!(refreshed.status(), StatusCode::OK);
+    let refreshed: Value = refreshed.json().await.unwrap();
+    let access = refreshed["access_token"].as_str().unwrap();
+    let refresh = refreshed["refresh_token"].as_str().unwrap();
+    assert_ne!(refresh, session.refresh);
+    let connected = server
+        .rpc(access, "tools/call", json!({"name": "workspace_list"}))
+        .await;
+    let listed: Value = connected.json().await.unwrap();
+    assert_eq!(
+        listed["result"]["structuredContent"]["workspaces"],
+        json!([{"id":"left","name":"Left"}])
+    );
+    let revoked = server
+        .client
+        .post(format!("{}/.auth/revoke", server.url))
+        .form(&[("token", refresh), ("client_id", session.client.as_str())])
+        .send()
+        .await
+        .unwrap();
     assert_eq!(revoked.status(), StatusCode::OK);
-    let result = server.rpc(&session.access, "tools/list", json!({})).await;
-    assert_eq!(result.status(), StatusCode::UNAUTHORIZED);
+    for bearer in [&session.access, access] {
+        let result = server.rpc(bearer, "tools/list", json!({})).await;
+        assert_eq!(result.status(), StatusCode::UNAUTHORIZED);
+    }
 }

@@ -1,4 +1,4 @@
-.PHONY: build build-e2e build-for-docker build-linux-ci docker build-server-releases build-server-releases-macos build-server-releases-freebsd build-cli-releases-rust build-cli-releases-freebsd build-cli-releases-rust-macos clean check fmt test test-e2e test-browser test-e2e-all test-e2e-release test-e2e-oidc starter-kit-previews bench generate website install uninstall bundle build-rs build-rs-cli run-rs
+.PHONY: reader-bundle build build-e2e build-for-docker build-linux-ci docker build-server-releases build-server-releases-macos build-server-releases-freebsd build-cli-releases-rust build-cli-releases-freebsd build-cli-releases-rust-macos clean check fmt test test-e2e test-browser test-e2e-all test-e2e-release test-e2e-oidc starter-kit-previews bench generate website install uninstall bundle build-rs build-rs-cli run-rs
 
 build:
 	npm run build
@@ -123,10 +123,16 @@ clean:
 	rm -f silverbullet silverbullet-arm64 silverbullet-amd64 silverbullet-arm silverbullet.exe silverbullet-server-*.zip sb sb.exe sb-*.zip
 	rm -rf plugs/object-graph/assets
 
-check:
+reader-bundle:
+	npm run build -w @librarian/reader
+
+check: reader-bundle
 	npm run check
 	npx biome lint .
 	npm run fmt:check
+	npm run typecheck -w @librarian/reader
+	npm run lint -w @librarian/reader
+	npm run format:check -w @librarian/reader
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -141,8 +147,9 @@ fmt:
 PLAYWRIGHT_CACHE := $(or $(PLAYWRIGHT_BROWSERS_PATH),$(if $(filter Darwin,$(shell uname -s)),$(HOME)/Library/Caches/ms-playwright,$(HOME)/.cache/ms-playwright))
 SB_CHROME_PATH ?= $(lastword $(sort $(wildcard $(PLAYWRIGHT_CACHE)/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell)))
 
-test:
+test: reader-bundle
 	npx vitest run
+	npm run test -w @librarian/reader
 	SB_CHROME_PATH="$(SB_CHROME_PATH)" cargo test --workspace --all-features
 
 test-e2e-oidc: build-e2e
