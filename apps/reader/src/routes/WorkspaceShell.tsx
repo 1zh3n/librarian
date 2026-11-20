@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, Outlet, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Button,
@@ -48,6 +48,10 @@ const presets = [
 export function WorkspaceShell() {
   const { workspaceId, documentId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const workspaceAi = useRouterState({
+    select: ({ matches }) =>
+      matches.some(({ routeId }) => routeId === "/workspaces/$workspaceId/ai"),
+  });
   const workspaces = useQuery(workspacesQuery);
   const workspace = workspaceId
     ? workspaces.data?.find((item) => item.id === workspaceId)
@@ -88,17 +92,17 @@ export function WorkspaceShell() {
   }, [navigationPanel, navigationVisible, preferences.sidebarWidth, wide]);
 
   useEffect(() => {
-    if (!selected || documentId || !firstDocument) return;
+    if (!selected || documentId || workspaceAi || !firstDocument) return;
     void navigate({
       to: "/workspaces/$workspaceId/documents/$documentId",
       params: { workspaceId: selected, documentId: firstDocument },
       replace: true,
     });
-  }, [selected, documentId, firstDocument, navigate]);
+  }, [selected, documentId, firstDocument, navigate, workspaceAi]);
 
   useEffect(() => {
     viewport.current?.scrollTo({ top: 0, left: 0 });
-  }, [documentId]);
+  }, [documentId, workspaceAi]);
 
   useEffect(() => {
     if (!selected) return;
@@ -145,6 +149,15 @@ export function WorkspaceShell() {
   const commands = [
     ...(documentId ? [{ id: "focus", title: focusLabel, run: focus.toggle }] : []),
     { id: "settings", title: "阅读设置", run: () => setSettings(true) },
+    {
+      id: "workspace-ai",
+      title: "Workspace AI",
+      run: () =>
+        void navigate({
+          to: "/workspaces/$workspaceId/ai",
+          params: { workspaceId: selected },
+        }),
+    },
   ];
 
   return (
@@ -310,7 +323,7 @@ export function WorkspaceShell() {
                 <output className={styles.state}>正在加载空间…</output>
               ) : !workspace ? (
                 <p className={styles.state}>{workspaceId ? "此空间不可用" : "没有可访问的空间"}</p>
-              ) : documentId ? (
+              ) : documentId || workspaceAi ? (
                 <Outlet />
               ) : resource.isError ? (
                 <p role="alert" className={styles.state}>

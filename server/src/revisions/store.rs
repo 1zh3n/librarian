@@ -489,6 +489,7 @@ impl RevisionStore {
     pub(crate) fn plan_operation(
         &self,
         operation: &str,
+        subject: &str,
         author: (&str, &str),
         changes: &[OperationFile<'_>],
         checkpoint_authors: &[Option<(String, String)>],
@@ -517,7 +518,7 @@ impl RevisionStore {
         index.commit(
             author.0,
             author.1,
-            &format!("Apply Librarian operation\n\nLibrarian-Operation-Id: {operation}"),
+            &format!("{subject}\n\nLibrarian-Operation-Id: {operation}"),
         )?;
         if index.tip == parent {
             return Err("Operation produced no revision".into());

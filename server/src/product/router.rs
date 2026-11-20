@@ -44,6 +44,7 @@ fn build(state: Arc<ProductState>, routes: Router) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/workspaces/{workspace}", get(index))
+        .route("/workspaces/{workspace}/ai", get(index))
         .route("/workspaces/{workspace}/documents/{document}", get(index))
         .route("/assets/{name}", get(asset))
         .with_state(state)

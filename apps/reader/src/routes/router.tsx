@@ -15,7 +15,15 @@ const document = createRoute({
   component: lazyRouteComponent(() => import("./DocumentRoute"), "DocumentRoute"),
 });
 
-export const router = createRouter({ routeTree: root.addChildren([home, workspace, document]) });
+const workspaceAi = createRoute({
+  getParentRoute: () => root,
+  path: "/workspaces/$workspaceId/ai",
+  component: lazyRouteComponent(() => import("./WorkspaceAiRoute"), "WorkspaceAiRoute"),
+});
+
+export const router = createRouter({
+  routeTree: root.addChildren([home, workspace, document, workspaceAi]),
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

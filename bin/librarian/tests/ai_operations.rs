@@ -14,6 +14,7 @@ use tower::ServiceExt;
 const FIRST: &str = "\u{feff}野外笔记\r\n鸟鸣  \n";
 const SECOND: &str = "附录原件\r\n";
 const NEXT: &str = "修改后的正文\r\n";
+const OUTLINE: &str = "原始自由提纲\r\n";
 const RUNNER_TOKEN: &str = "local-runner-integration-credential-for-tests";
 
 struct Fixture {
@@ -44,7 +45,14 @@ impl Fixture {
         let writer = users.create_token("writer", "test").unwrap();
         let reader = users.create_token("reader", "test").unwrap();
         for (space, docs) in [
-            ("field", vec![("First.md", FIRST), ("Second.md", SECOND)]),
+            (
+                "field",
+                vec![
+                    ("First.md", FIRST),
+                    ("Second.md", SECOND),
+                    ("First.outline.md", OUTLINE),
+                ],
+            ),
             ("sealed", vec![("Sealed.md", "另一个工作区")]),
         ] {
             let folder = root.path().join("spaces").join(space);
@@ -274,6 +282,29 @@ async fn read_only_chat_creates_no_revision() {
     assert!(result["commitId"].is_null());
     assert_eq!(result["sources"][0]["documentId"], f.first);
     assert_eq!(f.operation(&f.reader, &op).await, result);
+    let document_operations = format!(
+        "/ai/operations?workspaceId={}&documentId={}",
+        f.workspace, f.first
+    );
+    assert_eq!(
+        ok(&f.app, &f.reader, "GET", &document_operations, Value::Null).await,
+        json!([result]),
+    );
+    assert_eq!(
+        ok(&f.app, &f.writer, "GET", &document_operations, Value::Null).await,
+        json!([])
+    );
+    assert_eq!(
+        ok(
+            &f.app,
+            &f.reader,
+            "GET",
+            &format!("/ai/operations?workspaceId={}", f.workspace),
+            Value::Null
+        )
+        .await,
+        json!([]),
+    );
     assert_eq!(f.git(&["rev-parse", "HEAD"]), original);
 }
 
@@ -411,4 +442,219 @@ async fn undo_after_concurrent_save_rejects() {
         "人工修改"
     );
     assert_eq!(f.git(&["rev-list", "--count", "HEAD"]), "2\n");
+}
+
+#[tokio::test]
+async fn runner_reconnect_replays_missing_events_once() {
+    let f = Fixture::open().await;
+    let (operation, lease) = f.start(&f.writer, "chat").await;
+    let endpoint = format!("/ai/runner/claims/{lease}/events");
+    let first = json!({"executorSeq":1,"kind":"progress","text":"读取文档"});
+    let receipt = ok(&f.app, RUNNER_TOKEN, "POST", &endpoint, first.clone()).await;
+    assert_eq!(
+        ok(&f.app, RUNNER_TOKEN, "POST", &endpoint, first).await,
+        receipt
+    );
+    assert_eq!(
+        request(
+            &f.app,
+            RUNNER_TOKEN,
+            "POST",
+            &endpoint,
+            json!({"executorSeq":1,"kind":"progress","text":"错误重发"})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let second = ok(
+        &f.app,
+        RUNNER_TOKEN,
+        "POST",
+        &endpoint,
+        json!({"executorSeq":2,"kind":"text_delta","text":"湿地"}),
+    )
+    .await;
+    let response = f
+        .app
+        .clone()
+        .oneshot(
+            Request::get(format!("/api/v1/ai/operations/{operation}/events"))
+                .header("authorization", format!("Bearer {}", f.writer))
+                .header(
+                    "last-event-id",
+                    receipt["sequence"].as_i64().unwrap().to_string(),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let stream = String::from_utf8(
+        to_bytes(response.into_body(), 16_384)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(stream.contains(&format!("id: {}", second["sequence"])));
+    assert!(stream.contains("event: text_delta"));
+    assert!(stream.contains("湿地"));
+    assert!(!stream.contains("读取文档"));
+    assert_eq!(stream.matches("event:").count(), 1);
+}
+
+#[tokio::test]
+async fn expired_lease_rejects_late_result() {
+    let f = Fixture::open().await;
+    let (operation, lease) = f.start(&f.writer, "edit").await;
+    let discovery = ok(
+        &f.app,
+        RUNNER_TOKEN,
+        "GET",
+        &format!("/ai/runner/claims/{lease}/documents"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(discovery.as_array().unwrap().len(), 2);
+    assert!(!discovery.to_string().contains("Sealed"));
+    let renewed = ok(
+        &f.app,
+        RUNNER_TOKEN,
+        "POST",
+        &format!("/ai/runner/claims/{lease}/renew"),
+        json!({}),
+    )
+    .await;
+    assert!(renewed["expiresAt"].as_i64().unwrap() > 0);
+    let original = f.source(&lease, &f.first).await;
+    let connection =
+        rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    connection.execute(
+        "UPDATE ai_operations SET expires_at = 0, entry = json_set(entry, '$.lease.expiresAt', 0) WHERE id = ?1",
+        [&operation],
+    ).unwrap();
+    let late = json!({
+        "answer":"旧租约迟到。","sourceIds":[original["source"]["id"]],"edits":[edit("First.md", FIRST, Some(NEXT))]
+    });
+    assert_eq!(f.result(&lease, late.clone()).await.0, StatusCode::CONFLICT);
+    assert_eq!(
+        request(
+            &f.app,
+            RUNNER_TOKEN,
+            "POST",
+            &format!("/ai/runner/claims/{lease}/renew"),
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let reassigned = ok(&f.app, RUNNER_TOKEN, "POST", "/ai/runner/claims", json!({})).await;
+    let new_lease = string(&reassigned, "leaseId");
+    assert_ne!(lease, new_lease);
+    assert_eq!(reassigned["operationId"], operation);
+    assert_eq!(
+        f.result(&lease, late.clone()).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        f.result(&new_lease, late).await.0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(f.git(&["rev-list", "--count", "HEAD"]), "1\n");
+}
+
+#[tokio::test]
+async fn operation_diff_reads_deleted_outline_with_its_own_path() {
+    let f = Fixture::open().await;
+    let (operation, lease) = f.start(&f.writer, "edit").await;
+    let outline = ok(
+        &f.app,
+        RUNNER_TOKEN,
+        "POST",
+        &format!("/ai/runner/claims/{lease}/sources"),
+        json!({"documentId":f.first,"outline":true}),
+    )
+    .await;
+    assert_eq!(outline["markdown"], OUTLINE);
+    let (_, proposal) = f.result(&lease, json!({
+        "answer":"请求删除提纲。","sourceIds":[outline["source"]["id"]],"edits":[edit("First.outline.md", OUTLINE, None)]
+    })).await;
+    let confirmed = ok(
+        &f.app,
+        &f.writer,
+        "POST",
+        &format!("/ai/operations/{operation}/confirm"),
+        json!({
+            "confirmationId":proposal["confirmation"]["id"]
+        }),
+    )
+    .await;
+    let diff = ok(
+        &f.app,
+        &f.writer,
+        "GET",
+        &format!("/ai/operations/{operation}/diff?path=First.outline.md"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(diff["commitId"], confirmed["commitId"]);
+    assert_eq!(diff["path"], "First.outline.md");
+    assert!(diff["diff"].as_str().unwrap().contains("-原始"));
+    assert_eq!(
+        request(
+            &f.app,
+            &f.writer,
+            "GET",
+            &format!("/ai/operations/{operation}/diff?path=First.md"),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn selected_text_requires_a_separate_whole_file_read_before_replacement() {
+    let f = Fixture::open().await;
+    let (status, _) = request(
+        &f.app,
+        &f.writer,
+        "POST",
+        "/ai/operations",
+        json!({
+            "workspaceId":f.workspace,
+            "documentId":f.first,
+            "mode":"edit",
+            "prompt":"编辑选中的内容。",
+            "context":[{"documentId":f.first,"revision":sha256_hex(FIRST.as_bytes()),"from":1,"to":5}]
+        }),
+    ).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let claim = ok(&f.app, RUNNER_TOKEN, "POST", "/ai/runner/claims", json!({})).await;
+    let lease = string(&claim, "leaseId");
+    let selected = f.source(&lease, &f.first).await;
+    assert_eq!(selected["markdown"], "野外笔记");
+    assert_eq!(selected["source"]["from"], 1);
+    let result = json!({"answer":"新的文本。","edits":[edit("First.md", FIRST, Some(NEXT))]});
+    assert_eq!(
+        f.result(&lease, result.clone()).await.0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let full = ok(
+        &f.app,
+        RUNNER_TOKEN,
+        "POST",
+        &format!("/ai/runner/claims/{lease}/sources"),
+        json!({"documentId":f.first,"full":true}),
+    )
+    .await;
+    assert_eq!(full["markdown"], FIRST);
+    assert_ne!(full["source"]["id"], selected["source"]["id"]);
+    let (status, saved) = f.result(&lease, result).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["sources"].as_array().unwrap().len(), 2);
 }

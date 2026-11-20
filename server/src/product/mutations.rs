@@ -187,13 +187,23 @@ impl MutationContext<'_> {
         transaction: ManagedWrite<'_>,
         edits: Vec<MutationEdit>,
     ) -> Result<MutationReceipt, ApiError> {
-        self.apply_with_checkpoint(transaction, edits, |_| Ok(()))
+        self.apply_named(transaction, edits, "Apply Librarian operation")
+    }
+
+    pub(super) fn apply_named(
+        &self,
+        transaction: ManagedWrite<'_>,
+        edits: Vec<MutationEdit>,
+        subject: &str,
+    ) -> Result<MutationReceipt, ApiError> {
+        self.apply_with_checkpoint(transaction, edits, subject, |_| Ok(()))
     }
 
     fn apply_with_checkpoint(
         &self,
         transaction: ManagedWrite<'_>,
         mut edits: Vec<MutationEdit>,
+        subject: &str,
         mut checkpoint: impl FnMut(Checkpoint) -> Result<(), ApiError>,
     ) -> Result<MutationReceipt, ApiError> {
         check_storage_recovery(self.state)?;
@@ -236,7 +246,7 @@ impl MutationContext<'_> {
             })
             .collect();
         let commit = transaction
-            .plan_operation(self.operation, self.actor, &files)
+            .plan_operation(self.operation, subject, self.actor, &files)
             .map_err(ApiError::internal)?;
         let mut journal = Journal {
             id: operation.to_string(),
@@ -649,7 +659,9 @@ fn apply_with_checkpoint(
         account: account.username(),
         operation,
     };
-    engine.with_managed_write(|managed| context.apply_with_checkpoint(managed, edits, checkpoint))
+    engine.with_managed_write(|managed| {
+        context.apply_with_checkpoint(managed, edits, "Apply Librarian operation", checkpoint)
+    })
 }
 
 #[cfg(test)]

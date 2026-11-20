@@ -185,7 +185,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    get: operations["listAiOperations"];
     put?: never;
     post: operations["createAiOperation"];
     delete?: never;
@@ -300,6 +300,86 @@ export interface paths {
     get?: never;
     put: operations["finishAiOperation"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/operations/{operation}/diff": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["diffAiOperationFile"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/claims/{lease}/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["discoverAiDocuments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/claims/{lease}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["reportAiRunnerEvent"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/claims/{lease}/renew": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["renewAiLease"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/claims/{lease}/fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["failAiOperation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -430,6 +510,8 @@ export interface components {
       path: string;
       revision: string;
       blockId?: string;
+      from?: number;
+      to?: number;
     };
     MutationFileChange: {
       path: string;
@@ -476,6 +558,7 @@ export interface components {
     AiSourceRequest: {
       documentId: string;
       outline?: boolean;
+      full?: boolean;
     };
     AiSourceData: {
       source: components["schemas"]["AiSourceReference"];
@@ -493,6 +576,26 @@ export interface components {
     };
     AiConfirmRequest: {
       confirmationId: string;
+    };
+    AiOperationDiff: {
+      commitId: string;
+      path: string;
+      diff: string;
+    };
+    AiRunnerEvent: {
+      executorSeq: number;
+      /** @enum {string} */
+      kind: "progress" | "text_delta";
+      text: string;
+    };
+    AiEventReceipt: {
+      sequence: number;
+    };
+    AiLeaseRenewal: {
+      expiresAt: number;
+    };
+    AiRunnerFailure: {
+      text: string;
     };
   };
   responses: never;
@@ -1569,6 +1672,38 @@ export interface operations {
       };
     };
   };
+  listAiOperations: {
+    parameters: {
+      query: {
+        workspaceId: string;
+        documentId?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current account's recent operations in the requested context */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiOperation"][];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
   createAiOperation: {
     parameters: {
       query?: never;
@@ -1828,6 +1963,173 @@ export interface operations {
         };
       };
       /** @description Operation could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  diffAiOperationFile: {
+    parameters: {
+      query: {
+        path: string;
+      };
+      header?: never;
+      path: {
+        operation: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Git diff for a file affected by this operation */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiOperationDiff"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  discoverAiDocuments: {
+    parameters: {
+      query?: {
+        q?: string;
+      };
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Accessible document metadata in this task's workspace */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentSummary"][];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  reportAiRunnerEvent: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiRunnerEvent"];
+      };
+    };
+    responses: {
+      /** @description Durable event sequence */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiEventReceipt"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  renewAiLease: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description New execution lease expiration */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiLeaseRenewal"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  failAiOperation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiRunnerFailure"];
+      };
+    };
+    responses: {
+      /** @description Failed operation state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiOperation"];
+        };
+      };
+      /** @description Request could not be completed */
       default: {
         headers: {
           [name: string]: unknown;

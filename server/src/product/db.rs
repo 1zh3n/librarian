@@ -179,7 +179,15 @@ impl Metadata {
                  CREATE INDEX ai_events_cursor ON ai_events(operation_id, seq);
                  PRAGMA user_version = 4;",
             )?;
-        } else if version != 4 {
+        }
+        if version <= 4 {
+            transaction.execute_batch(
+                "ALTER TABLE ai_events ADD COLUMN lease_id TEXT;
+                 ALTER TABLE ai_events ADD COLUMN executor_seq INTEGER;
+                 CREATE UNIQUE INDEX ai_events_from_runner ON ai_events(operation_id, lease_id, executor_seq);
+                 PRAGMA user_version = 5;",
+            )?;
+        } else if version != 5 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;

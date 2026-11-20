@@ -2,6 +2,7 @@ use std::{fs, io};
 
 use serde_json::json;
 use silverbullet_server::multi::users::{Profile, UserStore};
+use silverbullet_server_common::revision::sha256_hex;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +45,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(
         root.path().join("spaces/other/01.md"),
         "# 另一份鸟鸣\n\n其他空间的记录。\n",
+    )?;
+    let metadata = root.path().join(".librarian");
+    fs::create_dir(&metadata)?;
+    fs::write(
+        metadata.join("runner-token.sha256"),
+        sha256_hex(b"reader-fixture-ai-token-only-for-tests"),
     )?;
     let app = librarian::Product::open(root.path(), port).map_err(io::Error::other)?;
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;

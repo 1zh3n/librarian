@@ -1,0 +1,111 @@
+import type { Element as HastElement, ElementContent } from "hast";
+import type { Position } from "unist";
+import type { MarkdownAnalysis } from "../../markdown/analyze";
+
+export type SourceRange = { from: number; to: number };
+
+type TextSpan = { text: string; position: Position | undefined };
+
+function textSpans(node: ElementContent, parent?: Position): TextSpan[] {
+  if (node.type === "text") return [{ text: node.value, position: node.position ?? parent }];
+  if (node.type === "element") {
+    return node.children.flatMap((child) =>
+      textSpans(child, node.tagName === "code" ? node.position : undefined),
+    );
+  }
+  return [];
+}
+
+function spanOffset(source: string, span: TextSpan, offset: number, start: boolean) {
+  const from = span.position?.start.offset;
+  const to = span.position?.end.offset;
+  if (from === undefined || to === undefined) return;
+  const raw = source.slice(from, to);
+  if (raw === span.text) return from + offset;
+  const visible = span.text.replace(/\n$/u, "");
+  const exact = raw.indexOf(visible);
+  if (exact !== -1 && exact === raw.lastIndexOf(visible)) {
+    return from + exact + Math.min(offset, visible.length);
+  }
+
+  const decoded = document.createElement("textarea");
+  const tokens = /\\[!-/:-@[-`{-~]|&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);|\r\n?/gu;
+  const offsets: number[] = [0];
+  let rendered = "";
+  let cursor = 0;
+  for (const token of raw.matchAll(tokens)) {
+    const index = token.index;
+    rendered += raw.slice(cursor, index);
+    for (let current = cursor; current < index; current++) offsets.push(current + 1);
+    if (token[0].startsWith("&")) {
+      decoded.innerHTML = token[0];
+    }
+    const value = token[0].startsWith("&")
+      ? decoded.value
+      : token[0].startsWith("\\")
+        ? token[0].slice(1)
+        : "\n";
+    cursor = index + token[0].length;
+    rendered += value;
+    for (let current = 0; current < value.length; current++) {
+      offsets.push(current + 1 === value.length || !start ? cursor : index);
+    }
+  }
+  rendered += raw.slice(cursor);
+  for (let current = cursor; current < raw.length; current++) offsets.push(current + 1);
+  const mapped = offsets[offset];
+  if (rendered === span.text && mapped !== undefined) return from + mapped;
+  return offset === 0 ? from : offset === span.text.length ? to : undefined;
+}
+
+function boundary(
+  source: string,
+  blocks: ReadonlyMap<string, HastElement>,
+  root: HTMLElement,
+  container: Node,
+  offset: number,
+  start: boolean,
+) {
+  const node = container instanceof Element ? container : container.parentElement;
+  const block = node?.closest<HTMLElement>("[data-block-id]");
+  if (!block || !root.contains(block)) return;
+  const ast = blocks.get(block.dataset.blockId ?? "");
+  if (!ast) return;
+  const before = document.createRange();
+  before.selectNodeContents(block);
+  before.setEnd(container, offset);
+  let remaining = before.toString().length;
+  const spans = ast.children.flatMap((child) =>
+    textSpans(child, ast.tagName === "code" ? ast.position : undefined),
+  );
+  if (spans.map(({ text }) => text).join("") !== block.textContent) return;
+  for (const span of spans) {
+    if (remaining < span.text.length || (!start && remaining === span.text.length)) {
+      return spanOffset(source, span, remaining, start);
+    }
+    remaining -= span.text.length;
+  }
+}
+
+export function readerSelection(
+  root: HTMLElement,
+  range: Range,
+  source: string,
+  analysis: MarkdownAnalysis,
+): SourceRange | undefined {
+  if (range.collapsed) return;
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
+  const nodes = new Map<string, HastElement>();
+  for (const child of analysis.tree.children) {
+    if (child.type === "element" && typeof child.properties.dataBlockId === "string") {
+      nodes.set(child.properties.dataBlockId, child);
+    }
+  }
+  const hasBom = source.startsWith("\uFEFF");
+  const raw = hasBom ? source.slice(1) : source;
+  const from = boundary(raw, nodes, root, range.startContainer, range.startOffset, true);
+  const to = boundary(raw, nodes, root, range.endContainer, range.endOffset, false);
+  if (from === undefined || to === undefined || from >= to) return;
+  const bom = Number(hasBom);
+  return { from: from + bom, to: to + bom };
+}

@@ -1280,6 +1280,51 @@
       }
     },
     "/ai/operations": {
+      "get": {
+        "operationId": "listAiOperations",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current account's recent operations in the requested context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiOperation"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "createAiOperation",
         "responses": {
@@ -1618,6 +1663,250 @@
             "runnerToken": []
           }
         ]
+      }
+    },
+    "/ai/operations/{operation}/diff": {
+      "get": {
+        "operationId": "diffAiOperationFile",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Git diff for a file affected by this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperationDiff"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/claims/{lease}/documents": {
+      "get": {
+        "operationId": "discoverAiDocuments",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accessible document metadata in this task's workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/claims/{lease}/events": {
+      "post": {
+        "operationId": "reportAiRunnerEvent",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Durable event sequence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiEventReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiRunnerEvent"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/claims/{lease}/renew": {
+      "post": {
+        "operationId": "renewAiLease",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New execution lease expiration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiLeaseRenewal"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/claims/{lease}/fail": {
+      "post": {
+        "operationId": "failAiOperation",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Failed operation state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runnerToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiRunnerFailure"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -2150,6 +2439,14 @@
           },
           "blockId": {
             "type": "string"
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "to": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -2342,6 +2639,9 @@
           },
           "outline": {
             "type": "boolean"
+          },
+          "full": {
+            "type": "boolean"
           }
         }
       },
@@ -2415,6 +2715,85 @@
         ],
         "properties": {
           "confirmationId": {
+            "type": "string"
+          }
+        }
+      },
+      "AiOperationDiff": {
+        "type": "object",
+        "required": [
+          "commitId",
+          "path",
+          "diff"
+        ],
+        "properties": {
+          "commitId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "string"
+          }
+        }
+      },
+      "AiRunnerEvent": {
+        "type": "object",
+        "required": [
+          "executorSeq",
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "executorSeq": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 512
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "progress",
+              "text_delta"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "AiEventReceipt": {
+        "type": "object",
+        "required": [
+          "sequence"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AiLeaseRenewal": {
+        "type": "object",
+        "required": [
+          "expiresAt"
+        ],
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AiRunnerFailure": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
             "type": "string"
           }
         }

@@ -734,6 +734,7 @@ impl ManagedWrite<'_> {
     pub(crate) fn plan_operation(
         &self,
         operation: &str,
+        subject: &str,
         actor: &crate::auth::Actor,
         changes: &[OperationFile<'_>],
     ) -> Result<super::store::OperationCommit, String> {
@@ -752,7 +753,7 @@ impl ManagedWrite<'_> {
         let (name, email) = self.0.identity_for(&account_attribution(actor));
         self.0
             .store
-            .plan_operation(operation, (&name, &email), changes, &authors)
+            .plan_operation(operation, subject, (&name, &email), changes, &authors)
     }
 
     pub(crate) fn finish_operation<'a>(&self, paths: impl IntoIterator<Item = &'a str>) {

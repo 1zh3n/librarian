@@ -37,6 +37,9 @@ async fn serves_product_bundle_and_deep_link() {
     assert!(home.contains("<title>Librarian</title>"));
     let (_, _, deep) = get(&router, "/workspaces/native/documents/doc-1").await;
     assert_eq!(home, deep);
+    let (status, _, workspace_ai) = get(&router, "/workspaces/native/ai").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(home, workspace_ai);
     let script = home
         .split_once("src=\"/assets/")
         .and_then(|(_, rest)| rest.split_once('"'))

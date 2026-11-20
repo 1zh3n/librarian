@@ -1,0 +1,19 @@
+declare const styles: {
+  readonly panel: string;
+  readonly transcript: string;
+  readonly turns: string;
+  readonly turn: string;
+  readonly status: string;
+  readonly question: string;
+  readonly answer: string;
+  readonly sources: string;
+  readonly form: string;
+  readonly prompt: string;
+  readonly actions: string;
+  readonly button: string;
+  readonly references: string;
+  readonly changeList: string;
+  readonly diff: string;
+  readonly workspace: string;
+};
+export default styles;

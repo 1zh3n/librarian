@@ -5,12 +5,13 @@ use std::{
 };
 
 use axum::{
-    extract::{rejection::JsonRejection, Path, State},
+    extract::{rejection::JsonRejection, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{post, put},
+    routing::{get, post, put},
     Json, Router,
 };
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use silverbullet_server_common::revision::sha256_hex;
 use uuid::Uuid;
@@ -20,9 +21,9 @@ use super::{
         AcceptedResult, Confirmation, ContextRequest, Lease, Mode, Operation, OperationStatus,
         OperationView, SourceReference, TaskInput,
     },
-    contract::{content_precondition, present_revision, ApiError},
+    contract::{content_precondition, present_revision, ApiError, DocumentSummary},
     db::Metadata,
-    documents::{body, run, DocumentService},
+    documents::{body, run, DocumentList, DocumentService},
     mutations::{self, MutationEdit},
 };
 
@@ -33,6 +34,10 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
     Router::new()
         .route("/ai/runner/claims", post(claim))
         .route("/ai/runner/claims/{lease}/sources", post(source))
+        .route("/ai/runner/claims/{lease}/documents", get(documents))
+        .route("/ai/runner/claims/{lease}/events", post(event))
+        .route("/ai/runner/claims/{lease}/renew", post(renew))
+        .route("/ai/runner/claims/{lease}/fail", post(fail))
         .route("/ai/runner/claims/{lease}/result", put(result))
 }
 
@@ -161,11 +166,197 @@ fn require_running(op: &Operation) -> Result<(), ApiError> {
 }
 
 #[derive(Deserialize)]
+struct Discovery {
+    q: Option<String>,
+}
+
+async fn documents(
+    State(service): State<Arc<DocumentService>>,
+    Path(lease): Path<String>,
+    Query(discovery): Query<Discovery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<DocumentSummary>>, ApiError> {
+    let lookup = service.clone();
+    let id = lease.clone();
+    let (account, workspace) = run(move || {
+        authorize(&lookup.metadata, &headers)?;
+        let op = Operation::by_lease(&lookup.metadata, &id)?;
+        require_running(&op)?;
+        Ok((op.actor(&lookup, false)?, op.view.workspace_id))
+    })
+    .await?;
+    if let Some(query) = discovery.q {
+        let hits = super::search::find_documents(
+            service.clone(),
+            account,
+            workspace,
+            query,
+            &HeaderMap::new(),
+        )
+        .await?;
+        run(move || {
+            let op = Operation::by_lease(&service.metadata, &lease)?;
+            require_running(&op)?;
+            op.actor(&service, false)?;
+            Ok(Json(hits.into_iter().map(|hit| hit.document).collect()))
+        })
+        .await
+    } else {
+        run(move || {
+            service
+                .list(
+                    &account,
+                    &workspace,
+                    DocumentList {
+                        after: None,
+                        limit: Some(100),
+                    },
+                )
+                .map(Json)
+        })
+        .await
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Renewal {
+    expires_at: i64,
+}
+
+async fn renew(
+    State(service): State<Arc<DocumentService>>,
+    Path(lease): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Renewal>, ApiError> {
+    run(move || {
+        let db = &service.metadata;
+        authorize(db, &headers)?;
+        let _guard = db.ai_guard()?;
+        let mut op = Operation::by_lease(db, &lease)?;
+        require_running(&op)?;
+        op.actor(&service, op.view.mode == Mode::Edit)?;
+        let expires_at = now() + LEASE_SECS;
+        op.lease.as_mut().expect("active lease").expires_at = expires_at;
+        op.store(db, false)?;
+        Ok(Json(Renewal { expires_at }))
+    })
+    .await
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum EventKind {
+    Progress,
+    TextDelta,
+}
+
+impl EventKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Progress => "progress",
+            Self::TextDelta => "text_delta",
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RunnerEvent {
+    executor_seq: i64,
+    kind: EventKind,
+    text: String,
+}
+
+#[derive(Serialize)]
+struct EventReceipt {
+    sequence: i64,
+}
+
+async fn event(
+    State(service): State<Arc<DocumentService>>,
+    Path(lease): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<RunnerEvent>, JsonRejection>,
+) -> Result<Json<EventReceipt>, ApiError> {
+    let request = body(request)?;
+    run(move || {
+        let db = &service.metadata;
+        authorize(db, &headers)?;
+        let _guard = db.ai_guard()?;
+        let op = Operation::by_lease(db, &lease)?;
+        require_running(&op)?;
+        op.actor(&service, false)?;
+        if !(1..=512).contains(&request.executor_seq) || request.text.len() > 8192 {
+            return Err(ApiError::invalid("Runner event exceeds sequence or body size limits"));
+        }
+        let payload = serde_json::json!({"text":request.text}).to_string();
+        let kind = request.kind.as_str();
+        let connection = db.connection()?;
+        let existing: Option<(i64, String, String)> = connection.query_row(
+            "SELECT seq, kind, payload FROM ai_events WHERE operation_id = ?1 AND lease_id = ?2 AND executor_seq = ?3",
+            params![op.view.id, lease, request.executor_seq],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).optional()?;
+        if let Some((sequence, prior_kind, prior_payload)) = existing {
+            if prior_kind != kind || prior_payload != payload {
+                return Err(ApiError::new(StatusCode::CONFLICT, "runner_event_changed", "An event with this sequence already exists"));
+            }
+            return Ok(Json(EventReceipt { sequence }));
+        }
+        connection.execute(
+            "INSERT INTO ai_events (operation_id, lease_id, executor_seq, kind, payload) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![op.view.id, lease, request.executor_seq, kind, payload],
+        )?;
+        Ok(Json(EventReceipt { sequence: connection.last_insert_rowid() }))
+    }).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Failure {
+    text: String,
+}
+
+async fn fail(
+    State(service): State<Arc<DocumentService>>,
+    Path(lease): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<Failure>, JsonRejection>,
+) -> Result<Json<OperationView>, ApiError> {
+    let request = body(request)?;
+    run(move || {
+        let db = &service.metadata;
+        authorize(db, &headers)?;
+        let _guard = db.ai_guard()?;
+        let mut op = Operation::by_lease(db, &lease)?;
+        op.actor(&service, false)?;
+        let text = request.text.trim();
+        if text.is_empty() || text.len() > 1024 {
+            return Err(ApiError::invalid(
+                "Runner failure needs a short description",
+            ));
+        }
+        if op.view.status == OperationStatus::Failed && op.view.answer.as_deref() == Some(text) {
+            return Ok(Json(op.view));
+        }
+        require_running(&op)?;
+        op.view.answer = Some(text.to_owned());
+        op.view.sources.clone_from(&op.delivered);
+        op.settle(db, OperationStatus::Failed)?;
+        Ok(Json(op.view))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SourceRequest {
     document_id: String,
     #[serde(default)]
     outline: bool,
+    #[serde(default)]
+    full: bool,
 }
 
 #[derive(Serialize)]
@@ -211,7 +402,7 @@ async fn source(
                 .iter()
                 .find(|item| item.document_id == request.document_id && !request.outline)
         });
-        let (markdown, block_id) = if let Some(context) = context {
+        let (markdown, block_id, from, to) = if let Some(context) = context {
             if context
                 .revision
                 .as_deref()
@@ -219,12 +410,25 @@ async fn source(
             {
                 return Err(ApiError::conflict(Some(revision)));
             }
-            (select(&markdown, context)?, context.block_id.clone())
+            if request.full {
+                (markdown, None, None, None)
+            } else {
+                (
+                    select(&markdown, context)?,
+                    context.block_id.clone(),
+                    context.from,
+                    context.to,
+                )
+            }
         } else {
-            (markdown, None)
+            (markdown, None, None, None)
         };
         if let Some(source) = op.delivered.iter().find(|source| {
-            source.path == path && source.revision == revision && source.block_id == block_id
+            source.path == path
+                && source.revision == revision
+                && source.block_id == block_id
+                && source.from == from
+                && source.to == to
         }) {
             return Ok(Json(SourceData {
                 source: source.clone(),
@@ -242,6 +446,8 @@ async fn source(
             path,
             revision,
             block_id,
+            from,
+            to,
         };
         op.delivered.push(source.clone());
         op.store(db, false)?;
@@ -404,15 +610,15 @@ fn verify_result(op: &Operation, request: ResultRequest) -> Result<AcceptedResul
             let base_revision =
                 content_precondition(edit.base_revision.as_ref())?.map(str::to_owned);
             if let Some(revision) = &base_revision {
-                if !op
-                    .delivered
-                    .iter()
-                    .any(|source| source.path == edit.path && &source.revision == revision)
-                {
+                if !op.delivered.iter().any(|source| {
+                    source.path == edit.path
+                        && &source.revision == revision
+                        && source.from.is_none()
+                }) {
                     return Err(ApiError::new(
                         StatusCode::UNPROCESSABLE_ENTITY,
                         "unverified_revision",
-                        "Read the current file before modifying it",
+                        "Read the whole current file before modifying it",
                     ));
                 }
             }

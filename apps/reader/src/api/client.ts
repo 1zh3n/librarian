@@ -9,6 +9,12 @@ export type DocumentHistory = components["schemas"]["DocumentHistory"];
 export type VersionDiff = components["schemas"]["VersionDiff"];
 export type RestoredDocument = components["schemas"]["RestoredDocument"];
 export type DevicePreferences = components["schemas"]["DevicePreferences"];
+export type AiTask = components["schemas"]["AiTask"];
+export type AiContext = components["schemas"]["AiContext"];
+export type AiOperation = components["schemas"]["AiOperation"];
+export type MutationReceipt = components["schemas"]["MutationReceipt"];
+type AiOperationDiff = components["schemas"]["AiOperationDiff"];
+type AiConfirm = components["schemas"]["AiConfirmRequest"];
 
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
@@ -36,22 +42,33 @@ async function request<T>(
   signal?: AbortSignal,
   write?: {
     method: "POST" | "PUT";
-    body: CreateDocument | SaveDocument | SaveOutline | RestoreRevision | DevicePreferences;
+    body?:
+      | CreateDocument
+      | SaveDocument
+      | SaveOutline
+      | RestoreRevision
+      | DevicePreferences
+      | AiTask
+      | AiConfirm;
   },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     signal: signal ?? null,
     credentials: "same-origin",
-    ...(write && {
-      method: write.method,
+    ...(write && { method: write.method }),
+    ...(write?.body && {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(write.body),
     }),
   });
   if (response.ok) return (await response.json()) as T;
 
+  throw await responseError(response);
+}
+
+async function responseError(response: Response) {
   const error = (await response.json().catch(() => null)) as Partial<ErrorBody> | null;
-  throw new ApiError(
+  return new ApiError(
     response.status,
     error?.code ?? "request_failed",
     error?.message ?? `Request failed (${response.status})`,
@@ -62,6 +79,8 @@ async function request<T>(
 const workspaceDocuments = (workspace: string) =>
   `/workspaces/${encodeURIComponent(workspace)}/documents`;
 const documentPath = (document: string) => `/documents/${encodeURIComponent(document)}`;
+
+const operationPath = (id: string) => `/ai/operations/${encodeURIComponent(id)}`;
 
 export const api = {
   listWorkspaces(signal?: AbortSignal) {
@@ -120,6 +139,40 @@ export const api = {
       method: "POST",
       body,
     });
+  },
+  listAiOperations(workspace: string, document: string | undefined, signal?: AbortSignal) {
+    const query = new URLSearchParams({ workspaceId: workspace });
+    if (document) query.set("documentId", document);
+    return request<AiOperation[]>(`/ai/operations?${query.toString()}`, signal);
+  },
+  createAiOperation(input: AiTask, signal?: AbortSignal) {
+    return request<AiOperation>("/ai/operations", signal, { method: "POST", body: input });
+  },
+  async readAiEvents(id: string, after: number, signal: AbortSignal) {
+    const response = await fetch(`/api/v1${operationPath(id)}/events`, {
+      signal,
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "text/event-stream", "Last-Event-ID": String(after) },
+    });
+    if (!response.ok) throw await responseError(response);
+    return response.text();
+  },
+  getAiOperation(id: string, signal?: AbortSignal) {
+    return request<AiOperation>(operationPath(id), signal);
+  },
+  getAiOperationDiff(id: string, path: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ path });
+    return request<AiOperationDiff>(`${operationPath(id)}/diff?${query.toString()}`, signal);
+  },
+  confirmAiOperation(id: string, confirmationId: string) {
+    return request<AiOperation>(`${operationPath(id)}/confirm`, undefined, {
+      method: "POST",
+      body: { confirmationId },
+    });
+  },
+  undoAiOperation(id: string) {
+    return request<MutationReceipt>(`${operationPath(id)}/undo`, undefined, { method: "POST" });
   },
   getDevicePreferences(device: string, signal?: AbortSignal) {
     return request<DevicePreferences>(`/settings/devices/${encodeURIComponent(device)}`, signal);

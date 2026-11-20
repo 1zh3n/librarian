@@ -1,7 +1,10 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use axum::{
-    extract::{rejection::JsonRejection, Path, State},
+    extract::{
+        rejection::{JsonRejection, QueryRejection},
+        Path, Query, State,
+    },
     http::{HeaderMap, StatusCode},
     response::sse::{Event, Sse},
     routing::{get, post},
@@ -86,6 +89,10 @@ pub(super) struct SourceReference {
     pub revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<u32>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -281,12 +288,61 @@ impl Operation {
 
 pub(super) fn routes() -> Router<Arc<DocumentService>> {
     Router::new()
-        .route("/ai/operations", post(create))
+        .route("/ai/operations", get(list).post(create))
         .route("/ai/operations/{operation}", get(get_operation))
         .route("/ai/operations/{operation}/events", get(events))
+        .route("/ai/operations/{operation}/diff", get(diff))
         .route("/ai/operations/{operation}/confirm", post(confirm))
         .route("/ai/operations/{operation}/undo", post(undo))
         .merge(super::ai_runner::routes())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OperationList {
+    workspace_id: String,
+    document_id: Option<String>,
+}
+
+async fn list(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+    query: Result<Query<OperationList>, QueryRejection>,
+) -> Result<Json<Vec<OperationView>>, ApiError> {
+    let account = Account::authenticate(&service.spaces, &headers, false)?;
+    let Query(query) = query.map_err(|_| ApiError::invalid("A workspaceId is required"))?;
+    run(move || {
+        service.scope(&account, &query.workspace_id, false)?;
+        if let Some(document) = &query.document_id {
+            if service.metadata.document_path(document)?.0 != query.workspace_id {
+                return Err(ApiError::not_found());
+            }
+        }
+        let db = service.metadata.connection()?;
+        let mut list = db.prepare(
+            "SELECT entry FROM ai_operations WHERE workspace_id = ?1
+               AND json_extract(entry, '$.owner') = ?2
+               AND json_extract(entry, '$.view.documentId') IS ?3
+             ORDER BY rowid DESC LIMIT 50",
+        )?;
+        let entries = list
+            .query_map(
+                params![query.workspace_id, account.username(), query.document_id],
+                |row| row.get::<_, String>(0),
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let views = entries
+            .iter()
+            .rev()
+            .map(|entry| {
+                serde_json::from_str::<Operation>(entry)
+                    .map(|op| op.view)
+                    .map_err(ApiError::internal)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Json(views))
+    })
+    .await
 }
 
 async fn create(
@@ -303,6 +359,14 @@ async fn create(
         {
             return Err(ApiError::invalid(
                 "Expected a prompt between 1 and 16,384 bytes and at most 24 references",
+            ));
+        }
+        if input.context.iter().any(|context| {
+            context.from.is_some() != context.to.is_some()
+                || (context.from.is_some() && context.revision.is_none())
+        }) {
+            return Err(ApiError::invalid(
+                "A source selection requires a range and its content revision",
             ));
         }
         let (_, actor) = service.scope(&account, &input.workspace_id, input.mode == Mode::Edit)?;
@@ -453,6 +517,58 @@ async fn undo(
             op.store(&service.metadata, true)?;
         }
         Ok(Json(result))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct DiffQuery {
+    path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperationDiff {
+    commit_id: String,
+    path: String,
+    diff: String,
+}
+
+async fn diff(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    query: Result<Query<DiffQuery>, QueryRejection>,
+    headers: HeaderMap,
+) -> Result<Json<OperationDiff>, ApiError> {
+    let account = Account::authenticate(&service.spaces, &headers, false)?;
+    let Query(query) = query.map_err(|_| ApiError::invalid("An affected path is required"))?;
+    run(move || {
+        let op = Operation::get(&service.metadata, &id)?;
+        op.ensure_owner(&service, &account, false)?;
+        let commit_id = op.view.commit_id.ok_or_else(ApiError::not_found)?;
+        if !op
+            .view
+            .changes
+            .iter()
+            .any(|change| change.path == query.path)
+        {
+            return Err(ApiError::not_found());
+        }
+        let (instance, _) = service.scope(&account, &op.view.workspace_id, false)?;
+        let state = state(&instance)?;
+        let _read = super::documents::product_read(state)?;
+        let store = managed_engine(state)?.store();
+        let diff = read::file_diff(store, &query.path, &commit_id, false)
+            .map_err(ApiError::internal)?
+            .ok_or_else(ApiError::not_found)?;
+        if diff.len() > super::documents::MARKDOWN_LIMIT * 3 {
+            return Err(super::documents::too_large());
+        }
+        Ok(Json(OperationDiff {
+            commit_id,
+            path: query.path,
+            diff,
+        }))
     })
     .await
 }

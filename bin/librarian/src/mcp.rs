@@ -272,6 +272,7 @@ impl LoginQuery {
         let known_route = match segments.as_slice() {
             ["", ""] => true,
             ["", "workspaces", workspace] => id(workspace),
+            ["", "workspaces", workspace, "ai"] => id(workspace),
             ["", "workspaces", workspace, "documents", document] => id(workspace) && id(document),
             _ => false,
         };

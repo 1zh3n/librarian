@@ -265,13 +265,14 @@ pub(super) async fn restore(
                 account: account.username(),
                 operation: &operation,
             };
-            let receipt = context.apply(
+            let receipt = context.apply_named(
                 transaction,
                 vec![super::mutations::MutationEdit {
                     path: path.clone(),
                     base_revision: Some(current_revision),
                     markdown: Some(restored.clone()),
                 }],
+                "Restore document version",
             )?;
             let revision = sha256_hex(restored.as_bytes());
             Ok(Json(Restored {

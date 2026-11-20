@@ -21,6 +21,7 @@ export {
   SearchField,
   Select,
   SelectValue,
+  TextArea,
   TextField,
   ToggleButton,
   Tree,

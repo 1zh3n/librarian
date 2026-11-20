@@ -529,15 +529,33 @@ async fn search_finds_chinese_fixture() {
         ],
     };
     let host = server.app.space_host();
-    let result = host.request(&caller, "left", search("鸟鸣")).await.unwrap();
-    assert_eq!(
-        result.status,
-        StatusCode::OK,
-        "{}",
-        String::from_utf8_lossy(&result.body)
-    );
-    let text = String::from_utf8(result.body).unwrap();
-    assert!(text.contains("Same"), "{text}");
+    let wait_for_match = async |query: &str, page: &str| {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            let result = host.request(&caller, "left", search(query)).await.unwrap();
+            assert_eq!(
+                result.status,
+                StatusCode::OK,
+                "{}",
+                String::from_utf8_lossy(&result.body)
+            );
+            let body: Value = serde_json::from_slice(&result.body).unwrap();
+            if body["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hit| hit["page"] == page)
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "Index did not return {page}: {body}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    wait_for_match("鸟鸣", "Same").await;
     let created = server
         .write(
             &caller,
@@ -547,23 +565,11 @@ async fn search_finds_chinese_fixture() {
         )
         .await;
     assert!(created.status.is_success());
-    let result = host.request(&caller, "left", search("微光")).await.unwrap();
-    let text = String::from_utf8(result.body).unwrap();
-    assert!(text.contains("Indexed"), "{text}");
+    wait_for_match("微光", "Indexed").await;
 
     let external = "纸本文档，迟到的鹭鸟。\n";
     fs::write(server.root.path().join("spaces/left/External.md"), external).unwrap();
-    tokio::time::timeout(Duration::from_secs(8), async {
-        loop {
-            let result = host.request(&caller, "left", search("鹭鸟")).await.unwrap();
-            if String::from_utf8_lossy(&result.body).contains("External") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("external disk write reached the live full-text index");
+    wait_for_match("鹭鸟", "External").await;
     let instance = server.app.manager().instance("left").unwrap();
     let engine = instance.revisions.as_ref().unwrap();
     engine.snapshot_now().unwrap();

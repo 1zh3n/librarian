@@ -5,6 +5,7 @@ declare const styles: {
   readonly documentTools: string;
   readonly actionButton: string;
   readonly documentGrid: string;
+  readonly aiSlot: string;
   readonly canvas: string;
   readonly contents: string;
   readonly outlineCanvas: string;

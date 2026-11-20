@@ -12,13 +12,16 @@ import {
   ToggleButton,
 } from "../../ui/primitives";
 import { api, ApiError } from "../../api/client";
-import type { DocumentSnapshot, OutlineSnapshot } from "../../api/client";
+import type { AiContext, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
 import { documentQuery, documentsQuery, outlineQuery, workspaceKeys } from "../../api/queries";
 import { captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { reanalyzeMarkdown } from "../../markdown/reanalyze";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
+import { AiPanel } from "../ai/AiPanel";
+import { ContextUnavailable } from "../ai/aiContext";
+import { readerSelection } from "../ai/readerSelection";
 import { contextSelection } from "../reading/contextSelection";
 import { isEditingTarget, useReaderLayout } from "../reading/readingFocus";
 import {
@@ -37,7 +40,7 @@ import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
-type Tool = "contents" | "outline" | "metadata" | "history";
+type Tool = "contents" | "outline" | "metadata" | "history" | "ai";
 
 export function DocumentPage({
   workspace,
@@ -177,7 +180,11 @@ function DocumentWorkspace({
     else setNormalTool({ layout: preferences.layout, tool });
   }
   const outline = useQuery({ ...outlineQuery(workspace, documentId), enabled: outlineEnabled });
+  const grid = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
+  const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
+  const [aiOpened, setAiOpened] = useState(false);
+  const aiPanelId = `document-ai-${documentId}`;
   const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
   const restoringEditor = useRef(false);
 
@@ -191,6 +198,39 @@ function DocumentWorkspace({
     }
   }, [body, documentId, snapshot]);
   useEffect(() => () => body.saves.cancelScheduledSave(), [body]);
+
+  useLayoutEffect(() => {
+    const layout = grid.current;
+    const article = canvas.current;
+    if (!layout || !article || tool !== "ai") return;
+    const place = () => {
+      layout.toggleAttribute("data-ai-aside", layout.clientWidth - article.offsetWidth >= 448);
+    };
+    const observer = new ResizeObserver(place);
+    observer.observe(layout);
+    observer.observe(article);
+    place();
+    return () => {
+      observer.disconnect();
+      layout.removeAttribute("data-ai-aside");
+    };
+  }, [tool]);
+
+  const rememberReadingSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const surface = canvas.current;
+    if (!surface || !selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (surface.contains(range.startContainer) && surface.contains(range.endContainer)) {
+      savedSelection.current = range.collapsed ? undefined : { source: reading.source, range };
+    }
+  }, [reading.source]);
+
+  useEffect(() => {
+    if (mode !== "read") return;
+    window.document.addEventListener("selectionchange", rememberReadingSelection);
+    return () => window.document.removeEventListener("selectionchange", rememberReadingSelection);
+  }, [mode, rememberReadingSelection]);
 
   const semantic = useMemo(() => semanticBlocks(analysis.blocks), [analysis.blocks]);
   const semanticIndex = semantic.findIndex((block) => block.id === focus.semanticBlock);
@@ -220,6 +260,7 @@ function DocumentWorkspace({
         ? visibleSemanticBlock(root, semantic)
         : semantic[semanticIndex + direction];
     if (!block) return;
+    savedSelection.current = undefined;
     setSemanticBlock(block.id);
     showSemanticBlock(root, block);
   }
@@ -258,6 +299,39 @@ function DocumentWorkspace({
         : outlineSession.saves.flush(),
     ]);
   }, [body, outlineSession]);
+  async function resolveAiContext(): Promise<AiContext[]> {
+    const confirmed = body.saves.confirmed();
+    const source = mode === "read" ? reading.source : body.editor.source();
+    const root = canvas.current;
+    const stored = savedSelection.current;
+    const editor = mode === "read" ? undefined : body.editor.selection();
+    const range = editor
+      ? { from: Math.min(editor.anchor, editor.head), to: Math.max(editor.anchor, editor.head) }
+      : root && stored?.source === source
+        ? readerSelection(root, stored.range, source, analysis)
+        : undefined;
+    const local =
+      range && range.from < range.to
+        ? range
+        : source === reading.source && selectedBlock
+          ? { from: selectedBlock.from, to: selectedBlock.to, blockId: selectedBlock.id }
+          : undefined;
+    if (!local) return [{ documentId }];
+    if (local.to - local.from > 65_536) {
+      throw new ContextUnavailable("所选范围过长，请缩小范围后重试。");
+    }
+    if (source !== confirmed.markdown) {
+      if (body.editor.isComposing()) {
+        throw new ContextUnavailable("请先完成正在输入的正文。");
+      }
+      await body.saves.flush();
+      if (source !== body.saves.confirmed().markdown) {
+        throw new ContextUnavailable("请先保存选中的正文，再提交 AI 请求。");
+      }
+    }
+    return [{ documentId, revision: body.saves.confirmed().revision, ...local }];
+  }
+
   useBlocker({
     enableBeforeUnload: isDirty,
     shouldBlockFn: async ({ current, next }) => {
@@ -490,6 +564,19 @@ function DocumentWorkspace({
         >
           版本
         </ToggleButton>
+        <ToggleButton
+          {...(aiOpened && { "aria-controls": aiPanelId })}
+          isSelected={tool === "ai"}
+          onPressStart={rememberReadingSelection}
+          onChange={(selected) => {
+            if (selected) setAiOpened(true);
+            else savedSelection.current = undefined;
+            setTool(selected ? "ai" : undefined);
+          }}
+          className={styles.actionButton}
+        >
+          文档 AI
+        </ToggleButton>
         {(writable || semantic.length > 0) && (
           <MenuTrigger>
             <Button
@@ -526,7 +613,24 @@ function DocumentWorkspace({
           </MenuTrigger>
         )}
       </div>
-      <div className={styles.documentGrid} data-tool={tool} data-reading-grid>
+      <div
+        className={styles.documentGrid}
+        data-tool={tool === "ai" ? undefined : tool}
+        data-reading-grid
+        ref={grid}
+      >
+        {aiOpened && (
+          <div className={styles.aiSlot} hidden={tool !== "ai"}>
+            <AiPanel
+              id={aiPanelId}
+              workspace={workspace}
+              documentId={documentId}
+              documents={documents ?? []}
+              writable={writable}
+              resolveContext={resolveAiContext}
+            />
+          </div>
+        )}
         <div
           className={styles.canvas}
           data-editable={writable || undefined}

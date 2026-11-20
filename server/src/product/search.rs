@@ -27,7 +27,7 @@ pub(super) struct SearchQuery {
 
 #[derive(Serialize)]
 pub(super) struct SearchHit {
-    document: DocumentSummary,
+    pub(super) document: DocumentSummary,
     excerpt: String,
 }
 
