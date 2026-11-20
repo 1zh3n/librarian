@@ -3,6 +3,7 @@ import type { components, operations } from "./schema.gen";
 export type Workspace = components["schemas"]["Workspace"];
 export type DocumentSummary = components["schemas"]["DocumentSummary"];
 export type DocumentSnapshot = components["schemas"]["DocumentSnapshot"];
+export type SearchHit = components["schemas"]["SearchHit"];
 
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
@@ -61,6 +62,13 @@ export const api = {
     if (options.limit !== undefined) query.set("limit", String(options.limit));
     const suffix = query.size ? `?${query.toString()}` : "";
     return request<DocumentSummary[]>(`${workspaceDocuments(workspace)}${suffix}`, signal);
+  },
+  searchDocuments(workspace: string, q: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ q });
+    return request<SearchHit[]>(
+      `/workspaces/${encodeURIComponent(workspace)}/search?${query.toString()}`,
+      signal,
+    );
   },
   createDocument(workspace: string, body: CreateDocument, signal?: AbortSignal) {
     return request<DocumentSnapshot>(workspaceDocuments(workspace), signal, {

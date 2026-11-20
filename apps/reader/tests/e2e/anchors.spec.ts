@@ -29,13 +29,13 @@ async function roundTrip(page: Page, block: Locator) {
 
 test("preserves_reader_editor_reader_position", async ({ page }) => {
   await page.route("**/spike-delayed-image.png", (route) => route.abort());
-  await page.goto("/?fixture=anchors");
+  await page.goto("/spike?fixture=anchors");
   await roundTrip(page, page.getByText("第 45 段", { exact: true }));
 });
 
 test("duplicate_blocks_keep_distinct_ids", async ({ page }) => {
   await page.route("**/spike-delayed-image.png", (route) => route.abort());
-  await page.goto("/?fixture=anchors");
+  await page.goto("/spike?fixture=anchors");
   const headings = page.getByRole("heading", { name: "重复标题" });
   await expect(headings).toHaveCount(2);
   const ids = await headings.evaluateAll((elements) =>
@@ -62,7 +62,7 @@ test("image_reflow_keeps_anchor", async ({ page }) => {
       });
     }
   });
-  await page.goto("/?fixture=anchors");
+  await page.goto("/spike?fixture=anchors");
   const block = page.getByText("第 45 段", { exact: true });
   await alignBlock(block);
   const initial = await inset(block);
@@ -79,7 +79,7 @@ test("image_reflow_keeps_anchor", async ({ page }) => {
 });
 
 test("empty_document_switches_surfaces", async ({ page }) => {
-  await page.goto("/?fixture=empty");
+  await page.goto("/spike?fixture=empty");
   await expect(page.getByRole("article")).toBeEmpty();
   await page.getByRole("button", { name: "编辑正文" }).click();
   await expect(page.getByRole("textbox")).toBeFocused();
@@ -88,7 +88,7 @@ test("empty_document_switches_surfaces", async ({ page }) => {
 });
 
 test("removed_duplicate_uses_transaction_mapped_anchor", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const id = await page.evaluate(async () => {
     const editorModule = "/src/editor/codemirror/adapter.ts";
     const markdownModule = "/src/markdown/analyze.ts";

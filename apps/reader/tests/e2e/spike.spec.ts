@@ -7,7 +7,7 @@ test("serves the spike document", async ({ request }) => {
 });
 
 test("spike_startup", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const document = page.getByRole("article", { name: "测试文档" });
   await expect(document.getByRole("heading", { name: "河边的笔记" })).toBeVisible();
   await page.getByRole("button", { name: "编辑正文" }).click();
@@ -15,7 +15,7 @@ test("spike_startup", async ({ page }) => {
 });
 
 test("shows an editor change in the rendered document", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   await page.getByRole("button", { name: "编辑正文" }).click();
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("End");

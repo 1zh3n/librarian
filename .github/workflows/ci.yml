@@ -177,6 +177,9 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --all-features
 
+      - name: Test Reader against a native Space
+        run: npm run test:e2e:product -w @librarian/reader
+
   test-e2e:
     # Playwright 1.58 can't install browsers on Ubuntu 26.04 (ubuntu-latest
     # since October 2026)

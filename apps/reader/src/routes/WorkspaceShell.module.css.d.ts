@@ -1,0 +1,17 @@
+declare const styles: {
+  readonly application: string;
+  readonly bar: string;
+  readonly breadcrumb: string;
+  readonly button: string;
+  readonly brand: string;
+  readonly workspace: string;
+  readonly columns: string;
+  readonly navigation: string;
+  readonly popover: string;
+  readonly spaces: string;
+  readonly spaceOption: string;
+  readonly viewport: string;
+  readonly state: string;
+  readonly signIn: string;
+};
+export default styles;

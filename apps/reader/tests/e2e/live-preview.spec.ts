@@ -7,7 +7,7 @@ async function enterEditor(page: Page) {
 }
 
 test("reveals_markdown_under_cursor", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const editor = await enterEditor(page);
   await editor.press("Control+End");
   await expect(editor.locator("strong")).toHaveText("安静");
@@ -19,7 +19,7 @@ test("reveals_markdown_under_cursor", async ({ page }) => {
 });
 
 test("source_mode_keeps_history", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const editor = await enterEditor(page);
   await editor.press("End");
   await page.keyboard.insertText("与潮汐");
@@ -36,7 +36,7 @@ test("source_mode_keeps_history", async ({ page }) => {
 });
 
 test("commonmark_and_gfm_fixture_agree", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const reading = page.getByRole("article", { name: "测试文档" });
   await expect(reading.getByRole("table").getByRole("cell", { name: "石桥" })).toBeVisible();
   await expect(reading.getByRole("checkbox").first()).toBeChecked();
@@ -63,7 +63,7 @@ test("commonmark_and_gfm_fixture_agree", async ({ page }) => {
 });
 
 test("composition_does_not_replace_active_range", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const editor = await enterEditor(page);
   await editor.locator("strong").click();
   await expect(editor).toContainText("**安静**");

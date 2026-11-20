@@ -39,6 +39,12 @@ impl Fixture {
             fs::write(path.join("Note.md"), text).unwrap();
             fs::write(path.join("Empty.md"), "").unwrap();
             fs::write(path.join("Invalid.md"), [255]).unwrap();
+            fs::write(
+                path.join(format!("{folder}-journal.md")),
+                format!("---\r\ntitle: 田野日记\r\n---\r\n{folder} 河边鸟鸣。"),
+            )
+            .unwrap();
+            fs::write(path.join("Note.outline.md"), "自由提纲，鸟鸣。").unwrap();
         }
         let mut spaces = json!({
             "left": {"name":"Left","access":"none","binding":{"prefix":"/left"},
@@ -51,7 +57,7 @@ impl Fixture {
             spaces["left"]["folder"] = json!(".");
             spaces["left"]["revisions"] = json!("managed");
             fs::create_dir_all(root.path().join(".librarian")).unwrap();
-            fs::write(root.path().join(".librarian/Hidden.md"), "hidden").unwrap();
+            fs::write(root.path().join(".librarian/Hidden.md"), "隐藏鸟鸣").unwrap();
         }
         fs::write(root.path().join("spaces.json"), spaces.to_string()).unwrap();
         let editor = users.create_token("editor", "test").unwrap();
@@ -128,6 +134,56 @@ impl Fixture {
             .as_str()
             .unwrap()
             .into()
+    }
+}
+
+#[tokio::test]
+async fn workspace_search_is_scoped() {
+    for root_space in [false, true] {
+        let fixture = Fixture::new(root_space);
+        let workspace = fixture.workspace("Left").await;
+        let endpoint = format!("/workspaces/{workspace}/search?q=%E9%B8%9F%E9%B8%A3");
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+        let result = loop {
+            let (status, result) = fixture
+                .request("GET", &endpoint, Some(&fixture.reader), Value::Null)
+                .await;
+            assert!(
+                matches!(status, StatusCode::OK | StatusCode::SERVICE_UNAVAILABLE),
+                "{status} {result}"
+            );
+            if status == StatusCode::OK && result.as_array().is_some_and(|hits| !hits.is_empty()) {
+                break result;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "{result}");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        };
+        let hits = result.as_array().unwrap();
+        assert!(
+            hits.iter().any(|hit| {
+                hit["document"]["path"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("left-journal.md")
+                    && hit["document"]["title"] == "田野日记"
+                    && hit["excerpt"].as_str().unwrap().contains("鸟鸣")
+            }),
+            "{hits:?}"
+        );
+        assert!(!result.to_string().contains(".outline.md"));
+        assert!(!result.to_string().contains("Hidden.md"));
+        if !root_space {
+            assert_eq!(hits.len(), 1);
+            let document = fixture.document(&workspace, "left-journal.md").await;
+            assert_eq!(hits[0]["document"]["id"], document);
+            assert_eq!(
+                fixture
+                    .request("GET", &endpoint, Some(&fixture.outsider), Value::Null)
+                    .await
+                    .0,
+                StatusCode::NOT_FOUND
+            );
+        }
     }
 }
 

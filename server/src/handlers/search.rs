@@ -291,7 +291,7 @@ pub async fn handle_query(
         }
         _ => None,
     };
-    let mut response = run_query(&state, &actor, &headers, req, op)
+    let mut response = run_query(&state, &actor, &headers, req, mode)
         .await
         .into_response();
     if let Some(index) = index {
@@ -300,14 +300,14 @@ pub async fn handle_query(
     Ok(response)
 }
 
-async fn run_query(
+pub(crate) async fn run_query(
     state: &ServerState,
     actor: &Actor,
     headers: &HeaderMap,
     req: QueryRequest,
-    op: Op,
+    mode: QueryMode,
 ) -> Result<Json<QueryResult>, SearchFailure> {
-    let cx = admit(state, actor, headers, op)?;
+    let cx = admit(state, actor, headers, Op::Query(mode))?;
     if let Some(m) = state.metrics.as_ref() {
         m.search_queries.inc();
     }

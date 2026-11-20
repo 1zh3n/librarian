@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("local_undo_does_not_silently_revert_committed_ai", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/spike");
   const result = await page.evaluate(async () => {
     const modulePath = "/src/editor/codemirror/adapter.ts";
     const { openEditor } = await import(/* @vite-ignore */ modulePath);
@@ -29,7 +29,7 @@ test("local_undo_does_not_silently_revert_committed_ai", async ({ page }) => {
 
 test("viewport_360_has_no_page_overflow", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/?fixture=narrow");
+  await page.goto("/spike?fixture=narrow");
   const viewport = page.locator("[data-scroll-surface]");
   const reading = page.getByRole("article");
   const table = reading.getByRole("table", { name: "" }).filter({ hasText: "海边" });

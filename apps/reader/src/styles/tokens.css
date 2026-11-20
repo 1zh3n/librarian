@@ -1,0 +1,50 @@
+:root {
+  color-scheme: light dark;
+  --paper: light-dark(#fcfbf9, #202123);
+  --surface: light-dark(#fdfcfb, #232426);
+  --surface-muted: light-dark(#f3f2ef, #292a2d);
+  --surface-hover: light-dark(#ebe9e5, #333439);
+  --surface-selected: light-dark(#e9eef5, #313e51);
+  --ink: light-dark(#252629, #eeedf0);
+  --ink-secondary: light-dark(#5a5b61, #babac0);
+  --border: light-dark(#e0dfdc, #3d3e44);
+  --border-strong: light-dark(#bcbcc0, #64666f);
+  --accent: light-dark(#244f85, #9abced);
+  --overlay: light-dark(#1c212643, #0009);
+  --radius: 5px;
+  --ui-size: 0.875rem;
+  --reading-size: 1.125rem;
+  --reading-font: ui-serif, Georgia, "Noto Serif CJK SC", "Songti SC", serif;
+  --measure: 47rem;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible,
+[data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

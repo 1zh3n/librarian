@@ -188,7 +188,7 @@ async fn login_page(State(login): State<LoginState>, Query(query): Query<LoginQu
     (
         [
             (header::CACHE_CONTROL, "no-store"),
-            (header::REFERRER_POLICY, "no-referrer"),
+            (header::REFERRER_POLICY, "strict-origin"),
             (
                 header::CONTENT_SECURITY_POLICY,
                 "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",

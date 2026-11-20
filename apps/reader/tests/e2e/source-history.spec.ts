@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 import type { EditorSession } from "../../src/editor/codemirror/adapter";
 
 async function open(page: Page, source: string, selection: { anchor: number; head: number }) {
-  await page.goto("/");
+  await page.goto("/spike");
   const session = await page.evaluateHandle(
     async ({ source, selection }): Promise<EditorSession> => {
       const modulePath = "/src/editor/codemirror/adapter.ts";

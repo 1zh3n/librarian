@@ -4,11 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "pretypecheck": "node scripts/patch-react-aria.mjs",
     "typecheck": "tsc --noEmit",
+    "prelint": "node scripts/patch-react-aria.mjs",
     "lint": "oxlint --type-aware --deny-warnings",
     "format:check": "oxfmt --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:product": "playwright test --config playwright.product.config.ts",
     "build": "vite build",
     "api:generate": "node ../../api/generate.mjs",
     "api:check": "node ../../api/generate.mjs --check"
@@ -20,6 +23,8 @@
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.13",
     "@lezer/markdown": "1.7.2",
+    "@tanstack/react-query": "5.108.2",
+    "@tanstack/react-router": "1.170.46",
     "hast-util-to-dom": "4.0.1",
     "hast-util-to-jsx-runtime": "2.3.7",
     "react": "19.3.1",

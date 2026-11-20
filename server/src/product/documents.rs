@@ -42,7 +42,7 @@ impl DocumentService {
         })
     }
 
-    fn scope(
+    pub(crate) fn scope(
         &self,
         account: &Account,
         workspace: &str,
@@ -108,21 +108,29 @@ impl DocumentService {
             .filter(|file| query.after.as_ref().is_none_or(|after| file.name > *after))
             .filter(|file| check_file_path(state, &file.name).is_ok())
             .take(query.limit.unwrap_or(100))
-            .map(|file| {
-                let size = usize::try_from(file.size).unwrap_or(0).min(METADATA_LIMIT);
-                let title = if size != 0 {
-                    state
-                        .space
-                        .read_file_range(&file.name, 0, size)
-                        .ok()
-                        .and_then(|(prefix, _)| title_from_front_matter(&prefix))
-                } else {
-                    None
-                };
-                let id = self.metadata.document_id(workspace, &file.name)?;
-                Ok(summary(state, workspace, id, file.name, title))
-            })
+            .map(|file| self.summary_from_meta(state, workspace, file.name, file.size))
             .collect()
+    }
+
+    pub(crate) fn summary_from_meta(
+        &self,
+        state: &ServerState,
+        workspace: &str,
+        path: String,
+        bytes: i64,
+    ) -> Result<DocumentSummary, ApiError> {
+        let size = usize::try_from(bytes).unwrap_or(0).min(METADATA_LIMIT);
+        let title = if size == 0 {
+            None
+        } else {
+            state
+                .space
+                .read_file_range(&path, 0, size)
+                .ok()
+                .and_then(|(prefix, _)| title_from_front_matter(&prefix))
+        };
+        let id = self.metadata.document_id(workspace, &path)?;
+        Ok(summary(state, workspace, id, path, title))
     }
 
     fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
@@ -189,7 +197,7 @@ impl DocumentService {
     }
 }
 
-fn state(instance: &SpaceInstance) -> Result<&ServerState, ApiError> {
+pub(crate) fn state(instance: &SpaceInstance) -> Result<&ServerState, ApiError> {
     instance.state.as_deref().ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -199,7 +207,7 @@ fn state(instance: &SpaceInstance) -> Result<&ServerState, ApiError> {
     })
 }
 
-fn is_document_path(path: &str) -> bool {
+pub(crate) fn is_document_path(path: &str) -> bool {
     path.ends_with(".md")
         && !path.ends_with(".outline.md")
         && path.split('/').all(|part| {
@@ -211,7 +219,7 @@ fn is_document_path(path: &str) -> bool {
         })
 }
 
-fn check_file_path(state: &ServerState, path: &str) -> Result<(), ApiError> {
+pub(crate) fn check_file_path(state: &ServerState, path: &str) -> Result<(), ApiError> {
     let mut location = std::path::PathBuf::from(&state.space_folder_path);
     for part in path.split('/') {
         location.push(part);
@@ -364,6 +372,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
     Router::new()
         .route("/workspaces", get(workspaces))
         .route("/workspaces/{workspace}/documents", get(list).post(create))
+        .route("/workspaces/{workspace}/search", get(super::search::search))
         .route("/documents/{document}", get(document).put(edit))
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
@@ -375,7 +384,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .with_state(service)
 }
 
-async fn run<T: Send + 'static>(
+pub(crate) async fn run<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
     tokio::task::spawn_blocking(work)

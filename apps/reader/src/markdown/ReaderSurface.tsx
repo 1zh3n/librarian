@@ -11,9 +11,15 @@ const components = {
   ),
 };
 
-export function ReaderSurface({ analysis }: { readonly analysis: MarkdownAnalysis }) {
+export function ReaderSurface({
+  analysis,
+  label = "测试文档",
+}: {
+  readonly analysis: MarkdownAnalysis;
+  readonly label?: string;
+}) {
   return (
-    <article className={styles.article} aria-label="测试文档">
+    <article className={styles.article} aria-label={label}>
       {toJsxRuntime(analysis.tree, { Fragment, jsx, jsxs, components })}
     </article>
   );
