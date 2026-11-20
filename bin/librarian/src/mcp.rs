@@ -54,6 +54,7 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
     let host = Arc::new(
         MultiHost::new(spaces.manager.clone(), spaces.users.clone())
             .with_oauth(spaces.authenticator.clone(), grants.clone())
+            .with_readable_consent()
             .with_login_path(LOGIN_PATH),
     );
     let users = spaces.users.clone();

@@ -34,7 +34,7 @@ impl Server {
     async fn boot() -> Self {
         let root = tempfile::tempdir().unwrap();
         let users = UserStore::create_empty(root.path()).unwrap();
-        for name in ["alice", "bob"] {
+        for name in ["alice", "bob", "reader"] {
             users
                 .create_user(name, PASSWORD, false, Profile::default())
                 .unwrap();
@@ -54,7 +54,8 @@ impl Server {
             json!({
                 "left": {
                     "name": "Left", "binding": {"prefix": "/left"}, "access": "none",
-                    "members": {"alice": {"role": "write"}}, "revisions": "managed",
+                    "members": {"alice": {"role": "write"}, "reader": {"role": "read"}},
+                    "revisions": "managed",
                     "shell": {"enabled": true}
                 },
                 "right": {
@@ -775,6 +776,73 @@ async fn mcp_reuses_product_ids_and_checks_live_workspace_membership() {
     assert_eq!(read["structuredContent"]["code"], "not_found", "{read}");
     let listed = server.tool(&session, "workspace_list", json!({})).await;
     assert_eq!(listed["structuredContent"]["workspaces"], json!([]));
+}
+
+#[tokio::test]
+async fn mcp_read_only_member_can_grant_and_read_but_cannot_write() {
+    let server = Server::boot().await;
+    let session = server.connect("reader", "left").await;
+    let result = server.tool(&session, "workspace_list", json!({})).await;
+    let workspaces = result["structuredContent"]["workspaces"]
+        .as_array()
+        .unwrap();
+    assert_eq!(workspaces.len(), 1);
+    assert_eq!(workspaces[0]["spaceId"], "left");
+    assert_eq!(workspaces[0]["canWrite"], false);
+    let workspace = &workspaces[0]["id"];
+    let result = server
+        .tool(&session, "document_list", json!({"workspaceId": workspace}))
+        .await;
+    let document = result["structuredContent"]["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|document| document["path"] == "Same.md")
+        .unwrap();
+    let document_id = &document["id"];
+    let result = server
+        .tool(
+            &session,
+            "document_read",
+            json!({"documentId": document_id}),
+        )
+        .await;
+    assert_eq!(result["structuredContent"]["markdown"], LEFT);
+    let write = server
+        .tool(
+            &session,
+            "document_update",
+            json!({
+                "documentId": document_id,
+                "operationId": "cb45bd9b-605f-49ce-903f-12210a4c677e",
+                "baseRevision": result["structuredContent"]["revision"],
+                "markdown": "must not write"
+            }),
+        )
+        .await;
+    assert_eq!(write["isError"], true);
+    assert_eq!(write["structuredContent"]["code"], "read_only");
+    assert_eq!(
+        fs::read(server.root.path().join("spaces/left/Same.md")).unwrap(),
+        LEFT.as_bytes()
+    );
+
+    let caller = server.caller(&session);
+    let host = server.app.space_host();
+    assert!(host.spaces(&caller).is_empty());
+    let native = host
+        .request(
+            &caller,
+            "left",
+            SpaceRequest {
+                method: Method::GET,
+                path_and_query: "/.fs/Same.md".into(),
+                body: Vec::new(),
+                headers: Vec::new(),
+            },
+        )
+        .await;
+    assert!(native.is_err());
 }
 
 #[tokio::test]

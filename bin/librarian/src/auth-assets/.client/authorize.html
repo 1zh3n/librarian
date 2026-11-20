@@ -24,7 +24,8 @@
       {% endfor %}
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <fieldset>
-        <legend>允许该应用读写的 Workspace</legend>
+        <legend>允许该应用访问的 Workspace</legend>
+        <p>应用的读写权限取决于当前账户在各 Workspace 中的权限。</p>
         {% for space in spaces %}
           <label><input type="checkbox" name="space" value="{{ space.id }}"> {{ space.name }}{% if space.shared %}（共享）{% endif %}</label>
         {% endfor %}

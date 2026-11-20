@@ -22,6 +22,7 @@ pub struct MultiHost {
     users: Arc<UserStore>,
     oauth: Option<OAuth>,
     login_path: &'static str,
+    readable_consent: bool,
 }
 
 struct OAuth {
@@ -36,6 +37,7 @@ impl MultiHost {
             users,
             oauth: None,
             login_path: "/.dashboard/login",
+            readable_consent: false,
         }
     }
 
@@ -53,6 +55,13 @@ impl MultiHost {
 
     pub fn with_login_path(mut self, path: &'static str) -> Self {
         self.login_path = path;
+        self
+    }
+
+    /// Include account members' readable spaces in OAuth consent for a tool
+    /// set that enforces read and write access independently of forwarding.
+    pub fn with_readable_consent(mut self) -> Self {
+        self.readable_consent = true;
         self
     }
 
@@ -150,19 +159,29 @@ impl MultiHost {
             .map_err(|_| unavailable())
     }
 
-    /// The spaces `username` can write to now, by name:
-    /// what `spaces` lists and what consent offers.
-    fn writable_listing(&self, username: &str) -> Vec<(VisibleSpace, Arc<SpaceInstance>)> {
+    fn listing(
+        &self,
+        username: &str,
+        allowed: impl Fn(&SpaceInstance) -> bool,
+    ) -> Vec<(VisibleSpace, Arc<SpaceInstance>)> {
         let admin = self.users.is_admin(username);
         self.manager
             .list_accessible(username, admin)
             .into_iter()
             .filter_map(|space| {
                 let instance = self.manager.instance(&space.id)?;
-                self.writable(&instance, username)
-                    .then_some((space, instance))
+                allowed(&instance).then_some((space, instance))
             })
             .collect()
+    }
+
+    fn grantable(&self, instance: &SpaceInstance, username: &str) -> bool {
+        if !self.readable_consent {
+            return self.writable(instance, username);
+        }
+        self.users.is_enabled(username)
+            && (self.users.is_admin(username) || instance.config.members.contains_key(username))
+            && self.policy(instance).level_for(Some(username)) >= AccessLevel::Read
     }
 }
 
@@ -204,7 +223,7 @@ impl McpAccountHost for MultiHost {
     }
 
     fn writable_spaces(&self, username: &str) -> Vec<GrantableSpace> {
-        self.writable_listing(username)
+        self.listing(username, |instance| self.grantable(instance, username))
             .into_iter()
             .map(|(space, instance)| {
                 // Admins can write to every space, so counting them would mark
@@ -254,9 +273,8 @@ impl McpAccountHost for MultiHost {
 #[async_trait]
 impl McpHost for MultiHost {
     fn spaces(&self, caller: &Caller) -> Vec<SpaceInfo> {
-        self.writable_listing(&caller.username)
+        self.listing(&caller.username, |instance| self.allowed(caller, instance))
             .into_iter()
-            .filter(|(_, instance)| self.allowed(caller, instance))
             .map(|(space, instance)| {
                 let runtime = self.manager.runtime_enabled()
                     && instance.runtime.is_some()
