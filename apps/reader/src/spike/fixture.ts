@@ -1,4 +1,7 @@
 export const spikeMarkdown = [
+  "---",
+  "title: 河边的笔记",
+  "---",
   "# 河边的笔记",
   "",
   "清晨的水面很**安静**，沿着[小径](https://example.com/)走到了河边。",

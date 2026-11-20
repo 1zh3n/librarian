@@ -1,8 +1,20 @@
+import { markdown } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { EditorState, MapMode, StateEffect, StateField } from "@codemirror/state";
+import {
+  Compartment,
+  EditorState,
+  MapMode,
+  StateEffect,
+  StateField,
+  Text,
+} from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { GFM } from "@lezer/markdown";
 import { applyTextEdits, editorOffset, editorText, originalOffset, readSource } from "../document";
 import type { SourceDocument, TextEdit } from "../document";
+import { composing, compositionEvents, setComposing } from "./composition";
+import { livePreview } from "./livePreview";
+import { frontMatterRange } from "./syntax";
 
 const replaceSource = StateEffect.define<SourceDocument>();
 
@@ -56,16 +68,25 @@ function minimalChange(before: string, after: string): TextEdit[] {
 export interface EditorSession {
   source(): string;
   applyChanges(changes: readonly TextEdit[]): void;
+  setSourceMode(enabled: boolean): boolean;
   mount(parent: HTMLElement): () => void;
 }
 
 export function openEditor(initial: string): EditorSession {
   const source = readSource(initial);
+  const doc = Text.of(editorText(initial).split("\n"));
+  const metadata = frontMatterRange(doc);
+  const preview = new Compartment();
   let state = EditorState.create({
-    doc: editorText(initial),
+    doc,
+    selection: { anchor: metadata ? Math.min(metadata.to + 1, doc.length) : 0 },
     extensions: [
       sourceField.init(() => source),
       history(),
+      markdown({ extensions: GFM, completeHTMLTags: false }),
+      composing,
+      compositionEvents,
+      preview.of(livePreview),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ "aria-label": "Markdown 正文" }),
@@ -100,6 +121,21 @@ export function openEditor(initial: string): EditorSession {
         state = transaction.state;
       }
     },
+    setSourceMode(enabled) {
+      if (state.field(composing)) {
+        return false;
+      }
+      const transaction = state.update({
+        effects: preview.reconfigure(enabled ? [] : livePreview),
+      });
+      if (view) {
+        view.dispatch(transaction);
+        view.focus();
+      } else {
+        state = transaction.state;
+      }
+      return true;
+    },
     mount(parent) {
       if (view) {
         throw new Error("The editor is already mounted");
@@ -118,6 +154,7 @@ export function openEditor(initial: string): EditorSession {
         mounted.destroy();
         if (view === mounted) {
           view = undefined;
+          state = state.update({ effects: setComposing.of(false) }).state;
         }
       };
     },

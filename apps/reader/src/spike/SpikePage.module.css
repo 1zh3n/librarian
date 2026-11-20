@@ -2,6 +2,7 @@
   color-scheme: light dark;
   --paper: light-dark(#fbfaf6, #242321);
   --ink: light-dark(#25241f, #f3efe7);
+  --inline-code: light-dark(#efede6, #353431);
   --text-width: 46rem;
 
   color: var(--ink);
