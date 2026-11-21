@@ -54,11 +54,22 @@ export function WorkspaceEditor({
           ? list.map((workspace) => (workspace.id === saved.id ? saved : workspace))
           : [...(list ?? []), saved],
       );
-      setName(saved.name);
-      setExpires(formatLocalDate(saved.expiresAt));
       onCreated?.(saved);
     },
   });
+
+  function revealInvalidExpiry() {
+    setAdvanced(true);
+    setExpiryError(true);
+    requestAnimationFrame(() => expiryField.current?.focus());
+  }
+
+  const saved = save.data;
+  const matchesSaved =
+    saved &&
+    name === saved.name &&
+    retention === saved.retention &&
+    (!temporary || expires === formatLocalDate(saved.expiresAt));
 
   const retentionFields = origin === "delivery" && (
     <>
@@ -77,6 +88,7 @@ export function WorkspaceEditor({
           type="datetime-local"
           value={expires}
           ref={expiryField}
+          onInvalid={revealInvalidExpiry}
           {...(expiryError && { invalid: true, "aria-describedby": expiryDescription })}
           onChange={(value) => {
             setExpires(value);
@@ -97,16 +109,26 @@ export function WorkspaceEditor({
         if (!name.trim() || save.isPending) return;
         const expiration = temporary ? Math.floor(new Date(expires).getTime() / 1_000) : null;
         if (expiration !== null && !(expiration > Date.now() / 1_000)) {
-          setAdvanced(true);
-          setExpiryError(true);
-          requestAnimationFrame(() => expiryField.current?.focus());
+          revealInvalidExpiry();
           return;
         }
         setExpiryError(false);
-        save.mutate({
-          name: name.trim(),
-          ...(origin === "delivery" && { retention, expiresAt: expiration }),
-        });
+        save.mutate(
+          {
+            name: name.trim(),
+            ...(origin === "delivery" && { retention, expiresAt: expiration }),
+          },
+          {
+            onSuccess: (confirmed) => {
+              setName((draft) => (draft === name ? confirmed.name : draft));
+              if (temporary) {
+                setExpires((draft) =>
+                  draft === expires ? formatLocalDate(confirmed.expiresAt) : draft,
+                );
+              }
+            },
+          },
+        );
       }}
     >
       <Field
@@ -131,7 +153,7 @@ export function WorkspaceEditor({
       )}
       {temporary && expiryError && (
         <Feedback id={expiryDescription} tone="error" className={styles.status}>
-          到期时间必须晚于现在。
+          {expires ? "到期时间必须晚于现在。" : "请填写到期时间。"}
         </Feedback>
       )}
       {save.isError && (
@@ -141,7 +163,7 @@ export function WorkspaceEditor({
             : "无法保存空间设置。"}
         </Feedback>
       )}
-      {save.isSuccess && current && (
+      {matchesSaved && current && (
         <Feedback tone="success" className={styles.status}>
           空间设置已保存
         </Feedback>

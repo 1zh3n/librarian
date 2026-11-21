@@ -58,6 +58,7 @@ export function Field({
   autoCapitalize,
   spellCheck,
   onKeyDown,
+  onInvalid,
   action,
   actionClassName,
   ...props
@@ -75,6 +76,7 @@ export function Field({
   action?: ReactNode;
   actionClassName?: string;
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+  onInvalid?: () => void;
 }) {
   const input = (
     <Input
@@ -89,6 +91,7 @@ export function Field({
       autoCapitalize={autoCapitalize}
       spellCheck={spellCheck}
       onKeyDown={onKeyDown}
+      onInvalid={onInvalid}
     />
   );
   return (
