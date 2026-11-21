@@ -36,13 +36,13 @@ async function complete(page: Page, task: Claim, data: RunnerResult) {
   expect(response.ok()).toBe(true);
 }
 
-async function send(page: Page, prompt: string, edit = false) {
+async function send(page: Page, prompt: string, action: "询问" | "修改" | "发送" = "询问") {
   const form = page.getByRole("form", { name: "AI 请求" });
   await form.getByRole("textbox", { name: "提示词" }).fill(prompt);
   const request = page.waitForResponse(
     (response) => response.request().method() === "POST" && response.url().endsWith("/turns"),
   );
-  await form.getByRole("button", { name: edit ? "修改" : "询问", exact: true }).click();
+  await form.getByRole("button", { name: action, exact: true }).click();
   expect((await request).status()).toBe(202);
   return claim(page);
 }
@@ -474,7 +474,7 @@ test("AI commits preserve the active local draft and expose diff and undo", asyn
   const { apiUrl, document } = await createNote(page, "AiDirty.md", "共同原件\n");
   const second = await addNote(page, document.document.workspaceId, "AiCompanion.md", "旁注\n");
   await openDocumentTool(page, "AI");
-  const task = await send(page, "修订正文和旁注", true);
+  const task = await send(page, "修订正文和旁注", "修改");
   const bodySource = await readSource(page, task, document.document.id);
   await readSource(page, task, second.document.id);
   let releaseSave = () => {};
@@ -596,7 +596,7 @@ test("Workspace AI stays in a separate route and resumes an interrupted event re
       await route.continue();
     }
   });
-  const task = await send(page, "询问整个空间");
+  const task = await send(page, "询问整个空间", "发送");
   expect(task.input.documentId).toBeNull();
   expect(task.input.context).toEqual([]);
   const eventUrl = `${runner}/${task.leaseId}/events`;
@@ -621,7 +621,9 @@ test("Workspace AI stays in a separate route and resumes an interrupted event re
   await expect(page.getByText("空间任务已完成", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("空间任务已完成", { exact: true })).toBeVisible();
-  await expect(page.getByText("询问整个空间", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "对话记录" }).getByText("询问整个空间", { exact: true }),
+  ).toBeVisible();
   await page.goto(pathToNote);
   await openDocumentTool(page, "AI");
   await expect(page.getByText("空间任务已完成", { exact: true })).toHaveCount(0);
@@ -638,7 +640,7 @@ test("AI destructive change awaits confirmation and shows the deleted file diff"
     "请确认后删除这行。\n",
   );
   await openDocumentTool(page, "AI");
-  const task = await send(page, "删除过期文档", true);
+  const task = await send(page, "删除过期文档", "修改");
   const source = await readSource(page, task, deleted.document.id);
   await complete(page, task, {
     answer: "发现过期文档",
@@ -672,7 +674,7 @@ test("restores the exact pre-AI Markdown through document version history", asyn
       await page.request.get(`${apiUrl}/revisions`)
     ).json()) as components["schemas"]["DocumentHistory"];
   await openDocumentTool(page, "AI");
-  const task = await send(page, "记录新的水位", true);
+  const task = await send(page, "记录新的水位", "修改");
   const { source } = await readSource(page, task, document.document.id);
   await complete(page, task, {
     answer: "已更新水位",
@@ -713,7 +715,7 @@ test("an AI commit refreshes the clean reader, and undo is available after reloa
 }) => {
   const { document } = await createNote(page, "AiClean.md", "# 礁石\n\n确认之前的记载。\n");
   await openDocumentTool(page, "AI");
-  const task = await send(page, "更新这份记录", true);
+  const task = await send(page, "更新这份记录", "修改");
   const original = await readSource(page, task, document.document.id);
   await complete(page, task, {
     answer: "记录已更新",

@@ -36,7 +36,9 @@ async function edit(page: Page, prompt: string, note: DocumentSnapshot, outcome:
   const queued = page.waitForResponse(
     (r) => r.url().endsWith("/turns") && r.request().method() === "POST",
   );
-  await form.getByRole("button", { name: "修改", exact: true }).click();
+  await form.getByRole("button", { name: /发送模式/ }).click();
+  await page.getByRole("option", { name: "修改", exact: true }).click();
+  await form.getByRole("button", { name: "发送", exact: true }).click();
   expect((await queued).status()).toBe(202);
   const claimed = await page.request.post(claims, { headers: runner });
   expect(claimed.status()).toBe(200);

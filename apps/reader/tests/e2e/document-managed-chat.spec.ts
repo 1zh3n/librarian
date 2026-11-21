@@ -41,7 +41,7 @@ async function send(page: Page, fixture: ManagedReader, turn: ScriptedTurn, info
   const queued = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/turns"),
   );
-  await form(page).getByRole("button", { name: "询问", exact: true }).click();
+  await form(page).getByRole("button", { name: "发送", exact: true }).click();
   expect((await queued).status()).toBe(202);
   // The upstream holds message_stop until Chromium observes the visible delta.
   const preview = page.getByText(turn.answer, { exact: true });
@@ -133,7 +133,7 @@ test("refresh_then_compare_documents_with_tools_in_both_turns", async ({ fixture
     await input.fill("继续核对");
     await input.scrollIntoViewIfNeeded();
     await expect(input).toBeInViewport();
-    const ask = form(page).getByRole("button", { name: "询问", exact: true });
+    const ask = form(page).getByRole("button", { name: "发送", exact: true });
     await ask.scrollIntoViewIfNeeded();
     await expect(ask).toBeEnabled();
     await expect(ask).toBeInViewport();
