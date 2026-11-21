@@ -40,6 +40,7 @@ export function ReadingSettings({
   preferences,
   loading,
   isAdmin,
+  account,
   retry,
   save,
   close,
@@ -47,9 +48,11 @@ export function ReadingSettings({
   preferences: DevicePreferences | undefined;
   loading: boolean;
   isAdmin: boolean | undefined;
+  account: string | undefined;
   retry: () => void;
 }) {
   const [tab, setTab] = useState("appearance");
+  const [visitedAi, setVisitedAi] = useState(false);
   const [saving, setSaving] = useState(false);
   return (
     <ModalOverlay
@@ -67,7 +70,10 @@ export function ReadingSettings({
           <Tabs
             isDisabled={saving}
             selectedKey={tab}
-            onSelectionChange={(key) => setTab(String(key))}
+            onSelectionChange={(key) => {
+              setTab(String(key));
+              if (key === "ai") setVisitedAi(true);
+            }}
           >
             <Tabs.List aria-label="应用设置" className={styles.tabList}>
               <Tabs.Tab id="appearance" className={styles.tab}>
@@ -118,15 +124,21 @@ export function ReadingSettings({
               )
             )}
             <Tabs.Panel id="ai" shouldForceMount className={styles.aiPanel}>
-              {isAdmin ? (
-                <AiSettings />
-              ) : (
-                <p>
-                  {isAdmin === false ? "模型连接由服务器管理员配置。" : "暂时无法确认账号权限。"}
-                </p>
-              )}
+              {visitedAi &&
+                (account && isAdmin !== undefined ? (
+                  <AiSettings
+                    key={account}
+                    account={account}
+                    isAdmin={isAdmin}
+                    active={tab === "ai"}
+                    busy={saving}
+                    setBusy={setSaving}
+                  />
+                ) : (
+                  <p>暂时无法确认账号权限。</p>
+                ))}
               <div className={styles.actions}>
-                <Button className={styles.button} onPress={close}>
+                <Button className={styles.button} isDisabled={saving} onPress={close}>
                   关闭
                 </Button>
               </div>

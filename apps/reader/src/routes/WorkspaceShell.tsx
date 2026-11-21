@@ -694,6 +694,7 @@ export function WorkspaceShell() {
               preferences={settingsQuery.data}
               loading={settingsQuery.isFetching}
               isAdmin={session.data?.isAdmin}
+              account={username}
               retry={() => void settingsQuery.refetch()}
               save={save}
               close={() => {

@@ -19,6 +19,8 @@ declare const styles: {
   readonly aiPanel: string;
   readonly catalog: string;
   readonly detail: string;
+  readonly controls: string;
+  readonly section: string;
   readonly refresh: string;
 };
 export default styles;

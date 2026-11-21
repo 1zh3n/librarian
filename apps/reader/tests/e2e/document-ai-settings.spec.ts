@@ -16,6 +16,24 @@ const catalog: DiscoveredModel[] = [
   { id: "model-b" },
 ];
 
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/ai/settings", (route) =>
+    route.fulfill({
+      json: {
+        settingsVersion: 1,
+        globalEnabled: true,
+        dispatchMode: "legacy",
+        connections: [],
+        defaultSelection: null,
+        preference: null,
+        effectiveSelection: null,
+        fallbackReason: null,
+        runnerOnline: false,
+      },
+    }),
+  );
+});
+
 async function admin(page: Page) {
   await page.goto("/.auth/librarian/login");
   await page.getByLabel("用户名").fill("fixture-admin");
@@ -69,9 +87,7 @@ test("top_bar_discovers_models_before_first_chat", async ({ page }) => {
   await expect(refresh).toBeDisabled();
   await expect(key).toHaveAttribute("type", "password");
   await key.pressSequentially("fixture-key", { delay: 10 });
-  const model = dialog
-    .getByRole("button", { name: /模型/, exact: false })
-    .filter({ hasNotText: "刷新模型" });
+  const model = dialog.getByRole("button", { name: / 模型$/ });
   await expect(model).toContainText("田野推理");
   expect(calls).toEqual([{ provider: "deepseek", baseUrl: official, apiKey: "fixture-key" }]);
   await expect(key).toBeFocused();

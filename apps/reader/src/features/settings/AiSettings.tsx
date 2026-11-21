@@ -1,233 +1,229 @@
-import { useEffect, useRef, useState } from "react";
-import { ApiError, discoverAiModels } from "../../api/client";
-import type { AiDiscovery, AiDiscoveryInput, DiscoveredModel } from "../../api/client";
-import { Button, Form, Input, Label, TextField } from "../../ui/primitives";
+import { useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { ApiError, getAiSettings, setAiGlobalEnabled, setAiPreference } from "../../api/client";
+import type { AiSettingsView, ModelSelection } from "../../api/client";
+import { Button } from "../../ui/primitives";
 import { Choice } from "../workspace/ManagementFields";
+import { AiConnectionForm } from "./AiConnectionForm";
+import { ModelChoices, availableChoice, choiceLabel } from "./ModelChoices";
 import styles from "./ReadingSettings.module.css";
 
-const initialDraft: AiDiscoveryInput = {
-  provider: "deepseek",
-  baseUrl: "https://api.deepseek.com",
-  apiKey: "",
-};
+export type SettingsWrite = (
+  action: () => Promise<unknown>,
+  message: string,
+  after?: (view: AiSettingsView) => void,
+) => Promise<void>;
 
-function validAddress(address: string) {
-  try {
-    const url = new URL(address);
-    return (
-      ["http:", "https:"].includes(url.protocol) &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash
-    );
-  } catch {
-    return false;
-  }
-}
-
-function discoveryError(error: unknown) {
+function writeError(error: unknown) {
   if (error instanceof ApiError) {
-    switch (error.code) {
-      case "provider_auth_failed":
-        return "供应商认证失败，请检查 API Key。";
-      case "provider_address_rejected":
-        return "此 API 基础地址不可用，请检查地址和部署允许的主机。";
-      case "provider_empty_catalog":
-        return "供应商返回的模型目录为空，请检查连接后刷新模型。";
-      case "provider_invalid_catalog":
-      case "provider_response_too_large":
-        return "供应商返回的模型目录无效，请检查 API 基础地址后重试。";
-    }
-    switch (error.status) {
-      case 401:
-        return "认证失败，请检查 API Key 和登录状态。";
-      case 403:
-        return "没有发现模型的权限，请检查账号权限。";
-      case 429:
-        return "请求过于频繁，请稍后刷新模型。";
-      case 504:
-        return "获取目录超时，请稍后刷新模型。";
-    }
+    if (error.status === 409)
+      return "配置版本或发现票据已失效。请刷新模型，或重新读取设置后再提交。";
+    if (error.status === 401 || error.status === 403)
+      return "当前账号无权执行此操作，请检查登录状态与权限。";
+    if (error.status === 422) return "无法应用这项设置，请检查模型、思考等级和连接状态。";
   }
-  return "获取模型目录失败，请检查 API 基础地址和密钥后刷新模型。";
+  return "无法确认操作结果，请重新读取设置后重试。";
 }
 
-const providerDefault = "provider_default";
-
-function effortChoices(model: DiscoveredModel) {
-  const levels = model.effort?.supportedLevels ?? [];
-  const defaultLevel = levels.length && model.effort?.defaultLevel;
-  return [
-    {
-      value: providerDefault,
-      label: defaultLevel ? `供应商默认（${defaultLevel}）` : "供应商默认",
-    },
-    ...(levels.length ? [{ value: "off", label: "关闭思考" }] : []),
-    ...levels.map((level) => ({ value: `effort:${level}`, label: level })),
-  ];
-}
-
-type Catalog = {
-  discovery: AiDiscovery;
-  model: DiscoveredModel;
-  thinking: string;
-};
-
-export function AiSettings() {
-  const [draft, setDraft] = useState(initialDraft);
-  const [refresh, setRefresh] = useState(0);
-  const [composing, setComposing] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const [catalog, setCatalog] = useState<Catalog>();
-  const request = useRef<AbortController>(null);
-  const addressValid = validAddress(draft.baseUrl.trim());
-  const ready = Boolean(addressValid && draft.apiKey.trim() && !composing);
-
-  function change(field: "baseUrl" | "apiKey", value: string) {
-    request.current?.abort();
-    setCatalog(undefined);
-    setPending(false);
-    setError("");
-    setRefresh(0);
-    setDraft((previous) => ({ ...previous, [field]: value }));
-  }
-
-  useEffect(() => {
-    if (!ready) return;
-    const controller = new AbortController();
-    request.current = controller;
-    const fetchCatalog = async () => {
-      setPending(true);
-      setError("");
-      try {
-        const discovery = await discoverAiModels(
-          { ...draft, baseUrl: draft.baseUrl.trim(), apiKey: draft.apiKey.trim() },
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        const first = discovery.models[0];
-        if (!first) {
-          setError("供应商返回的模型目录为空，请检查连接后刷新模型。");
-          setCatalog(undefined);
-          return;
-        }
-        setCatalog((previous) => {
-          const model = discovery.models.find(({ id }) => id === previous?.model.id) ?? first;
-          const thinking =
-            previous &&
-            previous.model.id === model.id &&
-            effortChoices(model).some(({ value }) => value === previous.thinking)
-              ? previous.thinking
-              : providerDefault;
-          return { discovery, model, thinking };
-        });
-      } catch (cause) {
-        if (!controller.signal.aborted) setError(discoveryError(cause));
-      } finally {
-        if (!controller.signal.aborted) setPending(false);
-      }
-    };
-    const timer = window.setTimeout(() => void fetchCatalog(), refresh ? 0 : 450);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [draft, ready, refresh]);
-
+function PreferenceForm({ view, write }: { view: AiSettingsView; write: SettingsWrite }) {
+  const [draft, setDraft] = useState<ModelSelection | null>(view.preference);
+  const choices = view.connections.filter(
+    (item) => item.enabled && item.credentialAvailable !== false && item.models.length > 0,
+  );
+  const current = choices.find((item) => item.id === draft?.connectionId);
+  const choice = current && availableChoice(current.models, draft);
+  const selection = current && choice ? { connectionId: current.id, ...choice } : null;
   return (
-    <Form
-      aria-label="DeepSeek 连接"
-      className={styles.fields}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (ready && !pending) setRefresh((count) => count + 1);
-      }}
-    >
-      <h3>DeepSeek 连接</h3>
-      <TextField
-        className={styles.field}
-        type="url"
-        value={draft.baseUrl}
-        onChange={(value) => change("baseUrl", value)}
-      >
-        <Label>API 基础地址</Label>
-        <Input
-          className={styles.input}
-          autoCapitalize="none"
-          spellCheck={false}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
-        />
-      </TextField>
-      {draft.baseUrl && !addressValid && !composing && (
-        <p role="alert" className={styles.detail}>
-          请输入完整的 API 基础地址，不含凭证、查询参数或片段。
+    <section aria-label="我的模型" className={styles.section}>
+      <h3>我的模型</h3>
+      {view.effectiveSelection && (
+        <p className={styles.detail}>
+          当前模型 · {choiceLabel(view.connections, view.effectiveSelection)}
         </p>
       )}
-      <TextField
-        className={styles.field}
-        type="password"
-        value={draft.apiKey}
-        onChange={(value) => change("apiKey", value)}
-        autoComplete="off"
-      >
-        <Label>API Key</Label>
-        <Input
-          className={styles.input}
-          autoCapitalize="none"
-          spellCheck={false}
-          onCompositionStart={() => setComposing(true)}
-          onCompositionEnd={() => setComposing(false)}
-        />
-      </TextField>
-      <Button className={styles.refresh} type="submit" isDisabled={!ready || pending}>
-        刷新模型
-      </Button>
-      {pending && <output className={styles.detail}>正在获取模型目录…</output>}
-      {error && (
-        <p role="alert" className={styles.error}>
-          {error}
-        </p>
+      {view.fallbackReason && (
+        <output>
+          {view.effectiveSelection
+            ? "所选模型或思考等级不可用，当前使用上方显示的选择。"
+            : "当前没有可用的模型选择。"}
+        </output>
       )}
-      {catalog && (
+      {choices.length || view.preference ? (
         <>
-          <div className={styles.catalog}>
-            <Choice
-              label="模型"
-              value={catalog.model.id}
-              entries={catalog.discovery.models.map((model) => ({
-                value: model.id,
-                label: model.name || model.id,
-              }))}
-              onChange={(id) => {
-                const model = catalog.discovery.models.find((item) => item.id === id);
-                if (model) setCatalog({ ...catalog, model, thinking: providerDefault });
-              }}
+          <Choice
+            label="模型连接"
+            value={current?.id ?? "global"}
+            entries={[
+              { value: "global", label: "跟随全局默认" },
+              ...choices.map((item) => ({ value: item.id, label: item.label })),
+            ]}
+            onChange={(id) => {
+              const item = choices.find((entry) => entry.id === id);
+              const choice = item && availableChoice(item.models);
+              setDraft(item && choice ? { connectionId: id, ...choice } : null);
+            }}
+          />
+          {current && choice && (
+            <ModelChoices
+              models={current.models}
+              choice={choice}
+              change={(next) => setDraft({ connectionId: current.id, ...next })}
             />
-            <Choice
-              label="思考等级"
-              entries={effortChoices(catalog.model)}
-              value={catalog.thinking}
-              onChange={(thinking) => setCatalog({ ...catalog, thinking })}
-            />
-          </div>
-          <div className={styles.detail}>
-            {catalog.model.name && <p>{catalog.model.id}</p>}
-            {!!catalog.model.inputModalities?.length && (
-              <p>输入 · {catalog.model.inputModalities.join("、")}</p>
-            )}
-            {!!catalog.model.outputModalities?.length && (
-              <p>输出 · {catalog.model.outputModalities.join("、")}</p>
-            )}
-            {!catalog.model.effort?.supportedLevels.length && <p>供应商未提供思考等级。</p>}
-            <p>
-              目录获取时间 · {new Date(catalog.discovery.fetchedAt * 1000).toLocaleString("zh-CN")}
-            </p>
+          )}
+          <div className={styles.actions}>
+            <Button
+              className={styles.button}
+              isDisabled={JSON.stringify(selection) === JSON.stringify(view.preference)}
+              onPress={() => void write(() => setAiPreference(selection), "模型偏好已保存。")}
+            >
+              保存偏好
+            </Button>
           </div>
         </>
+      ) : (
+        <p className={styles.detail}>尚无已启用的模型连接。</p>
       )}
-    </Form>
+    </section>
+  );
+}
+
+export function AiSettings({
+  isAdmin,
+  account,
+  active,
+  busy,
+  setBusy,
+}: {
+  isAdmin: boolean;
+  account: string;
+  active: boolean;
+  busy: boolean;
+  setBusy: (value: boolean) => void;
+}) {
+  const query = useQuery({
+    queryKey: ["ai-settings", account],
+    queryFn: ({ signal }) => getAiSettings(signal),
+    enabled: active,
+    refetchOnWindowFocus: false,
+  });
+  const [editing, setEditing] = useState<string>();
+  const [epoch, setEpoch] = useState(0);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const lock = useRef(false);
+
+  const write: SettingsWrite = async (action, notice, after) => {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await action();
+      const { data } = await query.refetch({ throwOnError: true });
+      if (data) after?.(data);
+      setMessage(notice);
+    } catch (cause) {
+      setError(writeError(cause));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  async function reload() {
+    const { isSuccess } = await query.refetch();
+    if (isSuccess) {
+      setEpoch((n) => n + 1);
+      setError("");
+      setMessage("");
+    }
+  }
+
+  const view = query.data;
+  if (query.isError)
+    return (
+      <div className={styles.fields}>
+        <p role="alert">无法读取 AI 设置。</p>
+        <Button className={styles.refresh} onPress={() => void reload()}>
+          重新读取设置
+        </Button>
+      </div>
+    );
+  if (!view) return <output>正在读取 AI 设置…</output>;
+  const connection =
+    view.connections.find((item) => item.id === editing) ??
+    (editing === "new"
+      ? undefined
+      : (view.connections.find((item) => item.id === view.defaultSelection?.connectionId) ??
+        view.connections[0]));
+  return (
+    <>
+      <p className={styles.detail}>
+        {view.globalEnabled ? "全局 AI 已开启" : "全局 AI 已暂停"} ·{" "}
+        {view.dispatchMode === "legacy" ? "现有执行器" : "受管执行器"}
+      </p>
+      <fieldset className={styles.controls} disabled={busy} aria-busy={busy}>
+        {isAdmin && (
+          <section aria-label="管理连接" className={styles.section}>
+            {view.connections.length > 0 && (
+              <Choice
+                label="管理连接"
+                value={connection?.id ?? "new"}
+                entries={[
+                  ...view.connections.map((item) => ({ value: item.id, label: item.label })),
+                  { value: "new", label: "新增连接" },
+                ]}
+                onChange={(id) => {
+                  setEditing(id);
+                  setError("");
+                  setMessage("");
+                }}
+              />
+            )}
+            <AiConnectionForm
+              key={JSON.stringify([connection?.id, connection?.version, epoch])}
+              connection={connection}
+              settings={view}
+              active={active}
+              saved={(id) => {
+                setEditing(id);
+                setEpoch((n) => n + 1);
+              }}
+              write={write}
+            />
+          </section>
+        )}
+        <PreferenceForm key={JSON.stringify([view.preference, epoch])} view={view} write={write} />
+        {isAdmin ? (
+          <section aria-label="全局 AI" className={styles.section}>
+            <h3>全局 AI</h3>
+            {view.defaultSelection && (
+              <p className={styles.detail}>
+                全局默认 · {choiceLabel(view.connections, view.defaultSelection)}
+              </p>
+            )}
+            <Button
+              className={styles.refresh}
+              onPress={() =>
+                void write(() => setAiGlobalEnabled(!view.globalEnabled), "全局 AI 状态已更新。")
+              }
+            >
+              {view.globalEnabled ? "暂停全局 AI" : "恢复全局 AI"}
+            </Button>
+          </section>
+        ) : (
+          <p className={styles.detail}>模型连接由服务器管理员配置。</p>
+        )}
+      </fieldset>
+      {message && <output>{message}</output>}
+      {error && (
+        <div className={styles.fields}>
+          <p role="alert">{error}</p>
+          <Button className={styles.refresh} onPress={() => void reload()}>
+            重新读取设置
+          </Button>
+        </div>
+      )}
+    </>
   );
 }
