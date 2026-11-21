@@ -150,7 +150,7 @@ async fn fetch_rejects_loopback_by_default() {
     let server = serve(json_ok).await;
     // http is allowed here so that only the resolver stands between the
     // fetch and the loopback server.
-    let fetcher = CimdFetcher::build(PublicOnlyResolver::new(), true);
+    let fetcher = CimdFetcher::build(PublicOnlyResolver::without_doh(), true);
     assert!(fetcher.fetch(&server.url("http")).await.is_err());
     assert_eq!(server.hits(), 0);
     assert!(CimdFetcher::new()
@@ -519,7 +519,7 @@ async fn failed_refetch_keeps_the_last_good_keys() {
 #[tokio::test]
 async fn jwks_behind_the_ssrf_guard_is_refused() {
     let server = serve(|_| async { axum::Json(rsa_jwks()).into_response() }).await;
-    let fetcher = CimdFetcher::build(PublicOnlyResolver::new(), true);
+    let fetcher = CimdFetcher::build(PublicOnlyResolver::without_doh(), true);
     assert!(fetcher.jwks(&server.url("http"), false).await.is_err());
     assert_eq!(server.hits(), 0);
     let fetcher = CimdFetcher::new();

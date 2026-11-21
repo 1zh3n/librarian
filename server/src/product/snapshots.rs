@@ -28,7 +28,7 @@ use super::{
     db::Metadata,
     documents::{
         body, check_file_path, check_storage_recovery, is_document_path, product_read,
-        product_write, read_markdown, run, state, title_from_front_matter, DocumentService,
+        product_write, read_markdown, run, state, title_from_markdown, DocumentService,
         MARKDOWN_LIMIT,
     },
     mutations::{max_file_bytes, valid_file_path},
@@ -639,7 +639,7 @@ fn release_document(
 }
 
 fn title(path: &str, bytes: &[u8]) -> String {
-    title_from_front_matter(bytes).unwrap_or_else(|| {
+    title_from_markdown(bytes).unwrap_or_else(|| {
         let stem = path.strip_suffix(".md").unwrap_or(path);
         stem.rsplit('/').next().unwrap_or(stem).to_owned()
     })

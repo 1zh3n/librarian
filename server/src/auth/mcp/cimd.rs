@@ -216,7 +216,7 @@ impl CimdFetcher {
         let resolver = if allow_http_loopback {
             PublicOnlyResolver::allowing_loopback()
         } else {
-            PublicOnlyResolver::new()
+            PublicOnlyResolver::without_doh()
         };
         Self::build(resolver, allow_http_loopback)
     }

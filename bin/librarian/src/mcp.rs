@@ -372,7 +372,10 @@ fn sign_in_page(status: StatusCode, username: &str) -> Response {
             (header::REFERRER_POLICY, "strict-origin"),
             (
                 header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; script-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+                // React Aria injects one <style> block for pressable
+                // touch-action; pin its hash instead of allowing arbitrary
+                // inline styles on the login page.
+                "default-src 'none'; script-src 'self'; style-src 'self' 'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             ),
         ],
         Html(document),
@@ -469,4 +472,22 @@ async fn login_submit(
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_csp_allows_the_react_aria_pressable_style_without_unsafe_inline() {
+        let response = sign_in_page(StatusCode::OK, "");
+        let csp = response
+            .headers()
+            .get(header::CONTENT_SECURITY_POLICY)
+            .expect("login CSP header")
+            .to_str()
+            .expect("login CSP is ASCII");
+        assert!(csp.contains("'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='"));
+        assert!(!csp.contains("'unsafe-inline'"));
+    }
 }
