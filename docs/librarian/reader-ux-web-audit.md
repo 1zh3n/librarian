@@ -97,3 +97,7 @@
 在 1280 × 800 的三段短文中，点第一行句号右方 65 px，输入「岸边已能落脚。」，API 回读显示这句话接在第一段原句末尾，另两段完整。随后点最后一段下方两次，只补入一个换行。浏览器同时覆盖桌面和窄屏折行两侧、段间上下两侧、长文视口下沿、引用列表缩进，以及预览和源码中的已存空行。 [第一行续写画面](evidence/reader-editing-workflow/nearby-line-end.png) · [阅读纸面落点](../../apps/reader/tests/e2e/document-edit.spec.ts) · [编辑器坐标回归](../../apps/reader/tests/e2e/editor-paper-placement.spec.ts)
 
 在 Chromium 的 1440 × 900 视口中，滚到 41 节长文的第 21 节，点击段落里的「桩」。从阅读到编辑，旧版首帧闪回文首。修正后三次冷开均从 y=265.55 落到 y=265.30，接下来的 24 帧维持同一位置。在内网预览文档的页首，原来下移 94 px 的字保持在 y=392.2，正文可滚动区域的总高度维持 1502 px。测试还从页首两个空行和段落之间进入编辑，核对立即输入、中文组合输入、撤销及原文行尾。图中上下两幅分别是点击前后按相同屏幕坐标截取的第 21 节。 [画面对照](evidence/reader-editing-workflow/first-edit-position.png) · [逐帧位置与原文回读](../../apps/reader/tests/e2e/document-first-click-stability.spec.ts) · [标题、导语与段间距](../../apps/reader/tests/e2e/document-preview-typesetting.spec.ts)
+
+在原预览文档滚到底，第一次点击最后一段下方，旧版最后一个字从屏幕 y=740 一度移出视口，回落到 y=836。修正后，光标在末段下方的空行，正文区高度从 1502 增至 1536 px，末字仍在 y=740。已经进入编辑时，按住正文列外侧的底部留白再松开，编辑框也持续持有焦点。回归从按下指针开始逐帧记录，并覆盖已有 3 个换行、12 个换行加缩进，以及输入后回读完整 Markdown。
+
+另一篇 16 节手记在 1440 px 桌面点击和 390 px 模拟触屏点按下分别采样 40 帧，末字的最大位移为 0.49 和 0.04 px 以内。下图按相同坐标裁切，上幅是阅读，下幅是点过文末之后。 [文末落笔前后](evidence/reader-editing-workflow/steady-end-line.png) · [按下指针至光标落定的浏览器用例](../../apps/reader/tests/e2e/document-end-click-stability.spec.ts)

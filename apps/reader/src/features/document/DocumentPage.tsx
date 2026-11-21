@@ -612,7 +612,7 @@ function DocumentWorkspace({
     (
       next: "preview" | "source",
       position?: number | "blankLine",
-      glyph?: Pick<EditorMountAnchor, "screenTop" | "glyphSide">,
+      clickedAnchor?: Omit<EditorMountAnchor, "viewport">,
     ) => {
       if (!writable || restoringVersion || body.editor.isComposing()) return;
       if (mode === "read") {
@@ -622,12 +622,16 @@ function DocumentWorkspace({
         blankLineOnMount.current = position === "blankLine";
         const sameSource = reading.source === body.editor.source();
         const anchor =
-          viewport && sameSource && position !== "blankLine"
-            ? captureReaderAnchor(viewport, analysis.blocks)
-            : undefined;
+          viewport && sameSource ? captureReaderAnchor(viewport, analysis.blocks) : undefined;
         body.editor.trackAnchor(anchor);
         mountAnchor.current = undefined;
-        if (viewport && anchor) {
+        if (viewport && clickedAnchor && sameSource) {
+          mountAnchor.current = {
+            viewport,
+            ...clickedAnchor,
+            keepCaretVisible: position === "blankLine",
+          };
+        } else if (viewport && anchor) {
           mountAnchor.current = {
             viewport,
             sourceOffset: anchor.sourceOffset,
@@ -640,7 +644,6 @@ function DocumentWorkspace({
           position ?? (firstEntry ? (anchor?.sourceOffset ?? analysis.blocks[0]?.from) : undefined);
         if (typeof at === "number" && sameSource) {
           body.editor.select({ anchor: at, head: at });
-          if (viewport && glyph) mountAnchor.current = { viewport, sourceOffset: at, ...glyph };
         }
       }
       if (body.editor.setSourceMode(next === "source")) {
@@ -732,13 +735,13 @@ function DocumentWorkspace({
   const mountBody = useCallback(
     (parent: HTMLDivElement | null) => {
       if (!parent) return;
-      const unmount = body.editor.mount(parent, true, mountAnchor.current);
-      editorEntryScroll.current = parent.closest("main")?.scrollTop;
-      mountAnchor.current = undefined;
       if (blankLineOnMount.current) {
         blankLineOnMount.current = false;
         body.editor.moveToFinalBlankLine();
       }
+      const unmount = body.editor.mount(parent, true, mountAnchor.current);
+      editorEntryScroll.current = parent.closest("main")?.scrollTop;
+      mountAnchor.current = undefined;
       return unmount;
     },
     [body],
@@ -836,7 +839,9 @@ function DocumentWorkspace({
     const surface = column?.querySelector<HTMLElement>(`.${styles.paper}`);
     const article = surface?.querySelector("article");
     if (!writable || restoringVersion || !page || !surface) return;
-    const click = (event: MouseEvent) => {
+    const handlePaper = (event: MouseEvent) => {
+      const pressing = event.type === "mousedown";
+      if (pressing && (article || body.editor.isComposing())) return;
       const target = event.target;
       if (
         !(target instanceof Element) ||
@@ -869,17 +874,26 @@ function DocumentWorkspace({
         )
           return;
       }
+      if (pressing) {
+        // Keep both native focus and the editor selection in place until the click.
+        if (body.editor.isBelowLastLine(event.clientY)) event.preventDefault();
+        return;
+      }
       const caret = textCaretAtClick(page, event);
       if (caret && !surface.contains(caret.node)) return;
       if (article) {
         const hit = readingPositionAtClick(article, event, reading.source, analysis, caret);
-        enterEditor("preview", hit.position, hit.glyph);
+        enterEditor("preview", hit.position, hit.anchor);
       } else if (!caret && !body.editor.isComposing()) {
-        body.editor.placeCaretAtPaperPoint(event.clientX, event.clientY);
+        body.editor.placeCaretAtPaperPoint(event.clientX, event.clientY, page.closest("main"));
       }
     };
-    page.addEventListener("click", click);
-    return () => page.removeEventListener("click", click);
+    page.addEventListener("mousedown", handlePaper, true);
+    page.addEventListener("click", handlePaper);
+    return () => {
+      page.removeEventListener("mousedown", handlePaper, true);
+      page.removeEventListener("click", handlePaper);
+    };
   }, [analysis, body, enterEditor, mode, reading.source, restoringVersion, writable]);
 
   useEffect(() => {

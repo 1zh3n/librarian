@@ -1,8 +1,16 @@
+import type { EditorMountAnchor } from "../../editor/codemirror/adapter";
 import type { MarkdownAnalysis } from "../../markdown/analyze";
 import { readerCaretOffset } from "../ai/readerSelection";
 
 type ReadingGlyph = { screenTop: number; glyphSide: 1 | -1 };
-type ReadingHit = { position: number | "blankLine"; glyph?: ReadingGlyph | undefined };
+type ReadingHit = {
+  position: number | "blankLine";
+  anchor?: Omit<EditorMountAnchor, "viewport"> | undefined;
+};
+
+function textHit(position: number, glyph?: ReadingGlyph): ReadingHit {
+  return { position, anchor: glyph && { sourceOffset: position, ...glyph } };
+}
 
 function caretAtPoint(doc: Document, x: number, y: number) {
   const caret = doc.caretPositionFromPoint?.(x, y);
@@ -79,7 +87,7 @@ export function readingPositionAtClick(
 ): ReadingHit {
   if (caret) {
     const position = readerCaretOffset(article, caret, source, analysis);
-    if (position !== undefined) return { position, glyph: caret.glyph };
+    if (position !== undefined) return textHit(position, caret.glyph);
   }
   const blocks = article.querySelectorAll<HTMLElement>("[data-block-id]");
   let lo = 0;
@@ -90,21 +98,34 @@ export function readingPositionAtClick(
     else hi = mid;
   }
   const next = blocks[lo];
-  if (!next) return { position: "blankLine" };
+  if (!next) {
+    const last = blocks[lo - 1];
+    const block = analysis.blocks.find(({ id }) => id === last?.dataset.blockId);
+    if (!last || !block) return { position: "blankLine" };
+    const rect = last.getBoundingClientRect();
+    // The caret goes on the writing line, while the existing content stays still.
+    const point = block.kind !== "table" && nearestTextPoint(last, rect.right, y);
+    const offset = point ? readerCaretOffset(article, point, source, analysis) : undefined;
+    const anchor =
+      point && offset !== undefined
+        ? { sourceOffset: offset, ...point.glyph }
+        : { sourceOffset: block.from, screenTop: rect.top };
+    return { position: "blankLine", anchor };
+  }
   const top = next.getBoundingClientRect().top;
   const previous = blocks[lo - 1];
   if (previous && y < top && y - previous.getBoundingClientRect().bottom <= top - y) {
     const block = analysis.blocks.find(({ id }) => id === previous.dataset.blockId);
     if (block) {
       const end = nearestTextPoint(previous, previous.getBoundingClientRect().right, y);
-      return { position: block.to, glyph: end?.glyph };
+      return textHit(block.to, end?.glyph);
     }
   }
   // A click in the upper margin starts the next paragraph at its first text.
   const point = nearestTextPoint(next, y < top ? next.getBoundingClientRect().left : x, y);
   const offset = point && readerCaretOffset(article, point, source, analysis);
-  return {
-    position: offset ?? analysis.blocks.find(({ id }) => id === next.dataset.blockId)?.from ?? 0,
-    glyph: point?.glyph,
-  };
+  return textHit(
+    offset ?? analysis.blocks.find(({ id }) => id === next.dataset.blockId)?.from ?? 0,
+    point?.glyph,
+  );
 }

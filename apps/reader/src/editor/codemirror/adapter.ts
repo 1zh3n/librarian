@@ -33,6 +33,8 @@ import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
 import { documentPreviewTypography, hideFrontMatterControl, livePreview } from "./livePreview";
+import { placeOnWritingLine } from "./documentTypography";
+import { paperScrollAnchor } from "./paperScrollAnchor";
 import { markdownEnter } from "./markdownEnter";
 import { frontMatterRange } from "./syntax";
 
@@ -149,6 +151,7 @@ export interface EditorMountAnchor {
   readonly screenTop: number;
   /** The side of a caret that supplied the clicked glyph, including at a soft wrap. */
   readonly glyphSide?: 1 | -1;
+  readonly keepCaretVisible?: boolean;
 }
 
 export interface EditorSession {
@@ -160,7 +163,8 @@ export interface EditorSession {
   acknowledge(markdown: string, revision: string | null): void;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   moveToFinalBlankLine(): void;
-  placeCaretAtPaperPoint(x: number, y: number): void;
+  isBelowLastLine(y: number): boolean;
+  placeCaretAtPaperPoint(x: number, y: number, viewport?: HTMLElement | null): void;
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
   trackAnchor(anchor: ScrollAnchor | undefined): void;
@@ -185,6 +189,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     : livePreview;
   const preview = new Compartment();
   const undoHistory = new Compartment();
+  const paperAnchor = paperScrollAnchor();
   const selection = options.selection;
   let revision = options.revision;
   let confirmedSource = initial;
@@ -208,6 +213,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       preview.of(previewExtensions),
       hideFrontMatterControl.of(options.hideMetadataInPreview ?? false),
       editorFocus,
+      paperAnchor.extension,
       keymap.of([
         { key: "Enter", run: markdownEnter },
         { key: "Backspace", run: deleteMarkupBackward },
@@ -298,11 +304,21 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     options.onDeferredExternalResult?.(change.revision, result);
   }
 
-  function moveToFinalBlankLine() {
+  function isBelowLastLine(y: number) {
+    return !!view && y >= view.documentTop + view.lineBlockAt(state.doc.length).bottom;
+  }
+
+  function moveToFinalBlankLine(scrollIntoView = true) {
     if (state.readOnly || state.field(composing)) return;
     const end = state.doc.length;
     if (state.doc.lineAt(end).text.trim() === "") {
-      dispatch(state.update({ selection: { anchor: end }, scrollIntoView: true }));
+      dispatch(
+        state.update({
+          selection: { anchor: end },
+          effects: placeOnWritingLine.of(null),
+          scrollIntoView,
+        }),
+      );
       return;
     }
     const current = state.field(sourceField).value;
@@ -313,7 +329,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         selection: { anchor: end + 1 },
         effects: replaceSource.of(readSource(current + ending)),
         annotations: isolateHistory.of("full"),
-        scrollIntoView: true,
+        scrollIntoView,
       }),
     );
   }
@@ -340,11 +356,23 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       revision = savedRevision;
     },
     moveToFinalBlankLine,
-    placeCaretAtPaperPoint(x, y) {
+    isBelowLastLine,
+    placeCaretAtPaperPoint(x, y, viewport) {
       if (!view || state.readOnly || state.field(composing) || view.compositionStarted) return;
       const end = state.doc.length;
-      if (y >= view.documentTop + view.lineBlockAt(end).bottom) {
-        moveToFinalBlankLine();
+      if (isBelowLastLine(y)) {
+        let line = state.doc.lineAt(end);
+        while (line.number > 1 && !line.text.trim()) line = state.doc.line(line.number - 1);
+        const glyph = viewport && view.coordsAtPos(line.to, -1);
+        moveToFinalBlankLine(!glyph);
+        if (viewport && glyph)
+          paperAnchor.hold(view, {
+            viewport,
+            at: line.to,
+            screenTop: glyph.top,
+            glyphSide: -1,
+            keepCaretVisible: true,
+          });
       } else {
         const { pos, assoc } = view.posAndSideAtCoords({ x, y }, false);
         const hiddenMetadata =
@@ -450,7 +478,13 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       const at = anchor && editorOffset(state.field(sourceField), anchor.sourceOffset);
       const mounted = new EditorView({
         state,
-        ...(at !== undefined && { scrollTo: EditorView.scrollIntoView(at, { y: "center" }) }),
+        ...(at !== undefined &&
+          anchor && {
+            scrollTo: EditorView.scrollIntoView(at, {
+              y: "start",
+              yMargin: anchor.screenTop - anchor.viewport.getBoundingClientRect().top,
+            }),
+          }),
         parent,
         dispatchTransactions(transactions, editor) {
           const wasComposing = state.field(composing);
@@ -470,11 +504,10 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         mounted.coordsAtPos(at);
         if (preview.get(state) === previewExtensions)
           forceParsing(mounted, mounted.viewport.to, 32);
-        const glyph = anchor.glyphSide && mounted.coordsAtPos(at, anchor.glyphSide);
-        const top = glyph?.top ?? mounted.documentTop + mounted.lineBlockAt(at).top;
-        anchor.viewport.scrollTop += top - anchor.screenTop;
+        paperAnchor.hold(mounted, { ...anchor, at });
       }
       return () => {
+        paperAnchor.release();
         mounted.destroy();
         if (view === mounted) {
           view = undefined;

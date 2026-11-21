@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { Facet, StateField } from "@codemirror/state";
+import { Facet, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { composing } from "./composition";
@@ -54,8 +54,9 @@ function documentTypography(state: EditorState) {
     if (blocks === 0) firstWasTitle = heading?.[1] === "1";
     blocks++;
   }
-  const complete = blocks > 0 && tree.length === state.doc.length;
-  const end = complete ? state.doc.line(previousLine).to : state.doc.length;
+  const complete = tree.length === state.doc.length;
+  const lastContentEnd = previousLine > 0 ? state.doc.line(previousLine).to : 0;
+  const end = complete ? lastContentEnd : state.doc.length;
   return {
     ranges: Decoration.set(ranges, true),
     endMargin: complete ? previousEndMargin : "0px",
@@ -133,22 +134,40 @@ const typography = StateField.define<ReturnType<typeof documentTypography>>({
   ],
 });
 
+export const placeOnWritingLine = StateEffect.define<null>();
+const writingLineStart = StateField.define<number | null>({
+  create: () => null,
+  update(start, tr) {
+    if (tr.effects.some((effect) => effect.is(placeOnWritingLine)))
+      return tr.newDoc.line(tr.newDoc.lines).from;
+    if (start === null) return null;
+    const mapped = tr.changes.mapPos(start, -1);
+    return tr.newSelection.main.from >= mapped ? mapped : null;
+  },
+});
+
 const caretLine = Decoration.line({ attributes: { "data-preview-caret": "" } });
 export const documentPreviewTypography: Extension = [
   documentTypographyActive.of(true),
   typography,
-  EditorView.decorations.compute([typography, "selection", composing], (state) => {
-    const { endOfText } = state.field(typography);
-    if (
-      state.field(composing) ||
-      endOfText === state.doc.length ||
-      state.selection.ranges.some((range) => range.to > endOfText)
-    )
-      return Decoration.none;
-    // A replacement gives off-screen line breaks their real preview height.
-    // Entering the trailing whitespace exposes its original source lines.
-    return Decoration.set([Decoration.replace({}).range(endOfText, state.doc.length)]);
-  }),
+  writingLineStart,
+  EditorView.decorations.compute(
+    [typography, writingLineStart, "selection", composing],
+    (state) => {
+      const { endOfText } = state.field(typography);
+      const onTail = state.selection.ranges.some((range) => range.to > endOfText);
+      const writingLine = state.field(writingLineStart);
+      // A paper click opens one working line below the prose, even when the source
+      // already ends in several blank lines. Keyboard navigation can enter them.
+      let to = state.doc.length;
+      if (onTail) {
+        if (writingLine === null) return Decoration.none;
+        to = writingLine - 1;
+      } else if (state.field(composing)) return Decoration.none;
+      if (endOfText >= to) return Decoration.none;
+      return Decoration.set([Decoration.replace({}).range(endOfText, to)]);
+    },
+  ),
   EditorView.decorations.compute(["selection", "doc"], (state) => {
     const lines = state.selection.ranges.map(({ head }) => state.doc.lineAt(head));
     return Decoration.set(

@@ -116,6 +116,30 @@ for (const [name, original, firstEnding] of [
   });
 }
 
+for (const prefix of ["", "---\ntitle: 未填写\n---"]) {
+  test(`the writing line is visible on blank paper with long trailing whitespace (metadata=${!!prefix})`, async ({
+    page,
+  }) => {
+    const source = prefix + "\r\n".repeat(120) + "    ";
+    const { apiUrl } = await createNote(page, prefix ? "待填写属性.md" : "待填写.md", source);
+    const point = await page.getByRole("article").evaluate((article) => ({
+      x: article.getBoundingClientRect().left + 20,
+      y: article.closest("main")!.getBoundingClientRect().bottom - 20,
+    }));
+    await page.mouse.click(point.x, point.y);
+    const body = editor(page, "Markdown 正文");
+    await expect(body).toBeFocused();
+    const caretVisible = await body.evaluate((el) => {
+      const caret = document.getSelection()!.getRangeAt(0).getBoundingClientRect();
+      const viewport = el.closest("main")!.getBoundingClientRect();
+      return caret.height > 0 && caret.top >= viewport.top && caret.bottom <= viewport.bottom;
+    });
+    expect(caretVisible).toBe(true);
+    await page.keyboard.insertText("初");
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(source + "初");
+  });
+}
+
 async function checkReadingInsertion(
   page: Page,
   note: Awaited<ReturnType<typeof createNote>>,
