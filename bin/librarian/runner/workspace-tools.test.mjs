@@ -68,6 +68,7 @@ test("Harness searches selected material metadata, reads the requested segment a
   assert.equal(r.calls.filter(c => c.route === catalogPath + "/s2" && c.method === "GET").length, 1);
   assert(!JSON.stringify(r.requests[1]).includes("实际读取片段"));
   assert(JSON.stringify(r.requests[2]).includes("实际读取片段"));
+  assert(r.requests[2].messages.flatMap(m => m.content).filter(b => b.type === "tool_result").every(b => !b.is_error));
   for (const unavailable of ["do-not-preload", "/internal/file-a.raw", "list-must-hide-this"]) {
     assert(!JSON.stringify(r.requests).includes(unavailable));
   }
@@ -143,3 +144,23 @@ for (const [name, script] of [
     assert.deepEqual(r.results, []);
   });
 }
+
+test("an extracted material source cannot serve as the base revision for a Markdown edit", async t => {
+  const r = await run(t, {
+    mode: "edit", input: { materials: [material] }, route: materialRoute,
+    script: [call("read_material", { materialId: material.id, segmentId: "s2" }),
+      call("submit_document_edits", { sourceId: source.id, markdown: "wrong" })],
+  });
+  assert.equal(r.failures.length, 1);
+  assert.deepEqual(r.results, []);
+});
+
+test("a second update to the same source cannot leave the first staged replacement behind", async t => {
+  const r = await run(t, {
+    mode: "edit", input: { context: [{ documentId: "doc" }] },
+    script: [call("submit_document_edits", { sourceId: "source-1", markdown: "change" }),
+      call("submit_document_edits", { sourceId: "source-1", markdown: "参考" })],
+  });
+  assert.equal(r.failures.length, 1);
+  assert.deepEqual(r.results, []);
+});
