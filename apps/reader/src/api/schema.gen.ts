@@ -1425,6 +1425,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/workspaces/{workspace}/file-actions/deleted": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description List restorable deletions by the current account in this managed workspace, most recent first. Requires write access. */
+    get: operations["listDeletedWorkspaceFileActions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/ai/runner/v2/claims/{lease}/workspaces": {
     parameters: {
       query?: never;
@@ -2288,6 +2305,8 @@ export interface components {
        * @description Original deletion operation.
        */
       operationId: string;
+      /** @description Full workspace-relative destination to restore into. Omit to restore at the original path. */
+      targetPath?: string;
     };
     FileActionPreview: {
       token: string;
@@ -2301,6 +2320,17 @@ export interface components {
       path: string;
       documentId?: string;
       undoable: boolean;
+    };
+    DeletedFileAction: {
+      /** Format: uuid */
+      operationId: string;
+      path: string;
+      /** @enum {string} */
+      sourceKind: "document" | "folder";
+      fileCount: number;
+    };
+    DeletedFileActions: {
+      items: components["schemas"]["DeletedFileAction"][];
     };
     AiLeasedWorkspace: {
       id: string;
@@ -6614,6 +6644,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["FileActionResult"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listDeletedWorkspaceFileActions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Restorable deletions */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeletedFileActions"];
         };
       };
       /** @description Request could not be completed */

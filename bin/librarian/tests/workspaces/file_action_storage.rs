@@ -564,3 +564,645 @@ async fn file_action_transfers_renames_deletes_and_restores_an_empty_tree() {
     assert!(f.folder(&target).join("renamed/nested").is_dir());
     assert!(f.folder(&target).join("copy/nested").is_dir());
 }
+
+#[tokio::test]
+async fn recently_deleted_lists_only_own_restorable_items_newest_first() {
+    let mut f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let route = format!("/workspaces/{ws}/file-actions");
+    let first = "ebe68b37-b11f-4149-b117-a4b393277cde";
+    let second = "13b5b285-8ddd-4806-9d34-e3a268371cf0";
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"field","sourceKind":"folder"}),
+        first,
+    )
+    .await;
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"Legacy.md","sourceKind":"document"}),
+        second,
+    )
+    .await;
+    f.restart();
+    let endpoint = format!("{route}/deleted");
+    let (status, list) = f.request(&f.admin, "GET", &endpoint, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(
+        list,
+        json!({"items":[
+            {"operationId":second,"path":"Legacy.md","sourceKind":"document","fileCount":1},
+            {"operationId":first,"path":"field","sourceKind":"folder","fileCount":3}
+        ]})
+    );
+    assert_eq!(
+        f.request(&f.alice, "GET", &endpoint, Value::Null).await.1,
+        json!({"items":[]})
+    );
+    assert_eq!(
+        f.request(&f.bob, "GET", &endpoint, Value::Null).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, other) = f
+        .request(&f.admin, "POST", "/workspaces", json!({"name":"Other"}))
+        .await;
+    assert_eq!(
+        f.request(
+            &f.admin,
+            "GET",
+            &format!(
+                "/workspaces/{}/file-actions/deleted",
+                other["id"].as_str().unwrap()
+            ),
+            Value::Null
+        )
+        .await
+        .1,
+        json!({"items":[]})
+    );
+    assert_eq!(
+        f.request(
+            &f.alice,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":second,"targetPath":"Leaked.md"})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let (status, result) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":second}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let (_, remaining) = f.request(&f.admin, "GET", &endpoint, Value::Null).await;
+    assert_eq!(remaining["items"], json!([list["items"][1]]));
+}
+
+#[tokio::test]
+async fn recently_deleted_restores_a_tree_elsewhere_and_resumes_after_interruption() {
+    let mut f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let root = f.folder(&w);
+    let id = f.document(&f.admin, ws, "field/Note.md").await["id"].clone();
+    fs::create_dir_all(root.join("field/empty")).unwrap();
+    let op = "05d99b8b-ed6c-4311-9fd8-995c994df8f0";
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"field","sourceKind":"folder"}),
+        op,
+    )
+    .await;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["log", "-1", "--format=%H", "HEAD^", "--", "field/Note.md"])
+        .output()
+        .unwrap();
+    let old_commit = String::from_utf8(output.stdout).unwrap().trim().to_string();
+    let (status, replacement) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({"path":"field/Note.md","markdown":"replacement","baseRevision":null}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{replacement}");
+    let other = replacement["documentId"].clone();
+    let route = format!("/workspaces/{ws}/file-actions/undo");
+    for (value, status) in [
+        (json!({"operationId":op}), StatusCode::CONFLICT),
+        (
+            json!({"operationId":op,"targetPath":"../bad"}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    ] {
+        assert_eq!(f.request(&f.admin, "POST", &route, value).await.0, status);
+    }
+    fs::create_dir(root.join("recovered")).unwrap();
+    let input = json!({"operationId":op,"targetPath":"recovered/original"});
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER interrupt_mapped_restore BEFORE UPDATE OF status ON workspace_file_actions
+        WHEN NEW.status='undone' BEGIN SELECT RAISE(FAIL,'stop before identity commit'); END;",
+    )
+    .unwrap();
+    let (status, body) = f.request(&f.admin, "POST", &route, input.clone()).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    db.execute_batch("DROP TRIGGER interrupt_mapped_restore")
+        .unwrap();
+    drop(db);
+    f.restart();
+    let (status, receipt) = f.request(&f.admin, "POST", &route, input).await;
+    assert_eq!(status, StatusCode::OK, "{receipt}");
+    assert_eq!(receipt["path"], "recovered/original");
+    assert_eq!(
+        f.document(&f.admin, ws, "recovered/original/Note.md").await["id"],
+        id
+    );
+    assert_eq!(f.document(&f.admin, ws, "field/Note.md").await["id"], other);
+    assert_eq!(
+        fs::read(root.join("field/Note.md")).unwrap(),
+        b"replacement"
+    );
+    assert_eq!(
+        fs::read(root.join("recovered/original/Note.outline.md")).unwrap(),
+        OUTLINE.as_bytes()
+    );
+    assert_eq!(
+        fs::read(root.join("recovered/original/media/bird.png")).unwrap(),
+        PHOTO
+    );
+    assert!(root.join("recovered/original/empty").is_dir());
+    let (status, diff) = f
+        .request(
+            &f.admin,
+            "GET",
+            &format!(
+                "/documents/{}/revisions/{old_commit}/diff",
+                id.as_str().unwrap()
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{diff}");
+    assert_eq!(diff["markdown"], NOTE);
+    assert_eq!(
+        f.request(
+            &f.admin,
+            "POST",
+            &route,
+            json!({"operationId":op,"targetPath":"another"})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert!(!root.join("another").exists());
+}
+
+#[tokio::test]
+async fn recently_deleted_can_restore_a_document_under_a_new_name_with_outline() {
+    let f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let id = f.document(&f.admin, ws, "field/Note.md").await["id"].clone();
+    let op = "8b03fc60-e24c-4718-bd87-8b60fe41fbf6";
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"field/Note.md","sourceKind":"document"}),
+        op,
+    )
+    .await;
+    let route = format!("/workspaces/{ws}/file-actions/undo");
+    fs::write(
+        f.folder(&w).join("Restored.outline.md"),
+        "unrelated outline",
+    )
+    .unwrap();
+    assert_eq!(
+        f.request(
+            &f.admin,
+            "POST",
+            &route,
+            json!({"operationId":op,"targetPath":"Restored.md"})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (status, body) = f
+        .request(
+            &f.admin,
+            "POST",
+            &route,
+            json!({"operationId":op,"targetPath":"Different.md"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["documentId"], id);
+    assert_eq!(body["path"], "Different.md");
+    assert_eq!(
+        fs::read(f.folder(&w).join("Different.md")).unwrap(),
+        NOTE.as_bytes()
+    );
+    assert_eq!(
+        fs::read(f.folder(&w).join("Different.outline.md")).unwrap(),
+        OUTLINE.as_bytes()
+    );
+    assert_eq!(
+        fs::read(f.folder(&w).join("Restored.outline.md")).unwrap(),
+        b"unrelated outline"
+    );
+}
+
+#[tokio::test]
+async fn recently_deleted_unpublished_restore_can_be_retried_without_restart() {
+    let f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let route = format!("/workspaces/{ws}/file-actions");
+    let op = "14bf487a-bd6f-41d7-8c87-04222c77c7c1";
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"Legacy.md","sourceKind":"document"}),
+        op,
+    )
+    .await;
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch("CREATE TRIGGER fail_restore BEFORE INSERT ON mutations BEGIN SELECT RAISE(FAIL,'cannot begin transaction'); END;").unwrap();
+    let (status, body) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":op,"targetPath":"First.md"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    db.execute_batch("DROP TRIGGER fail_restore").unwrap();
+    let (status, list) = f
+        .request(&f.admin, "GET", &format!("{route}/deleted"), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["items"][0]["operationId"], op);
+    let (status, body) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":op,"targetPath":"Retry.md"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["path"], "Retry.md");
+    assert!(!f.folder(&w).join("First.md").exists());
+}
+
+#[tokio::test]
+async fn recently_deleted_orders_by_completed_deletion_after_a_retry() {
+    let f = Fixture::open();
+    let ws = f.legacy().await["id"].as_str().unwrap().to_owned();
+    let route = format!("/workspaces/{ws}/file-actions");
+    let later = "ef8328f3-bcfd-4124-8ed7-6bfc194fcbbf";
+    let earlier = "5c26e707-2d4c-41c2-8000-9c79a518c17f";
+    let mut intent = json!({"action":"delete","sourcePath":"Legacy.md","sourceKind":"document"});
+    let (_, p) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/preview"),
+            intent.clone(),
+        )
+        .await;
+    intent["operationId"] = json!(later);
+    intent["token"] = p["token"].clone();
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch("CREATE TRIGGER stop_first BEFORE INSERT ON mutations BEGIN SELECT RAISE(FAIL,'before first write'); END;").unwrap();
+    assert_eq!(
+        f.request(&f.admin, "POST", &format!("{route}/apply"), intent.clone())
+            .await
+            .0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    db.execute_batch("DROP TRIGGER stop_first").unwrap();
+    f.file_action(
+        &ws,
+        &json!({"action":"delete","sourcePath":"field","sourceKind":"folder"}),
+        earlier,
+    )
+    .await;
+    let (status, r) = f
+        .request(&f.admin, "POST", &format!("{route}/apply"), intent)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{r}");
+    let (_, list) = f
+        .request(&f.admin, "GET", &format!("{route}/deleted"), Value::Null)
+        .await;
+    assert_eq!(list["items"][0]["operationId"], later, "{list}");
+}
+
+#[tokio::test]
+async fn recently_deleted_can_change_location_after_parent_removed_or_replaced() {
+    let f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let op = "c0fdf239-91f5-4090-bac7-ad0d349d00cd";
+    let (_, doc) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({"path":"parent/child/Original.md","markdown":NOTE,"baseRevision":null}),
+        )
+        .await;
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"parent/child/Original.md","sourceKind":"document"}),
+        op,
+    )
+    .await;
+    let root = f.folder(&w);
+    fs::remove_dir(root.join("parent/child")).unwrap();
+    fs::remove_dir(root.join("parent")).unwrap();
+    let route = format!("/workspaces/{ws}/file-actions/undo");
+    let (status, missing) = f
+        .request(&f.admin, "POST", &route, json!({"operationId":op}))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{missing}");
+    assert_eq!(missing["code"], "restore_location_unavailable");
+    fs::write(root.join("parent"), "another file").unwrap();
+    let (status, blocked) = f
+        .request(&f.admin, "POST", &route, json!({"operationId":op}))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{blocked}");
+    assert_eq!(blocked["code"], "path_exists");
+    let (status, moved) = f
+        .request(
+            &f.admin,
+            "POST",
+            &route,
+            json!({"operationId":op,"targetPath":"other.md"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{moved}");
+    assert_eq!(moved["documentId"], doc["documentId"]);
+    assert_eq!(fs::read(root.join("parent")).unwrap(), b"another file");
+}
+
+#[tokio::test]
+async fn recently_deleted_upgrades_older_receipts_and_relocates_an_empty_folder() {
+    let mut f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let root = f.folder(&w);
+    let op = "0dd23c36-d464-425a-9206-5346bc8991e5";
+    fs::create_dir_all(root.join("archive/empty/nested")).unwrap();
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"archive","sourceKind":"folder"}),
+        op,
+    )
+    .await;
+    f.app = Router::new();
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch("DROP TABLE completed_file_deletions; ALTER TABLE restored_document_history DROP COLUMN restore_path;").unwrap();
+    drop(db);
+    f.restart();
+    let base = format!("/workspaces/{ws}/file-actions");
+    let (status, list) = f
+        .request(&f.admin, "GET", &format!("{base}/deleted"), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(
+        list,
+        json!({"items":[{"operationId":op,"sourceKind":"folder","path":"archive","fileCount":0}]})
+    );
+    fs::write(root.join("archive"), "new occupant").unwrap();
+    let input = json!({"operationId":op,"targetPath":"recovered"});
+    for _ in 0..2 {
+        let (status, r) = f
+            .request(&f.admin, "POST", &format!("{base}/undo"), input.clone())
+            .await;
+        assert_eq!(status, StatusCode::OK, "{r}");
+        assert_eq!(r["path"], "recovered");
+    }
+    assert!(root.join("recovered/empty/nested").is_dir());
+    assert_eq!(fs::read(root.join("archive")).unwrap(), b"new occupant");
+}
+
+#[tokio::test]
+async fn recently_deleted_recovery_checks_empty_tree_parent_and_legacy_receipts() {
+    for scenario in [
+        "missing",
+        "replaced",
+        "legacy-staged",
+        "legacy-published",
+        "unchanged",
+        "unrecorded",
+    ] {
+        let mut f = Fixture::open();
+        let w = f.legacy().await;
+        let ws = w["id"].as_str().unwrap();
+        let root = f.folder(&w);
+        let op = "589f6faa-7532-465d-8d6c-1ba2265cf91c";
+        let route = format!("/workspaces/{ws}/file-actions");
+        fs::create_dir_all(root.join("original/empty")).unwrap();
+        fs::create_dir(root.join("selected")).unwrap();
+        f.file_action(
+            ws,
+            &json!({"action":"delete","sourcePath":"original","sourceKind":"folder"}),
+            op,
+        )
+        .await;
+        let db =
+            rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+        db.execute_batch("CREATE TRIGGER interrupt_restore BEFORE UPDATE OF status ON workspace_file_actions WHEN NEW.status='undone'
+                          BEGIN SELECT RAISE(FAIL,'interrupt before metadata commit'); END;").unwrap();
+        let (status, body) = f
+            .request(
+                &f.admin,
+                "POST",
+                &format!("{route}/undo"),
+                json!({"operationId":op,"targetPath":"selected/result"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        f.app = Router::new();
+        db.execute_batch("DROP TRIGGER interrupt_restore").unwrap();
+        let step: String = db
+            .query_row(
+                "SELECT json_extract(plan,'$.undo_step') FROM workspace_file_actions WHERE operation_id=?",
+                [op],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let stage = root.join(format!(".librarian-directory-{step}"));
+        if scenario != "legacy-published" {
+            // Reconstruct the state before publishing the staged tree.
+            fs::rename(root.join("selected/result"), &stage).unwrap();
+        }
+        match scenario {
+            "legacy-staged" | "legacy-published" => {
+                db.execute(
+                    "UPDATE workspace_file_actions SET plan=json_remove(plan,'$.restore_parent') WHERE operation_id=?",
+                    [op],
+                )
+                .unwrap();
+            }
+            "missing" | "replaced" => {
+                fs::rename(root.join("selected"), root.join("former-parent")).unwrap();
+                if scenario == "replaced" {
+                    fs::create_dir(root.join("selected")).unwrap();
+                    fs::write(root.join("selected/keep.bin"), b"external").unwrap();
+                }
+            }
+            "unrecorded" => {
+                db.execute("DELETE FROM empty_directory_steps WHERE id=?", [&step])
+                    .unwrap();
+            }
+            _ => {}
+        }
+        drop(db);
+        f.restart();
+        if matches!(scenario, "legacy-published" | "unchanged") {
+            assert!(root.join("selected/result/empty").is_dir(), "{scenario}");
+            assert!(!stage.exists(), "{scenario}");
+            let (status, result) = f
+                .request(
+                    &f.admin,
+                    "POST",
+                    &format!("{route}/undo"),
+                    json!({"operationId":op,"targetPath":"selected/result"}),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{scenario}: {result}");
+            continue;
+        }
+        assert!(!root.join("selected/result").exists(), "{scenario}");
+        assert_eq!(stage.exists(), scenario == "unrecorded", "{scenario}");
+        if scenario == "replaced" {
+            assert_eq!(
+                fs::read(root.join("selected/keep.bin")).unwrap(),
+                b"external"
+            );
+        }
+        let (status, list) = f
+            .request(&f.admin, "GET", &format!("{route}/deleted"), Value::Null)
+            .await;
+        assert_eq!(status, StatusCode::OK, "{list}");
+        assert_eq!(list["items"][0]["operationId"], op, "{scenario}");
+        let (status, result) = f
+            .request(
+                &f.admin,
+                "POST",
+                &format!("{route}/undo"),
+                json!({"operationId":op,"targetPath":"available"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{scenario}: {result}");
+        assert!(root.join("available/empty").is_dir());
+    }
+}
+
+#[tokio::test]
+async fn recently_deleted_recovery_preserves_a_file_replacing_an_empty_subfolder() {
+    let mut f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let root = f.folder(&w);
+    let op = "9eb5fe3f-6c64-4036-89ab-6bf6bc95e6c5";
+    let route = format!("/workspaces/{ws}/file-actions");
+    fs::create_dir(root.join("field/empty")).unwrap();
+    let original = f.document(&f.admin, ws, "field/Note.md").await["id"].clone();
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"field","sourceKind":"folder"}),
+        op,
+    )
+    .await;
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch("CREATE TRIGGER interrupt_restore BEFORE UPDATE OF status ON workspace_file_actions WHEN NEW.status='undone'
+                      BEGIN SELECT RAISE(FAIL,'interrupt before metadata commit'); END;").unwrap();
+    let (status, r) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":op,"targetPath":"first"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{r}");
+    f.app = Router::new();
+    fs::remove_dir(root.join("first/empty")).unwrap();
+    fs::write(root.join("first/empty"), b"external").unwrap();
+    db.execute_batch("DROP TRIGGER interrupt_restore").unwrap();
+    drop(db);
+    f.restart();
+    assert_eq!(fs::read(root.join("first/empty")).unwrap(), b"external");
+    let (status, r) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":op,"targetPath":"second"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{r}");
+    assert_eq!(
+        f.document(&f.admin, ws, "second/Note.md").await["id"],
+        original
+    );
+    assert!(root.join("second/empty").is_dir());
+}
+
+#[tokio::test]
+async fn recently_deleted_recovery_preserves_matching_external_bytes_before_git_publication() {
+    let mut f = Fixture::open();
+    let w = f.legacy().await;
+    let ws = w["id"].as_str().unwrap();
+    let root = f.folder(&w);
+    let op = "1a89ed83-f81f-488c-ae14-2b531d9c6c78";
+    let route = format!("/workspaces/{ws}/file-actions");
+    let original = f.document(&f.admin, ws, "Legacy.md").await["id"].clone();
+    let contents = fs::read(root.join("Legacy.md")).unwrap();
+    fs::create_dir(root.join("selected")).unwrap();
+    f.file_action(
+        ws,
+        &json!({"action":"delete","sourcePath":"Legacy.md","sourceKind":"document"}),
+        op,
+    )
+    .await;
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch("CREATE TRIGGER interrupt_write BEFORE UPDATE OF state ON mutations WHEN NEW.state='committed'
+                      BEGIN SELECT RAISE(FAIL,'leave pending write'); END;").unwrap();
+    let (status, r) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":op,"targetPath":"selected/result.md"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{r}");
+    f.app = Router::new();
+    db.execute_batch("DROP TRIGGER interrupt_write").unwrap();
+    drop(db);
+    // Reconstruct a crash after the file write, before Git publication.
+    let reset = Command::new("git")
+        .current_dir(&root)
+        .args(["reset", "--mixed", "HEAD^"])
+        .output()
+        .unwrap();
+    assert!(reset.status.success(), "{reset:?}");
+    fs::rename(root.join("selected"), root.join("previous-parent")).unwrap();
+    fs::create_dir(root.join("selected")).unwrap();
+    fs::write(root.join("selected/result.md"), &contents).unwrap();
+    f.restart();
+    assert_eq!(fs::read(root.join("selected/result.md")).unwrap(), contents);
+    let (status, r) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("{route}/undo"),
+            json!({"operationId":op,"targetPath":"restored.md"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{r}");
+    assert_eq!(
+        f.document(&f.admin, ws, "restored.md").await["id"],
+        original
+    );
+    assert_ne!(
+        f.document(&f.admin, ws, "selected/result.md").await["id"],
+        original
+    );
+}

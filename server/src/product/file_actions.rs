@@ -87,6 +87,21 @@ pub(super) struct Apply {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Undo {
     operation_id: String,
+    target_path: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeletedItem {
+    operation_id: String,
+    path: String,
+    source_kind: Kind,
+    file_count: i64,
+}
+
+#[derive(Serialize)]
+struct DeletedList {
+    items: Vec<DeletedItem>,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -131,6 +146,7 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         )
         .route("/workspaces/{workspace}/file-actions/apply", post(apply))
         .route("/workspaces/{workspace}/file-actions/undo", post(undo))
+        .route("/workspaces/{workspace}/file-actions/deleted", get(deleted))
 }
 
 struct Scope<'a> {
@@ -441,6 +457,24 @@ pub(super) fn apply_action(
     )
 }
 
+async fn deleted(
+    State(service): State<Arc<DocumentService>>,
+    RoutePath(workspace): RoutePath<String>,
+    headers: HeaderMap,
+) -> Result<Json<DeletedList>, ApiError> {
+    run(move || {
+        let _guard = service.metadata.workspace_guard()?;
+        let account = Account::authenticate(&service.spaces, &headers, false)?;
+        let scope = Scope::open(&service, &account, &workspace, true)?;
+        scope.managed()?;
+        let _read = product_read(state(&scope.instance)?)?;
+        let items = storage::deleted(&service.metadata, account.username(), &workspace)?;
+        Ok(DeletedList { items })
+    })
+    .await
+    .map(Json)
+}
+
 async fn undo(
     State(service): State<Arc<DocumentService>>,
     RoutePath(workspace): RoutePath<String>,
@@ -459,6 +493,7 @@ async fn undo(
             account.username(),
             &scope.endpoint()?,
             &request.operation_id,
+            request.target_path.as_deref(),
         )
     })
     .await

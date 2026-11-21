@@ -208,3 +208,35 @@
   animation-duration: 0s;
   transition-duration: 0s;
 }
+
+.reader-searchable-menu {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reader-searchable-menu [role="listbox"] {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.reader-picker-search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  min-block-size: var(--control-height);
+  padding-inline: 0.5rem;
+  border-block-end: 1px solid var(--border);
+  color: var(--ink-secondary);
+}
+
+.reader-picker-search input {
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: var(--control-height);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}

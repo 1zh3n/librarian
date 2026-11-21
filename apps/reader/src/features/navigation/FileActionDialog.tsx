@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   ApiError,
@@ -8,18 +8,20 @@ import {
   type Workspace,
 } from "../../api/client";
 import { operationId } from "../../api/operationId";
-import { workspacesQuery } from "../../api/queries";
+import { documentsQuery, workspacesQuery } from "../../api/queries";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { Feedback } from "../../ui/Feedback";
 import { Field, Select } from "../../ui/Forms";
-import { CreateFolderForm } from "./CreateFolderForm";
+import { FolderPicker } from "./FolderPicker";
 import {
   accessMessage,
   actionError,
   canReceiveFiles,
+  fileActionName,
   foldersQuery,
   joinPath,
+  availableCopyName,
   parentPath,
   validFolderName,
   type DirectoryCommand,
@@ -58,7 +60,7 @@ export function FileActionDialog({
   const filename = source.path.split("/").at(-1) ?? source.path;
   const [name, setName] = useState(filename);
   const nameField = useRef<HTMLInputElement>(null);
-  const newFolderButton = useRef<HTMLButtonElement>(null);
+  const [customName, setCustomName] = useState<string>();
   useEffect(() => {
     if (action === "renameFolder") {
       nameField.current?.focus();
@@ -66,9 +68,22 @@ export function FileActionDialog({
     }
   }, [action]);
   const [adding, setAdding] = useState(false);
-  const folderList = useQuery({ ...foldersQuery(space), enabled: transfer && Boolean(space) });
-  const paths = new Set(folderList.data?.folders);
-  if (folder) paths.add(folder);
+  const sameParent = space === source.workspace.id && folder === parentPath(source.path);
+  const suggestSiblingName = action === "copy" && sameParent && customName === undefined;
+  const occupied = useMemo(() => {
+    if (!suggestSiblingName) return new Set<string>();
+    return new Set([
+      ...(client.getQueryData(documentsQuery(space).queryKey) ?? []).map((doc) => doc.path),
+      ...(client.getQueryData(foldersQuery(space).queryKey)?.folders ?? []),
+    ]);
+  }, [client, space, suggestSiblingName]);
+  const suggestion = suggestSiblingName
+    ? availableCopyName(filename, source.kind, folder, occupied)
+    : undefined;
+  const initialName = suggestion?.name ?? filename;
+  const copyName = customName === undefined ? initialName : fileActionName(customName, source.kind);
+  const targetName =
+    action === "copy" ? (copyName ?? "") : action === "renameFolder" ? name.trim() : filename;
   const request: FileActionRequest = {
     action: action === "renameFolder" ? "move" : action,
     sourcePath: source.path,
@@ -77,7 +92,7 @@ export function FileActionDialog({
     ...(source.folderId && { expectedFolderId: source.folderId }),
     ...(action !== "delete" && {
       targetWorkspace: space,
-      targetPath: joinPath(folder, action === "renameFolder" ? name.trim() : filename),
+      targetPath: joinPath(folder, targetName),
     }),
   };
   const inside =
@@ -85,7 +100,8 @@ export function FileActionDialog({
     source.kind === "folder" &&
     (folder === source.path || folder.startsWith(source.path + "/"));
   const same = space === source.workspace.id && source.path === request.targetPath;
-  const validName = action !== "renameFolder" || validFolderName(name);
+  const validName =
+    action === "copy" ? Boolean(copyName) : action !== "renameFolder" || validFolderName(name);
   const canPreview =
     action === "delete" ||
     (Boolean(space) &&
@@ -94,11 +110,33 @@ export function FileActionDialog({
       validName &&
       (!transfer || destinations.some((item) => item.id === space)));
   const preview = useQuery({
-    queryKey: ["file-action-preview", source.workspace.id, request],
+    queryKey: ["file-action-preview", source.workspace.id, request, suggestSiblingName],
     queryFn: async ({ signal }) => {
       await prepareSource();
       signal.throwIfAborted();
-      return api.previewFileAction(source.workspace.id, request, signal);
+      let candidate = request;
+      let suggested = suggestion;
+      for (;;) {
+        try {
+          return {
+            ...(await api.previewFileAction(source.workspace.id, candidate, signal)),
+            request: candidate,
+          };
+        } catch (error) {
+          // The server can see attachments, orphaned outlines and concurrent files missing from the tree.
+          if (!suggested || !(error instanceof ApiError && error.code === "path_exists"))
+            throw error;
+          signal.throwIfAborted();
+          suggested = availableCopyName(
+            filename,
+            source.kind,
+            folder,
+            occupied,
+            suggested.ordinal + 1,
+          );
+          candidate = { ...request, targetPath: joinPath(folder, suggested.name) };
+        }
+      }
     },
     enabled: canPreview && action !== "renameFolder",
     retry: false,
@@ -117,7 +155,11 @@ export function FileActionDialog({
       if (!payload) {
         const checked = await preview.refetch({ cancelRefetch: false });
         if (!checked.data || checked.error) throw checked.error ?? new Error("Preview unavailable");
-        payload = { ...request, token: checked.data.token, operationId: operationId() };
+        payload = {
+          ...checked.data.request,
+          token: checked.data.token,
+          operationId: operationId(),
+        };
       }
       attempt.current = payload;
       try {
@@ -172,7 +214,7 @@ export function FileActionDialog({
       attempt.current ??
       (preview.data
         ? {
-            ...request,
+            ...preview.data.request,
             token: preview.data.token,
             operationId: operationId(),
           }
@@ -202,46 +244,28 @@ export function FileActionDialog({
                 setFolder("");
               }}
             />
-            <Select
-              label="目标目录"
-              value={folder || "/"}
-              disabled={busy || adding || !folderList.isSuccess}
-              entries={[
-                { value: "/", label: "根目录" },
-                ...[...paths].map((path) => ({ value: path, label: path })),
-              ]}
-              onChange={(value) => {
+            <FolderPicker
+              workspace={space}
+              value={folder}
+              disabled={busy}
+              creating={adding}
+              onCreatingChange={setAdding}
+              onChange={(path) => {
                 clearAttempt();
-                setFolder(value === "/" ? "" : value);
+                setFolder(path);
               }}
             />
-            {folderList.isError && (
-              <Feedback tone="error" className={styles.error}>
-                无法加载目录。<Button onPress={() => void folderList.refetch()}>重试</Button>
-              </Feedback>
-            )}
-            {!adding && (
-              <Button
-                ref={newFolderButton}
-                className={styles.newFolder}
-                isDisabled={busy || !folderList.isSuccess}
-                onPress={() => setAdding(true)}
-              >
-                新建文件夹
-              </Button>
-            )}
-            {adding && (
-              <CreateFolderForm
-                workspace={space}
-                parent={folder}
-                close={() => {
-                  setAdding(false);
-                  requestAnimationFrame(() => newFolderButton.current?.focus());
-                }}
-                created={(path) => {
+            {action === "copy" && !adding && (
+              <Field
+                label="副本名称"
+                value={
+                  customName ?? preview.data?.request.targetPath?.split("/").at(-1) ?? initialName
+                }
+                readOnly={busy}
+                required
+                onChange={(value) => {
                   clearAttempt();
-                  setFolder(path);
-                  setAdding(false);
+                  setCustomName(value);
                 }}
               />
             )}
@@ -268,12 +292,16 @@ export function FileActionDialog({
         )}
         {transfer && !adding && (inside || same) && (
           <p className={styles.location}>
-            {inside ? "请选择此文件夹及其子目录以外的位置。" : "请选择其他目录，或新建目标文件夹。"}
+            {inside
+              ? "请选择此文件夹及其子目录以外的位置。"
+              : action === "copy"
+                ? "请修改副本名称，或选择其他目录。"
+                : "请选择其他目录，或新建目标文件夹。"}
           </p>
         )}
         {!validName && (
           <Feedback tone="error" className={styles.error}>
-            请输入有效的文件夹名称。
+            {action === "copy" ? "请输入有效的副本名称。" : "请输入有效的文件夹名称。"}
           </Feedback>
         )}
         {action === "delete" && preview.data && (

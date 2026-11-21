@@ -24,6 +24,10 @@ function focusWorkspaceName(input: HTMLInputElement | null) {
   input?.focus();
 }
 
+function isFutureDate(value: string) {
+  return new Date(value).getTime() > Date.now();
+}
+
 export function WorkspaceEditor({
   current,
   onCreated,
@@ -43,6 +47,12 @@ export function WorkspaceEditor({
   const expiryDescription = useId();
   const [advanced, setAdvanced] = useState(false);
   const temporary = origin === "delivery" && retention === "temporary";
+  const expiration = temporary
+    ? current?.expiresAt != null && expires === formatLocalDate(current.expiresAt)
+      ? current.expiresAt
+      : Math.floor(new Date(expires).getTime() / 1_000)
+    : null;
+  const showExpiryError = temporary && expiryError;
 
   const save = useMutation({
     mutationFn: (body: WorkspaceSettings) =>
@@ -64,12 +74,13 @@ export function WorkspaceEditor({
     requestAnimationFrame(() => expiryField.current?.focus());
   }
 
-  const saved = save.data;
-  const matchesSaved =
-    saved &&
-    name === saved.name &&
-    retention === saved.retention &&
-    (!temporary || expires === formatLocalDate(saved.expiresAt));
+  const unchanged =
+    current &&
+    name.trim() === current.name &&
+    (origin !== "delivery" || retention === current.retention) &&
+    (!temporary || expires === formatLocalDate(current.expiresAt));
+  const canSave =
+    Boolean(name.trim()) && !unchanged && !save.isPending && !(current && showExpiryError);
 
   const retentionFields = origin === "delivery" && (
     <>
@@ -79,7 +90,7 @@ export function WorkspaceEditor({
         entries={retentions}
         onChange={(value) => {
           setRetention(value);
-          setExpiryError(false);
+          setExpiryError(Boolean(current) && value === "temporary" && !isFutureDate(expires));
         }}
       />
       {temporary && (
@@ -89,10 +100,10 @@ export function WorkspaceEditor({
           value={expires}
           ref={expiryField}
           onInvalid={revealInvalidExpiry}
-          {...(expiryError && { invalid: true, "aria-describedby": expiryDescription })}
+          {...(showExpiryError && { invalid: true, "aria-describedby": expiryDescription })}
           onChange={(value) => {
             setExpires(value);
-            setExpiryError(false);
+            setExpiryError(Boolean(current) && !isFutureDate(value));
           }}
           required
         />
@@ -106,8 +117,7 @@ export function WorkspaceEditor({
       aria-label={current ? "空间设置" : "新建空间"}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!name.trim() || save.isPending) return;
-        const expiration = temporary ? Math.floor(new Date(expires).getTime() / 1_000) : null;
+        if (!canSave) return;
         if (expiration !== null && !(expiration > Date.now() / 1_000)) {
           revealInvalidExpiry();
           return;
@@ -151,7 +161,7 @@ export function WorkspaceEditor({
           </div>
         </Disclosure>
       )}
-      {temporary && expiryError && (
+      {showExpiryError && (
         <Feedback id={expiryDescription} tone="error" className={styles.status}>
           {expires ? "到期时间必须晚于现在。" : "请填写到期时间。"}
         </Feedback>
@@ -163,7 +173,7 @@ export function WorkspaceEditor({
             : "无法保存空间设置。"}
         </Feedback>
       )}
-      {matchesSaved && current && (
+      {save.isSuccess && unchanged && (
         <Feedback tone="success" className={styles.status}>
           空间设置已保存
         </Feedback>
@@ -173,7 +183,7 @@ export function WorkspaceEditor({
         className={styles.formAction}
         type="submit"
         loading={save.isPending}
-        isDisabled={!name.trim()}
+        isDisabled={!canSave}
       >
         {save.isPending ? "正在保存…" : current ? "保存空间设置" : "创建空间"}
       </Button>

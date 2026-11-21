@@ -204,10 +204,33 @@ test("manages a local account and applies Workspace membership through Reader", 
       "true",
     );
     await member.getByRole("button", { name: "编辑权限" }).click();
+    await expect(panel.getByRole("button", { name: "保存成员" })).toBeDisabled();
     await panel.getByRole("button", { name: /阅读.*权限|权限.*阅读/ }).click();
     await page.getByRole("option", { name: "编辑", exact: true }).click();
+    const memberRequest = page.waitForRequest(
+      (request) => request.method() === "PUT" && request.url().includes("/members/"),
+    );
+    let release = () => {};
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      `**/members/${username}`,
+      async (route) => {
+        await hold;
+        await route.continue();
+      },
+      { times: 1 },
+    );
     await panel.getByRole("button", { name: "保存成员" }).click();
+    try {
+      await memberRequest;
+      await panel.getByLabel("成员用户名").fill("下一位成员");
+    } finally {
+      release();
+    }
     await expect(member).toContainText("编辑");
+    await expect(panel.getByLabel("成员用户名")).toHaveValue("下一位成员");
     const writable = (await (
       await memberPage.request.get("/api/v1/workspaces")
     ).json()) as Workspace[];

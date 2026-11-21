@@ -74,3 +74,9 @@
 | 在 320 px 屏幕将字号放大到 200% 后创建文档 | 输入框完整落在弹窗内。操作区按可用宽度换行，「创建文档」四个字保持在同一行，点按后焦点进入 Markdown 编辑器。 | [改前大字](evidence/reader-controls/before-zoom-create.png) · [改后大字](evidence/reader-controls/after-zoom-create.png) |
 
 219 项产品浏览器用例通过，其中 3 项直接覆盖这次反馈。另有 83 项组件测试及 36 项编辑器浏览器用例通过。控件回归测量实际 SVG 和按钮的边界，并检查禁用、取消、保存反馈与新建后焦点。[控件布局浏览器用例](../../apps/reader/tests/e2e/document-control-layout.spec.ts)
+
+## 空间和成员设置的保存状态
+
+用现有空间复测了初次打开、编辑、改回原值、提交、失败重试与成功。名称两端的空格会在提交前去掉，只有空格变化时按钮仍禁用。临时空间的到期时间无效时，字段旁给出原因；单独改名称会保留原到期时间的秒数。服务端响应期间继续输入的空间名称、到期时间或下一位成员会保留。
+
+在 320 CSS px、200% 根字号下，原左右留白使「保存空间设置」换成两行。调整后按钮全文在一行内显示，保存反馈也在视口内。桌面和 390 px 触屏另测了禁用、可提交与已保存三种状态。[桌面可保存](evidence/directory-recovery/settings-desktop-edited.png) · [窄屏大字保存结果](evidence/directory-recovery/settings-large-saved.png) · [设置浏览器回归](../../apps/reader/tests/e2e/document-workspace-form.spec.ts)
