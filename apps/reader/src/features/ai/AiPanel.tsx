@@ -51,7 +51,7 @@ export function AiPanel({
 }) {
   const client = useQueryClient();
   const [prompt, setPromptState] = useState(
-    () => returnVisit?.draft ?? citationDraft?.read() ?? "",
+    () => citationDraft?.read() ?? returnVisit?.draft ?? "",
   );
   function setPrompt(value: string) {
     citationDraft?.update(value);

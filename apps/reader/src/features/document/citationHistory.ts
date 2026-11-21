@@ -13,8 +13,8 @@ export type CitationDraft = {
   update: (value: string) => void;
 };
 
-function createDraft(): CitationDraft {
-  let text = "";
+function createDraft(initial: string): CitationDraft {
+  let text = initial;
   return {
     read: () => text,
     update: (value) => {
@@ -24,14 +24,13 @@ function createDraft(): CitationDraft {
 }
 
 export function trackCitationVisits(history: RouterHistory) {
-  const visits = new Map<
-    string,
-    {
-      source: SourceVisit;
-      destination: string;
-      draft: CitationDraft;
-    }
-  >();
+  const entries = new Map<string, { draft: CitationDraft; visit?: SourceVisit }>();
+  function remember(key: string, text: string, visit?: SourceVisit) {
+    entries.delete(key);
+    entries.set(key, { draft: createDraft(text), ...(visit && { visit }) });
+    const oldest = entries.keys().next();
+    if (entries.size > 100 && !oldest.done) entries.delete(oldest.value);
+  }
   let previous = history.location.state;
   let pending: { sourceId: string; capture: () => SourceVisit } | undefined;
   let returned: SourceVisit | undefined;
@@ -43,7 +42,8 @@ export function trackCitationVisits(history: RouterHistory) {
     const origin = previous.__TSR_key;
     returned = undefined;
     if (origin && (action.type === "PUSH" || action.type === "REPLACE")) {
-      visits.delete(origin);
+      const abandoned = entries.get(origin);
+      if (abandoned) delete abandoned.visit;
       if (
         action.type === "PUSH" &&
         next.__TSR_key &&
@@ -51,16 +51,12 @@ export function trackCitationVisits(history: RouterHistory) {
         next.readerCitationOrigin === origin &&
         next.readerCitation === pending.sourceId
       ) {
-        visits.set(origin, {
-          source: pending.capture(),
-          destination: next.__TSR_key,
-          draft: createDraft(),
-        });
-        const oldest = visits.keys().next();
-        if (visits.size > 50 && !oldest.done) visits.delete(oldest.value);
+        const visit = pending.capture();
+        remember(origin, visit.transcript.draft, visit);
+        remember(next.__TSR_key, "");
       }
     } else if (next.__TSR_key && next.__TSR_index < previous.__TSR_index) {
-      returned = visits.get(next.__TSR_key)?.source;
+      returned = entries.get(next.__TSR_key)?.visit;
     }
     previous = next;
     pending = undefined;
@@ -71,9 +67,7 @@ export function trackCitationVisits(history: RouterHistory) {
       pending = { sourceId, capture };
     },
     draft(entry: string | undefined) {
-      for (const trip of visits.values()) {
-        if (trip.destination === entry) return trip.draft;
-      }
+      return entry ? entries.get(entry)?.draft : undefined;
     },
     returned(entry: string | undefined) {
       return entry === previous.__TSR_key ? returned : undefined;
