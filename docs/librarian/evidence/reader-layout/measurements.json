@@ -1,0 +1,270 @@
+{
+  "passage-390": {
+    "original": 210.140625,
+    "afterEdit": 210.140625,
+    "inFocus": 210.140625,
+    "afterFocus": 210.140625,
+    "selection": "木桩边的水草微微摆动",
+    "withTool": 453.140625,
+    "paneBox": {
+      "x": 16,
+      "y": 246.140625,
+      "width": 358,
+      "height": 191
+    },
+    "afterClose": 210.140625,
+    "lines": {
+      "x": 16,
+      "y": 257.875,
+      "width": 358,
+      "height": 99.890625
+    },
+    "focusLines": {
+      "x": 16,
+      "y": 257.875,
+      "width": 358,
+      "height": 99.890625
+    }
+  },
+  "passage-1440": {
+    "original": 210.125,
+    "afterEdit": 210.125,
+    "inFocus": 210.125,
+    "afterFocus": 210.125,
+    "selection": "木桩边的水草微微摆动",
+    "withTool": 257.859375,
+    "paneBox": {
+      "x": 1041,
+      "y": 97,
+      "width": 336,
+      "height": 766
+    },
+    "afterClose": 210.125,
+    "lines": {
+      "x": 454.5,
+      "y": 257.859375,
+      "width": 756,
+      "height": 66.59375
+    },
+    "focusLines": {
+      "x": 334.5,
+      "y": 257.859375,
+      "width": 756,
+      "height": 66.59375
+    }
+  },
+  "snapshot": {
+    "currentLead": "本次回访补入的校勘",
+    "releaseLead": "晨雾还没有散去，我们在河口的旧石桥下汇合。上游几天前下过雨，水线比上一次高出两掌，沿岸的细沙留下了一圈深色的痕迹。",
+    "blockedSnapshotRequest": true,
+    "width": 360
+  },
+  "gray-light": {
+    "text": "rgb(0, 0, 0)",
+    "paper": "rgb(255, 255, 255)",
+    "underline": "underline",
+    "outline": "solid",
+    "outlineWidth": "2px",
+    "motion": 0,
+    "reducedMotion": true
+  },
+  "reflow-1440": {
+    "titleBox": {
+      "x": 454.5,
+      "y": 155,
+      "width": 756,
+      "height": 120.625
+    },
+    "titleLines": [
+      401.453125,
+      451.625
+    ],
+    "leadBox": {
+      "x": 454.5,
+      "y": 291.625,
+      "width": 735.296875,
+      "height": 65.75
+    },
+    "width": 1440,
+    "page": 1440,
+    "mainWidth": 1185,
+    "mainScrollWidth": 1185,
+    "articleWidth": 756,
+    "bodyFont": "18px",
+    "lineHeight": "33.3px",
+    "table": {
+      "width": 756,
+      "total": 2674,
+      "end": 1918
+    },
+    "code": {
+      "width": 754,
+      "total": 2463,
+      "end": 1709
+    },
+    "pageLeft": 0,
+    "mainLeft": 0
+  },
+  "reflow-360": {
+    "titleBox": {
+      "x": 16,
+      "y": 127,
+      "width": 328,
+      "height": 68.65625
+    },
+    "titleLines": [
+      228.46875,
+      257.03125
+    ],
+    "leadBox": {
+      "x": 16,
+      "y": 211.65625,
+      "width": 328,
+      "height": 131.5
+    },
+    "width": 360,
+    "page": 360,
+    "mainWidth": 360,
+    "mainScrollWidth": 360,
+    "articleWidth": 328,
+    "bodyFont": "18px",
+    "lineHeight": "33.3px",
+    "table": {
+      "width": 328,
+      "total": 2674,
+      "end": 2346
+    },
+    "code": {
+      "width": 326,
+      "total": 2463,
+      "end": 2137
+    },
+    "pageLeft": 0,
+    "mainLeft": 0
+  },
+  "reflow-390": {
+    "titleBox": {
+      "x": 16,
+      "y": 127,
+      "width": 358,
+      "height": 68.65625
+    },
+    "titleLines": [
+      228.46875,
+      257.03125
+    ],
+    "leadBox": {
+      "x": 16,
+      "y": 211.65625,
+      "width": 358,
+      "height": 131.5
+    },
+    "width": 390,
+    "page": 390,
+    "mainWidth": 390,
+    "mainScrollWidth": 390,
+    "articleWidth": 358,
+    "bodyFont": "18px",
+    "lineHeight": "33.3px",
+    "table": {
+      "width": 358,
+      "total": 2674,
+      "end": 2316
+    },
+    "code": {
+      "width": 356,
+      "total": 2463,
+      "end": 2107
+    },
+    "pageLeft": 0,
+    "mainLeft": 0
+  },
+  "gray-dark": {
+    "text": "rgb(255, 255, 255)",
+    "paper": "rgb(0, 0, 0)",
+    "underline": "underline",
+    "outline": "solid",
+    "outlineWidth": "2px",
+    "motion": 0,
+    "reducedMotion": true
+  },
+  "reflow-320": {
+    "titleBox": {
+      "x": 16,
+      "y": 127,
+      "width": 288,
+      "height": 68.65625
+    },
+    "titleLines": [
+      228.46875,
+      257.03125
+    ],
+    "leadBox": {
+      "x": 16,
+      "y": 211.65625,
+      "width": 288,
+      "height": 164.375
+    },
+    "width": 320,
+    "page": 320,
+    "mainWidth": 320,
+    "mainScrollWidth": 320,
+    "articleWidth": 288,
+    "bodyFont": "18px",
+    "lineHeight": "33.3px",
+    "table": {
+      "width": 288,
+      "total": 2674,
+      "end": 2386
+    },
+    "code": {
+      "width": 286,
+      "total": 2463,
+      "end": 2177
+    },
+    "pageLeft": 0,
+    "mainLeft": 0
+  },
+  "draft-return": {
+    "original": 210.125,
+    "afterSearch": 210.125,
+    "afterSettings": 210.125,
+    "focus": "ARTICLE",
+    "unsaved": "本地待核对"
+  },
+  "text-200": {
+    "before": {
+      "root": 16,
+      "body": 18,
+      "paragraphHeight": 131.5,
+      "pageWidth": 390,
+      "mainWidth": 375,
+      "mainScrollWidth": 375
+    },
+    "after": {
+      "root": 32,
+      "body": 36,
+      "paragraphHeight": 526.25,
+      "pageWidth": 390,
+      "mainWidth": 375,
+      "mainScrollWidth": 375
+    }
+  },
+  "font-baseline": {
+    "before": {
+      "root": 16,
+      "body": 18,
+      "paragraphHeight": 131.5,
+      "pageWidth": 390,
+      "mainWidth": 375
+    },
+    "after": {
+      "root": 32,
+      "body": 18,
+      "paragraphHeight": 131.5,
+      "pageWidth": 390,
+      "mainWidth": 375
+    }
+  },
+  "shellManifestSha256": "7fb2352c68e4be4826e83e39e6652b3e3c3182f9ab052f7b8c34029cb65c0a27"
+}
