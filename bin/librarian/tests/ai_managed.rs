@@ -16,6 +16,8 @@ use tower::ServiceExt;
 
 #[path = "fixtures/ai-materials/setup.rs"]
 mod config;
+#[path = "ai_managed/global_edits.rs"]
+mod global_edits;
 
 const V1: &str = "/ai/runner";
 const V2: &str = "/ai/runner/v2";
