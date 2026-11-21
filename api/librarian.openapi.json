@@ -5580,6 +5580,44 @@
           }
         }
       }
+    },
+    "/workspaces/{workspace}/file-actions/deleted": {
+      "get": {
+        "operationId": "listDeletedWorkspaceFileActions",
+        "description": "List restorable deletions by the current account in this managed workspace, most recent first. Requires write access.",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restorable deletions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedFileActions"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8817,6 +8855,10 @@
             "type": "string",
             "format": "uuid",
             "description": "Original deletion operation."
+          },
+          "targetPath": {
+            "type": "string",
+            "description": "Full workspace-relative destination to restore into. Omit to restore at the original path."
           }
         }
       },
@@ -8893,6 +8935,49 @@
           },
           "undoable": {
             "type": "boolean"
+          }
+        }
+      },
+      "DeletedFileAction": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "path",
+          "sourceKind",
+          "fileCount"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "document",
+              "folder"
+            ]
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "DeletedFileActions": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeletedFileAction"
+            }
           }
         }
       }

@@ -634,6 +634,12 @@ fn recover_pending(
         journal.finish(metadata, Some("committed"))?;
         return Ok(true);
     }
+    if journal.attempted > 0
+        && !super::file_actions::storage::undo_rollback_allowed(metadata, root, &journal.id)?
+    {
+        journal.finish(metadata, Some("conflict"))?;
+        return Err(recovery_conflict());
+    }
     let materials = metadata.operation_directory(&journal.id);
     let mut conflict = false;
     for (index, change) in journal

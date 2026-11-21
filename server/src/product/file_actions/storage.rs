@@ -50,6 +50,39 @@ impl Endpoint<'_> {
         mutations::current_bytes(self.root(), self.state.space.as_ref(), path)?.ok_or_else(changed)
     }
 
+    fn vacant_restore_path(&self, plan: &Plan) -> Result<(), ApiError> {
+        let path = plan.restore_root();
+        let folder = plan.input.source_kind == Kind::Folder;
+        if !super::visible_path(self.ignore, path, folder) {
+            return Err(ApiError::invalid(
+                "Choose a visible, safe relative workspace path",
+            ));
+        }
+        for (slash, _) in path.match_indices('/') {
+            match self.attr(&path[..slash]) {
+                Ok(Some(attr)) if attr.is_dir() => {}
+                Ok(None) if plan.restore_path.is_none() => {
+                    return Err(ApiError::new(
+                        StatusCode::CONFLICT,
+                        "restore_location_unavailable",
+                        "The original folder no longer exists. Choose another location.",
+                    ))
+                }
+                Ok(None) => return Err(changed()),
+                Ok(Some(_)) => return Err(path_exists()),
+                Err(e) if e.status() == StatusCode::NOT_FOUND => return Err(path_exists()),
+                Err(e) => return Err(e),
+            }
+        }
+        self.vacant(path, plan.input.source_kind).map_err(|error| {
+            if error.status() == StatusCode::NOT_FOUND {
+                path_exists()
+            } else {
+                error
+            }
+        })
+    }
+
     fn vacant(&self, path: &str, kind: Kind) -> Result<(), ApiError> {
         validate_path(self.state, self.ignore, path, kind == Kind::Folder)?;
         if self.attr(path)?.is_some() {
@@ -96,6 +129,50 @@ impl From<&fs::Metadata> for Identity {
             inode: metadata.ino(),
             birth: metadata.created().ok(),
         }
+    }
+}
+
+fn parent_identity(root: &Path, path: &str) -> Result<Identity, ApiError> {
+    let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+    crate::product::documents::check_native_path(root, parent)?;
+    match fs::symlink_metadata(root.join(parent)) {
+        Ok(attr) if attr.is_dir() => Ok(Identity::from(&attr)),
+        Ok(_) => Err(path_exists()),
+        Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            Err(changed())
+        }
+        Err(e) => Err(ApiError::internal(e)),
+    }
+}
+
+// A mutation may roll back uncommitted writes before the file action journal
+// is reconciled. Even identical bytes in a replacement parent belong to its owner.
+pub(in crate::product) fn undo_rollback_allowed(
+    metadata: &Metadata,
+    root: &Path,
+    step: &str,
+) -> Result<bool, ApiError> {
+    let saved: Option<String> = metadata.connection()?.query_row(
+        "SELECT plan FROM workspace_file_actions WHERE status='undoing' AND json_extract(plan,'$.undo_step')=?",
+        [step],
+        |row| row.get(0),
+    ).optional()?;
+    let Some(saved) = saved else { return Ok(true) };
+    let plan: Plan = serde_json::from_str(&saved).map_err(ApiError::internal)?;
+    let Some(expected) = &plan.restore_parent else {
+        return Ok(false);
+    };
+    match parent_identity(root, plan.restore_root()) {
+        Ok(found) => Ok(found == *expected),
+        Err(e)
+            if matches!(
+                e.code(),
+                "file_action_changed" | "path_exists" | "not_found"
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -242,10 +319,14 @@ fn source_tree(
 }
 
 fn destination(input: &Input, path: &str) -> String {
-    let Some(target) = &input.target_path else {
+    mapped_path(&input.source_path, input.target_path.as_deref(), path)
+}
+
+fn mapped_path(original: &str, target: Option<&str>, path: &str) -> String {
+    let Some(target) = target else {
         return path.to_owned();
     };
-    if let Some(tail) = path.strip_prefix(&input.source_path) {
+    if let Some(tail) = path.strip_prefix(original) {
         format!("{target}{tail}")
     } else {
         outline_path(target)
@@ -310,13 +391,26 @@ pub(in crate::product) fn migrate(tx: &rusqlite::Transaction<'_>) -> rusqlite::R
         "CREATE TABLE IF NOT EXISTS workspace_file_actions (
         operation_id TEXT PRIMARY KEY, account TEXT NOT NULL, workspace TEXT NOT NULL,
         token TEXT NOT NULL, plan TEXT NOT NULL, status TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS completed_file_deletions (
+            sequence INTEGER PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE REFERENCES workspace_file_actions(operation_id));
+        CREATE INDEX IF NOT EXISTS deleted_file_actions ON workspace_file_actions(workspace,account)
+            WHERE status='done' AND json_extract(plan,'$.input.action')='delete';
         CREATE TABLE IF NOT EXISTS file_action_outputs(step TEXT PRIMARY KEY, objects TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS empty_directory_steps(id TEXT PRIMARY KEY, object TEXT);
         CREATE TABLE IF NOT EXISTS restored_document_history (
             workspace TEXT NOT NULL, document TEXT NOT NULL, restore_commit TEXT NOT NULL,
             deletion_commit TEXT NOT NULL, path TEXT NOT NULL,
             UNIQUE(workspace,document,restore_commit));",
-    )
+    )?;
+    let has_restore_path: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('restored_document_history') WHERE name='restore_path')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_restore_path {
+        tx.execute_batch("ALTER TABLE restored_document_history ADD COLUMN restore_path TEXT")?;
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -327,6 +421,22 @@ struct Plan {
     source_step: String,
     target_step: String,
     undo_step: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    restore_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    restore_parent: Option<Identity>,
+}
+
+impl Plan {
+    fn restored_path(&self, path: &str) -> String {
+        mapped_path(&self.input.source_path, self.restore_path.as_deref(), path)
+    }
+
+    fn restore_root(&self) -> &str {
+        self.restore_path
+            .as_deref()
+            .unwrap_or(&self.input.source_path)
+    }
 }
 
 struct Intent {
@@ -382,11 +492,15 @@ impl Intent {
                 .as_ref()
                 .unwrap_or(&self.workspace)
                 .clone(),
-            path: input
-                .target_path
-                .as_ref()
-                .unwrap_or(&input.source_path)
-                .clone(),
+            path: if undo {
+                self.plan.restore_root().into()
+            } else {
+                input
+                    .target_path
+                    .as_ref()
+                    .unwrap_or(&input.source_path)
+                    .clone()
+            },
             document_id: doc,
             undoable: input.action == Action::Delete && !undo,
         }
@@ -463,6 +577,8 @@ pub(super) fn apply(
                     source_step: new_id(),
                     target_step: new_id(),
                     undo_step: new_id(),
+                    restore_path: None,
+                    restore_parent: None,
                 },
             };
             intent.save(metadata)?;
@@ -581,15 +697,29 @@ fn mutate(
     Ok(())
 }
 
-fn create_dirs(endpoint: &Endpoint<'_>, plan: &Plan, restoring: bool) -> Result<(), ApiError> {
+fn create_dirs(
+    endpoint: &Endpoint<'_>,
+    plan: &Plan,
+    restoring: bool,
+    can_create: bool,
+) -> Result<(), ApiError> {
     for dir in plan.inventory.dirs() {
         let path = if restoring {
-            dir.path.clone()
+            plan.restored_path(&dir.path)
         } else {
             destination(&plan.input, &dir.path)
         };
-        check_file_path(endpoint.state, &path)?;
-        fs::create_dir_all(endpoint.root().join(path)).map_err(ApiError::internal)?;
+        match endpoint.attr(&path)? {
+            Some(attr) if attr.is_dir() => continue,
+            Some(_) => return Err(path_exists()),
+            None if !can_create => return Err(changed()),
+            None => {}
+        }
+        fs::create_dir(endpoint.root().join(path)).map_err(|e| match e.kind() {
+            ErrorKind::AlreadyExists | ErrorKind::NotADirectory => path_exists(),
+            ErrorKind::NotFound => changed(),
+            _ => ApiError::internal(e),
+        })?;
     }
     Ok(())
 }
@@ -648,18 +778,23 @@ fn prepare_empty(
     Ok(())
 }
 
+fn empty_identity(metadata: &Metadata, step: &str) -> Result<Identity, ApiError> {
+    let object: String = metadata.connection()?.query_row(
+        "SELECT object FROM empty_directory_steps WHERE id=?",
+        [step],
+        |row| row.get(0),
+    )?;
+    serde_json::from_str(&object).map_err(ApiError::internal)
+}
+
 fn publish_empty(
     metadata: &Metadata,
     target: &Endpoint<'_>,
     step: &str,
     path: &str,
+    can_publish: bool,
 ) -> Result<(), ApiError> {
-    let object: String = metadata.connection()?.query_row(
-        "SELECT object FROM empty_directory_steps WHERE id=?",
-        [step],
-        |r| r.get(0),
-    )?;
-    let object: Identity = serde_json::from_str(&object).map_err(ApiError::internal)?;
+    let object = empty_identity(metadata, step)?;
     if let Some(attr) = target.attr(path)? {
         return if attr.is_dir() && Identity::from(&attr) == object {
             Ok(())
@@ -667,15 +802,25 @@ fn publish_empty(
             Err(path_exists())
         };
     }
+    if !can_publish {
+        return Err(changed());
+    }
     let stage = target.root().join(format!(".librarian-directory-{step}"));
-    let attr = fs::symlink_metadata(&stage).map_err(ApiError::internal)?;
+    let attr = target
+        .attr(&format!(".librarian-directory-{step}"))?
+        .ok_or_else(changed)?;
     if !attr.is_dir() || Identity::from(&attr) != object {
         return Err(changed());
     }
     crate::multi::migrate::execute::rename_no_replace(&stage, &target.root().join(path)).map_err(
         |e| {
-            if e.kind() == ErrorKind::AlreadyExists {
+            if matches!(
+                e.kind(),
+                ErrorKind::AlreadyExists | ErrorKind::NotADirectory
+            ) {
                 path_exists()
+            } else if e.kind() == ErrorKind::NotFound {
+                changed()
             } else {
                 ApiError::internal(e)
             }
@@ -705,7 +850,7 @@ fn verify_outputs(
             .collect();
     for item in plan.inventory.files() {
         let path = if restoring {
-            item.path.clone()
+            plan.restored_path(&item.path)
         } else {
             destination(&plan.input, &item.path)
         };
@@ -748,7 +893,11 @@ fn finish(metadata: &Metadata, intent: &Intent, undo: bool) -> Result<(), ApiErr
             .target_workspace
             .as_deref()
             .unwrap_or(&intent.workspace);
-        let dest = destination(&plan.input, &item.path);
+        let dest = if undo {
+            plan.restored_path(&item.path)
+        } else {
+            destination(&plan.input, &item.path)
+        };
         let affected = match (plan.input.action, undo) {
             (Action::Delete, false) => tx.execute(
                 "DELETE FROM documents WHERE id=? AND workspace_id=? AND path=?",
@@ -767,9 +916,15 @@ fn finish(metadata: &Metadata, intent: &Intent, undo: bool) -> Result<(), ApiErr
             return Err(changed());
         }
         if let Some((restored, deleted)) = &history {
-            tx.execute("INSERT INTO restored_document_history(workspace, document, restore_commit, deletion_commit, path)
-                        VALUES(?, ?, ?, ?, ?)",params![intent.workspace,id,restored,deleted,item.path])?;
+            tx.execute("INSERT INTO restored_document_history(workspace, document, restore_commit, deletion_commit, path, restore_path)
+                        VALUES(?, ?, ?, ?, ?, ?)",params![intent.workspace,id,restored,deleted,item.path,dest])?;
         }
+    }
+    if plan.input.action == Action::Delete && !undo {
+        tx.execute(
+            "INSERT INTO completed_file_deletions(operation_id) VALUES(?)",
+            [&intent.id],
+        )?;
     }
     tx.execute(
         "UPDATE workspace_file_actions SET status=? WHERE operation_id=?",
@@ -890,10 +1045,10 @@ fn execute(
                 published = true;
             }
             if plan.inventory.file_count() == 0 {
-                publish_empty(metadata, target, &plan.target_step, dst)?;
+                publish_empty(metadata, target, &plan.target_step, dst, true)?;
             } else {
                 verify_outputs(metadata, target, plan, &plan.target_step, false)?;
-                create_dirs(target, plan, false)?;
+                create_dirs(target, plan, false, true)?;
             }
             if action == Action::Move
                 && !combined
@@ -942,13 +1097,49 @@ fn execute(
     result
 }
 
+pub(super) fn deleted(
+    metadata: &Metadata,
+    account: &str,
+    workspace: &str,
+) -> Result<Vec<super::DeletedItem>, ApiError> {
+    let db = metadata.connection()?;
+    // Earlier installs stored intent order. New records also track the commit
+    // order, which can differ when an unpublished deletion is retried later.
+    let mut query = db.prepare(
+        "SELECT a.operation_id, json_extract(a.plan,'$.input.sourcePath'), json_extract(a.plan,'$.input.sourceKind'),
+                (SELECT count(*) FROM json_each(a.plan,'$.inventory.items') AS item
+                 WHERE json_extract(item.value,'$.revision') IS NOT NULL)
+         FROM workspace_file_actions a LEFT JOIN completed_file_deletions c ON c.operation_id=a.operation_id
+         WHERE a.workspace=? AND a.account=? AND a.status='done' AND json_extract(a.plan,'$.input.action')='delete'
+         ORDER BY c.sequence DESC, a.rowid DESC"
+    )?;
+    let rows = query
+        .query_map(params![workspace, account], |row| {
+            let kind: String = row.get(2)?;
+            let source_kind = match kind.as_str() {
+                "document" => Kind::Document,
+                "folder" => Kind::Folder,
+                _ => return Err(rusqlite::Error::InvalidQuery),
+            };
+            Ok(super::DeletedItem {
+                operation_id: row.get(0)?,
+                path: row.get(1)?,
+                source_kind,
+                file_count: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
 pub(super) fn undo(
     metadata: &Metadata,
     account: &str,
     source: &Endpoint<'_>,
     operation: &str,
+    target_path: Option<&str>,
 ) -> Result<ActionResult, ApiError> {
-    let intent = Intent::get(metadata, operation)?
+    let mut intent = Intent::get(metadata, operation)?
         .filter(|i| {
             i.account == account
                 && i.workspace == source.workspace
@@ -957,13 +1148,40 @@ pub(super) fn undo(
         .ok_or_else(ApiError::not_found)?;
     managed_engine(source.state)?.with_managed_write(|tx| {
         check_storage_recovery(source.state)?;
+        let destination = target_path.unwrap_or(&intent.plan.input.source_path);
+        if intent.status != "done" && destination != intent.plan.restore_root() {
+            return Err(reused());
+        }
         if intent.status == "undone" {
             return Ok(intent.result(true));
         }
         if !matches!(intent.status.as_str(), "done" | "undoing") {
             return Err(changed());
         }
-        restore(metadata, source, &intent, tx, false)?;
+        intent.plan.restore_path = target_path
+            .filter(|path| *path != intent.plan.input.source_path)
+            .map(str::to_owned);
+        if intent.status == "done" {
+            source.vacant_restore_path(&intent.plan)?;
+            intent.plan.restore_parent = Some(parent_identity(source.root(), intent.plan.restore_root())?);
+        }
+        if let Err(error) = restore(metadata, source, &intent, tx, false) {
+            // A failed pre-publication attempt may choose a new location. A
+            // pending filesystem journal must first reconcile its own writes.
+            if check_storage_recovery(source.state).is_ok() {
+                let unopened: bool = metadata.connection()?.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM workspace_file_actions WHERE operation_id=?1 AND status='undoing')
+                       AND NOT EXISTS(SELECT 1 FROM mutations WHERE operation_id=?2 AND state IN ('pending','committed'))
+                       AND NOT EXISTS(SELECT 1 FROM empty_directory_steps WHERE id=?2)",
+                    params![intent.id, intent.plan.undo_step],
+                    |row| row.get(0),
+                )?;
+                if unopened {
+                    reset_conflicted_undo(metadata, &mut intent)?;
+                }
+            }
+            return Err(error);
+        }
         Ok(intent.result(true))
     })
 }
@@ -983,7 +1201,8 @@ fn original_edits(
         let (store, repo) = git_blobs::repo(source.state)?;
         let before = git_blobs::resolve_commit(&repo, &format!("{}^", deletion.commit_id))?;
         for item in plan.inventory.files() {
-            validate_path(source.state, source.ignore, &item.path, false)?;
+            let path = plan.restored_path(&item.path);
+            validate_path(source.state, source.ignore, &path, false)?;
             let blob = git_blobs::find(
                 store,
                 &repo,
@@ -997,7 +1216,7 @@ fn original_edits(
                 return Err(changed());
             }
             edits.push(FileEdit {
-                path: item.path.clone(),
+                path,
                 base_revision: None,
                 contents: Some(bytes),
             });
@@ -1016,20 +1235,16 @@ fn restore(
     let plan = &intent.plan;
     let done = completed_step(metadata, source.workspace, intent, &plan.undo_step)?;
     if !done {
-        source.vacant(&plan.input.source_path, plan.input.source_kind)?;
+        source.vacant_restore_path(plan)?;
         {
             let connection = metadata.connection()?;
             for item in &plan.inventory.items {
-                validate_path(
-                    source.state,
-                    source.ignore,
-                    &item.path,
-                    item.revision.is_none(),
-                )?;
+                let path = plan.restored_path(&item.path);
+                validate_path(source.state, source.ignore, &path, item.revision.is_none())?;
                 if let Some(id) = &item.document {
                     let occupied:bool = connection.query_row(
                         "SELECT EXISTS(SELECT 1 FROM documents WHERE id=? OR (workspace_id=? AND path=?))",
-                        params![id,source.workspace,item.path], |row| row.get(0))?;
+                        params![id,source.workspace,path], |row| row.get(0))?;
                     if occupied {
                         return Err(path_exists());
                     }
@@ -1037,7 +1252,14 @@ fn restore(
             }
         }
         let edits = original_edits(metadata, source, intent, &plan.source_step)?;
-        set_status(metadata, intent, "undoing")?;
+        if Some(parent_identity(source.root(), plan.restore_root())?) != plan.restore_parent {
+            return Err(changed());
+        }
+        let saved = serde_json::to_string(plan).map_err(ApiError::internal)?;
+        metadata.connection()?.execute(
+            "UPDATE workspace_file_actions SET plan=?,status='undoing' WHERE operation_id=?",
+            params![saved, intent.id],
+        )?;
         if edits.is_empty() {
             prepare_empty(metadata, source, plan, &plan.undo_step)?;
         } else {
@@ -1052,13 +1274,32 @@ fn restore(
             )?;
         }
     }
-    let result = if plan.inventory.file_count() == 0 {
-        publish_empty(metadata, source, &plan.undo_step, &plan.input.source_path)
-    } else {
-        verify_outputs(metadata, source, plan, &plan.undo_step, true)
-            .and_then(|_| create_dirs(source, plan, true))
-    }
-    .and_then(|_| finish(metadata, intent, true));
+    let result = (|| {
+        // Older interrupted undos have no parent witness. They may finish an
+        // already materialized tree, but may not publish into a new parent.
+        let can_publish = if let Some(expected) = &plan.restore_parent {
+            if parent_identity(source.root(), plan.restore_root())? != *expected {
+                return Err(changed());
+            }
+            true
+        } else {
+            false
+        };
+        if plan.inventory.file_count() == 0 {
+            publish_empty(
+                metadata,
+                source,
+                &plan.undo_step,
+                plan.restore_root(),
+                can_publish,
+            )?;
+            create_dirs(source, plan, true, false)?;
+        } else {
+            verify_outputs(metadata, source, plan, &plan.undo_step, true)?;
+            create_dirs(source, plan, true, can_publish)?;
+        }
+        finish(metadata, intent, true)
+    })();
     if result.is_err() && !recovering {
         source.state.fs_guard.require_storage_recovery();
     }
@@ -1124,10 +1365,16 @@ fn recover_move_conflict(
         }
     }
     if plan.inventory.file_count() == 0 {
-        return publish_empty(metadata, source, &plan.undo_step, &plan.input.source_path);
+        return publish_empty(
+            metadata,
+            source,
+            &plan.undo_step,
+            &plan.input.source_path,
+            true,
+        );
     }
     verify_outputs(metadata, source, plan, &plan.undo_step, true)?;
-    create_dirs(source, plan, true)?;
+    create_dirs(source, plan, true, true)?;
     let receipt = |step: &str| {
         mutations::receipt(metadata, step, source.workspace, &intent.account)?.ok_or_else(changed)
     };
@@ -1145,8 +1392,46 @@ fn recover_move_conflict(
     Ok(())
 }
 
+// Remove only empty directories belonging to our recorded private staging
+// root. Foreign files or substituted trees are left in place.
+fn discard_empty_stage(
+    metadata: &Metadata,
+    source: &Endpoint<'_>,
+    plan: &Plan,
+) -> Result<(), ApiError> {
+    if plan.inventory.file_count() != 0 {
+        return Ok(());
+    }
+    let name = format!(".librarian-directory-{}", plan.undo_step);
+    let attr = match fs::symlink_metadata(source.root().join(&name)) {
+        Ok(attr) => attr,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(ApiError::internal(e)),
+    };
+    if !attr.is_dir() || Identity::from(&attr) != empty_identity(metadata, &plan.undo_step)? {
+        return Ok(());
+    }
+    for dir in plan.inventory.dirs().rev() {
+        let staged = mapped_path(&plan.input.source_path, Some(&name), &dir.path);
+        match source.attr(&staged) {
+            Ok(Some(attr)) if attr.is_dir() => {}
+            Ok(_) => continue,
+            Err(e) if e.is_file_conflict() || e.code() == "path_exists" => continue,
+            Err(e) => return Err(e),
+        }
+        match fs::remove_dir(source.root().join(staged)) {
+            Ok(()) => {}
+            Err(e) if matches!(e.kind(), ErrorKind::DirectoryNotEmpty | ErrorKind::NotFound) => {}
+            Err(e) => return Err(ApiError::internal(e)),
+        }
+    }
+    Ok(())
+}
+
 fn reset_conflicted_undo(metadata: &Metadata, intent: &mut Intent) -> Result<(), ApiError> {
     intent.plan.undo_step = new_id();
+    intent.plan.restore_path = None;
+    intent.plan.restore_parent = None;
     let plan = serde_json::to_string(&intent.plan).map_err(ApiError::internal)?;
     metadata.connection()?.execute(
         "UPDATE workspace_file_actions SET status='done',plan=? WHERE operation_id=?",
@@ -1169,13 +1454,13 @@ fn pending_ids(metadata: &Metadata, workspace: Option<&str>) -> Result<Vec<Strin
 
 // A request can fail before the first durable write. Such a request must be
 // reauthorized by the caller, and never needs the old space directory to boot.
-fn needs_files(metadata: &Metadata, intent: &Intent) -> Result<bool, ApiError> {
+fn needs_files(metadata: &Metadata, intent: &mut Intent) -> Result<bool, ApiError> {
     let plan = &intent.plan;
     if intent.status == "undoing" {
         if completed_step(metadata, &intent.workspace, intent, &plan.undo_step)? {
             return Ok(true);
         }
-        set_status(metadata, intent, "done")?;
+        reset_conflicted_undo(metadata, intent)?;
     } else {
         let target = plan
             .input
@@ -1200,8 +1485,8 @@ pub(in crate::product) fn pending_retirement(
     workspace: &str,
 ) -> Result<bool, ApiError> {
     for id in pending_ids(metadata, Some(workspace))? {
-        let intent = Intent::get(metadata, &id)?.ok_or_else(changed)?;
-        if needs_files(metadata, &intent)? {
+        let mut intent = Intent::get(metadata, &id)?.ok_or_else(changed)?;
+        if needs_files(metadata, &mut intent)? {
             return Ok(true);
         }
     }
@@ -1211,7 +1496,7 @@ pub(in crate::product) fn pending_retirement(
 pub(in crate::product) fn recover(service: &DocumentService) -> Result<(), ApiError> {
     for id in pending_ids(&service.metadata, None)? {
         let mut intent = Intent::get(&service.metadata, &id)?.ok_or_else(changed)?;
-        if !needs_files(&service.metadata, &intent)? {
+        if !needs_files(&service.metadata, &mut intent)? {
             continue;
         }
         let instance = |workspace: &str| -> Result<_, ApiError> {
@@ -1304,6 +1589,7 @@ pub(in crate::product) fn recover(service: &DocumentService) -> Result<(), ApiEr
                 "file_action_changed" | "path_exists" | "not_found" | "needs_repair"
             ) {
                 if intent.status == "undoing" {
+                    discard_empty_stage(&service.metadata, &source, &intent.plan)?;
                     reset_conflicted_undo(&service.metadata, &mut intent)?;
                 } else {
                     recover_move_conflict(&service.metadata, &source, &intent)?;

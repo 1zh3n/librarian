@@ -47,6 +47,7 @@ type UpdateWorkspace = components["schemas"]["UpdateWorkspace"];
 export type RenameWorkspacePath = components["schemas"]["RenameWorkspacePaths"];
 export type FileActionRequest = components["schemas"]["FileActionRequest"];
 export type FileActionPreview = components["schemas"]["FileActionPreview"];
+export type DeletedFileAction = components["schemas"]["DeletedFileAction"];
 export type FileActionResult = components["schemas"]["FileActionResult"];
 export type WorkspaceSettings = Omit<CreateWorkspace, "origin">;
 export type DeliveryManifest = components["schemas"]["DeliveryManifest"];
@@ -137,7 +138,7 @@ async function request<T>(
       | ReplaceAccountPassword
       | ChangeOwnPassword
       | SetWorkspaceMember
-      | { operationId: string };
+      | components["schemas"]["FileActionUndo"];
   },
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -414,10 +415,16 @@ export const api = {
       body,
     });
   },
-  undoFileAction(workspace: string, operationId: string) {
+  deletedFileActions(workspace: string, signal?: AbortSignal) {
+    return request<components["schemas"]["DeletedFileActions"]>(
+      `${workspacePath(workspace)}/file-actions/deleted`,
+      signal,
+    );
+  },
+  undoFileAction(workspace: string, operationId: string, targetPath?: string) {
     return request<FileActionResult>(`${workspacePath(workspace)}/file-actions/undo`, undefined, {
       method: "POST",
-      body: { operationId },
+      body: targetPath === undefined ? { operationId } : { operationId, targetPath },
     });
   },
   importWorkspaceFiles(workspace: string, body: WorkspaceImportRequest, signal?: AbortSignal) {

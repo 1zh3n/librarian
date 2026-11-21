@@ -24,7 +24,7 @@ impl<'a> Lineage<'a> {
         let bridges = {
             let connection = metadata.connection()?;
             let mut query = connection.prepare(
-                "SELECT restore_commit, deletion_commit, path FROM restored_document_history
+                "SELECT restore_commit, deletion_commit, path, COALESCE(restore_path,path) FROM restored_document_history
                 WHERE workspace=? AND document=? ORDER BY rowid DESC",
             )?;
             let rows = query
@@ -33,6 +33,7 @@ impl<'a> Lineage<'a> {
                         r.get::<_, String>(0)?,
                         r.get::<_, String>(1)?,
                         r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -42,10 +43,10 @@ impl<'a> Lineage<'a> {
             head: "HEAD".into(),
             path: path.into(),
         }];
-        for (restore, deletion, old_path) in bridges {
+        for (restore, deletion, old_path, restored_path) in bridges {
             let latest = segments.last().expect("current history segment");
             // A move out and back into this space starts a new local history.
-            if latest.path_at(store, &restore)?.as_deref() != Some(&old_path) {
+            if latest.path_at(store, &restore)?.as_deref() != Some(&restored_path) {
                 continue;
             }
             let repo = store.repo_root().ok_or_else(ApiError::not_found)?;
