@@ -42,9 +42,34 @@
   color: var(--ink-secondary);
 }
 
+.contextMenu {
+  z-index: 3;
+  min-inline-size: 9rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 0.35rem 1rem var(--overlay);
+}
+
+.menuItem {
+  display: flex;
+  min-block-size: 2.25rem;
+  align-items: center;
+  padding-inline: 0.625rem;
+  border-radius: var(--radius);
+  font-size: var(--ui-size);
+}
+
+.menuItem[data-focused] {
+  background: var(--surface-selected);
+}
+
 @media (pointer: coarse) {
   .item,
-  .disclosure {
+  .disclosure,
+  .menuItem {
     min-height: 44px;
   }
 }

@@ -99,7 +99,10 @@ export function WorkspaceShell() {
   const [settingsError, setSettingsError] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [createDocumentFor, setCreateDocumentFor] = useState<string>();
+  const [createDocumentFor, setCreateDocumentFor] = useState<{
+    workspace: string;
+    folder: string;
+  }>();
   const [createdDocument, setCreatedDocument] = useState<string>();
   const [creationNotice, setCreationNotice] = useState<string>();
   const pendingCreation = useRef<DocumentSummary>(undefined);
@@ -133,12 +136,15 @@ export function WorkspaceShell() {
   const navigationVisible = Boolean(workspace && navigation && !focus.active);
   const canCreate = Boolean(workspace?.canWrite);
 
-  function showCreateDocument() {
-    if (canCreate) {
-      setCreationNotice(undefined);
-      setCreateDocumentFor(selected);
-    }
-  }
+  const showCreateDocument = useCallback(
+    (folder = activeFolder) => {
+      if (canCreate) {
+        setCreationNotice(undefined);
+        setCreateDocumentFor({ workspace: selected, folder });
+      }
+    },
+    [activeFolder, canCreate, selected],
+  );
 
   async function openCreatedDocument(snapshot: DocumentSnapshot) {
     const { id } = snapshot.document;
@@ -233,14 +239,19 @@ export function WorkspaceShell() {
     setLayoutSelection((selection) => selection + 1);
   }
 
-  function openDocument(id: string, destination = selected) {
-    if (!destination || id === documentId) return;
-    void navigate({
-      to: "/workspaces/$workspaceId/documents/$documentId",
-      params: { workspaceId: destination, documentId: id },
-    });
-    if (!wide) setNavigationOverride(false);
-  }
+  const openDocument = useCallback(
+    (id: string, destination = selected) => {
+      if (!destination) return;
+      const target = {
+        to: "/workspaces/$workspaceId/documents/$documentId" as const,
+        params: { workspaceId: destination, documentId: id },
+      };
+      if (router.state.location.pathname === router.buildLocation(target).pathname) return;
+      void navigate(target);
+      if (!wide) setNavigationOverride(false);
+    },
+    [navigate, router, selected, wide],
+  );
 
   const workspacesUnavailable = !workspaces.data && workspaces.isError;
   const unauthorized =
@@ -472,7 +483,7 @@ export function WorkspaceShell() {
                   </TooltipTrigger>
                 </div>
                 {canCreate && (
-                  <Button className={styles.newDocument} onPress={showCreateDocument}>
+                  <Button className={styles.newDocument} onPress={() => showCreateDocument()}>
                     <span aria-hidden="true">＋</span> 新建文档
                   </Button>
                 )}
@@ -482,6 +493,7 @@ export function WorkspaceShell() {
                     documents={documents}
                     activeDocument={documentId}
                     open={openDocument}
+                    create={canCreate ? showCreateDocument : undefined}
                   />
                 )}
               </aside>
@@ -541,7 +553,7 @@ export function WorkspaceShell() {
                 <div className={styles.state}>
                   <p>这个空间还没有文档</p>
                   {canCreate && !navigationVisible && (
-                    <Button variant="primary" onPress={showCreateDocument}>
+                    <Button variant="primary" onPress={() => showCreateDocument()}>
                       新建文档
                     </Button>
                   )}
@@ -550,10 +562,10 @@ export function WorkspaceShell() {
             </main>
           </Panel>
         </Group>
-        {canCreate && createDocumentFor === selected && (
+        {canCreate && createDocumentFor?.workspace === selected && (
           <CreateDocumentDialog
             workspace={selected}
-            folder={activeFolder}
+            folder={createDocumentFor.folder}
             created={openCreatedDocument}
             close={() => setCreateDocumentFor(undefined)}
           />

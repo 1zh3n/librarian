@@ -34,27 +34,30 @@ export function RenamePathForm({ workspace }: { workspace: string }) {
 
   return (
     <Form
-      aria-label="重命名路径"
+      aria-label="移动或重命名"
       className={styles.form}
       onSubmit={(event) => {
         event.preventDefault();
         if (ready && !rename.isPending) rename.mutate();
       }}
     >
+      <p className={styles.status}>
+        例如，将「草稿/周报.md」改为「归档/周报.md」。也可以填写目录路径移动整个目录。
+      </p>
       <div className={styles.fields}>
         <Field label="原路径" value={from} onChange={setFrom} required />
         <Field label="新路径" value={to} onChange={setTo} required />
       </div>
-      {rename.isSuccess && <output className={styles.status}>路径已更新</output>}
+      {rename.isSuccess && <output className={styles.status}>文件或目录已更新</output>}
       {rename.isError && (
         <p className={styles.status} role="alert">
           {rename.error instanceof ApiError && rename.error.status === 409
             ? "目标路径已存在，或原路径已更改。"
-            : "无法重命名，请检查空间内的路径。"}
+            : "无法更新，请检查空间内的原路径和目标路径。"}
         </p>
       )}
       <Button className={styles.primary} type="submit" isDisabled={!ready || rename.isPending}>
-        {rename.isPending ? "正在重命名…" : "重命名"}
+        {rename.isPending ? "正在更新…" : "保存路径"}
       </Button>
     </Form>
   );

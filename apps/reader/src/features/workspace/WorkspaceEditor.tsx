@@ -4,12 +4,13 @@ import { api, ApiError } from "../../api/client";
 import type { Workspace, WorkspaceSettings } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
 import { Button, Form } from "../../ui/primitives";
+import { Disclosure } from "../../ui/Disclosure";
 import { Choice, Field, formatLocalDate } from "./ManagementFields";
 import styles from "./Management.module.css";
 
 const origins = [
-  { value: "native", label: "原生" },
-  { value: "delivery", label: "投递" },
+  { value: "native", label: "普通空间" },
+  { value: "delivery", label: "外部文档接收" },
 ] as const;
 
 const retentions = [
@@ -50,6 +51,29 @@ export function WorkspaceEditor({
     },
   });
 
+  const retentionFields = origin === "delivery" && (
+    <>
+      <Choice
+        label="保留方式"
+        value={retention}
+        entries={retentions}
+        onChange={(value) => {
+          setRetention(value);
+          setExpiryError(false);
+        }}
+      />
+      {temporary && (
+        <Field
+          label="到期时间"
+          type="datetime-local"
+          value={expires}
+          onChange={setExpires}
+          required
+        />
+      )}
+    </>
+  );
+
   return (
     <Form
       className={styles.form}
@@ -70,34 +94,29 @@ export function WorkspaceEditor({
       }}
     >
       <Field label="空间名称" value={name} onChange={setName} required />
-      <div className={styles.fields}>
-        {!current && (
-          <Choice label="空间来源" value={origin} entries={origins} onChange={setOrigin} />
-        )}
-        {origin === "delivery" && (
-          <Choice
-            label="保留方式"
-            value={retention}
-            entries={retentions}
-            onChange={(value) => {
-              setRetention(value);
-              setExpiryError(false);
-            }}
-          />
-        )}
-        {temporary && (
-          <Field
-            label="到期时间"
-            type="datetime-local"
-            value={expires}
-            onChange={(value) => {
-              setExpires(value);
-              setExpiryError(false);
-            }}
-            required
-          />
-        )}
-      </div>
+      {current ? (
+        retentionFields && <div className={styles.fields}>{retentionFields}</div>
+      ) : (
+        <Disclosure>
+          <Disclosure.Heading>
+            <Disclosure.Trigger>
+              高级选项
+              <Disclosure.Indicator />
+            </Disclosure.Trigger>
+          </Disclosure.Heading>
+          <Disclosure.Content>
+            <Disclosure.Body>
+              <p className={styles.status}>
+                普通空间也能接收手动上传和项目自动导入。需要让接收的文档随空间到期清理时，可选择「外部文档接收」。
+              </p>
+              <div className={styles.fields}>
+                <Choice label="空间用途" value={origin} entries={origins} onChange={setOrigin} />
+                {retentionFields}
+              </div>
+            </Disclosure.Body>
+          </Disclosure.Content>
+        </Disclosure>
+      )}
       {expiryError && (
         <p role="alert" className={styles.status}>
           到期时间必须晚于现在。

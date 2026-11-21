@@ -20,8 +20,10 @@ async function createWorkspace(page: Page, name: string, temporary = false) {
   const form = page.getByRole("form", { name: "新建空间" });
   await form.getByRole("textbox", { name: "空间名称" }).fill(name);
   if (temporary) {
-    await form.getByRole("button", { name: /空间来源/ }).click();
-    await page.getByRole("option", { name: "投递" }).click();
+    await expect(form.getByRole("button", { name: /空间用途/ })).toBeHidden();
+    await form.getByRole("button", { name: "高级选项" }).click();
+    await form.getByRole("button", { name: /空间用途/ }).click();
+    await page.getByRole("option", { name: "外部文档接收" }).click();
     await form.getByRole("button", { name: /保留方式/ }).click();
     await page.getByRole("option", { name: "临时保存" }).click();
     const expires = await page.evaluate(() => {
@@ -48,6 +50,53 @@ async function addDocument(page: Page, workspace: string, path: string, markdown
   expect(response.status()).toBe(201);
   return (await response.json()) as DocumentSnapshot;
 }
+
+test("returns to the first note in one click from space settings", async ({ page }) => {
+  const workspace = await createWorkspace(page, "设置跳转验收");
+  const first = await addDocument(page, workspace.id, "01第一篇.md", "第一篇正文\n");
+  await addDocument(page, workspace.id, "02第二篇.md", "第二篇正文\n");
+  const target = `/workspaces/${workspace.id}/documents/${first.document.id}`;
+  await page.goto(target);
+  await expect(page.getByRole("article")).toContainText("第一篇正文");
+  const firstNote = page.getByRole("row", { name: "01第一篇", exact: true });
+  await page.getByRole("button", { name: "空间设置", exact: true }).click();
+  await expect(page).toHaveURL(`/workspaces/${workspace.id}/manage`);
+  await expect(page.getByRole("tablist", { name: "空间设置" })).toBeVisible();
+  await firstNote.click();
+  await expect(page).toHaveURL(target, { timeout: 2500 });
+  await expect(page.getByRole("article")).toContainText("第一篇正文");
+});
+
+test("creates a note directly in a nested directory from the tree menu", async ({ page }) => {
+  const workspace = await createWorkspace(page, "右键新建验收");
+  const existing = await addDocument(page, workspace.id, "研究/观测/记录.md", "# 记录\n");
+  await page.goto(`/workspaces/${workspace.id}/documents/${existing.document.id}`);
+  const folder = page
+    .getByRole("treegrid", { name: "空间目录" })
+    .getByText("观测", { exact: true });
+  await folder.click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "目录操作" });
+  await expect(menu).toBeVisible({ timeout: 2500 });
+  await menu.getByRole("menuitem", { name: "新建文档…" }).click();
+  const dialog = page.getByRole("dialog", { name: "新建文档" });
+  const directory = dialog.getByRole("textbox", { name: "目录（可选）" });
+  await expect(directory).toHaveValue("研究/观测");
+  await directory.fill("研究/观测/样本");
+  await dialog.getByRole("textbox", { name: "文档名称" }).fill("新观察");
+  await dialog.getByRole("button", { name: "创建文档" }).click();
+  await expect(page.getByRole("textbox", { name: "Markdown 正文" })).toBeFocused();
+  const documents = (await (
+    await page.request.get(`/api/v1/workspaces/${workspace.id}/documents`)
+  ).json()) as DocumentSummary[];
+  expect(documents.some(({ path }) => path === "研究/观测/样本/新观察.md")).toBe(true);
+  const note = page.getByRole("row", { name: "新观察", exact: true });
+  await expect(note).toBeVisible();
+  await note.press("Shift+F10");
+  await expect(menu.getByRole("menuitem", { name: "新建文档…" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(note).toBeFocused();
+});
 
 test("creates and keeps a temporary Workspace at 360 px without changing its address", async ({
   page,
@@ -79,11 +128,11 @@ test("renaming a directory keeps the original document deep link", async ({ page
   await page.goto(deepLink);
   await expect(page.getByRole("article")).toContainText("路径保留");
   await page.getByRole("button", { name: "空间设置" }).click();
-  const rename = page.getByRole("form", { name: "重命名路径" });
+  const rename = page.getByRole("form", { name: "移动或重命名" });
   await rename.getByRole("textbox", { name: "原路径" }).fill("初始目录");
   await rename.getByRole("textbox", { name: "新路径" }).fill("归档目录");
-  await rename.getByRole("button", { name: "重命名" }).click();
-  await expect(rename.getByText("路径已更新")).toBeVisible();
+  await rename.getByRole("button", { name: "保存路径" }).click();
+  await expect(rename.getByText("文件或目录已更新")).toBeVisible();
   await page.goto(deepLink);
   await expect(page.getByRole("article")).toContainText("路径保留");
   const snapshot = (await (

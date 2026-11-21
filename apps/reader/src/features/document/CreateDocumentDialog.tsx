@@ -66,7 +66,7 @@ export function CreateDocumentDialog({
             </TextField>
             <TextField className={styles.field} value={directory} onChange={setDirectory}>
               <Label>目录（可选）</Label>
-              <Input />
+              <Input placeholder="例如 研究/样本" />
             </TextField>
             {(invalidName || error) && (
               <p className={styles.error} role="alert">

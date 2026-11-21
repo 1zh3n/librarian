@@ -107,9 +107,9 @@ export function WorkspaceManagementRoute() {
               <h2 id="space">空间设置</h2>
               <WorkspaceEditor current={workspace} />
             </section>
-            <section className={styles.section} aria-label="重命名路径">
+            <section className={styles.section} aria-label="移动或重命名">
               <h2 id="directory" ref={renameHeading}>
-                重命名路径
+                移动或重命名
               </h2>
               <RenamePathForm workspace={workspaceId} />
             </section>

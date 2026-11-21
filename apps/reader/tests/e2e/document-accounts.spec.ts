@@ -87,11 +87,13 @@ test("switches to a long space name at 125% zoom on a narrow screen", async ({ p
   const settings = page.getByRole("button", { name: "空间设置", exact: true });
   await expect(selectedSpace).toBeVisible();
   await expect(settings).toBeVisible();
-  const arrow = await selectedSpace.locator("[aria-hidden=true]").boundingBox();
+  const arrowIcon = selectedSpace.locator("[aria-hidden=true]");
+  await expect(arrowIcon).toHaveCSS("width", "16px");
+  const arrow = await arrowIcon.boundingBox();
   const choice = await selectedSpace.boundingBox();
   const next = await settings.boundingBox();
   if (!arrow || !choice || !next) throw new Error("Missing space controls");
-  expect(arrow.width).toBe(20);
+  expect(arrow.width).toBeCloseTo(20, 1);
   expect(arrow.x + arrow.width).toBeLessThan(choice.x + choice.width);
   expect(choice.x + choice.width).toBeLessThanOrEqual(next.x);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -125,7 +127,7 @@ test("opens a legacy release anchor and switches management tabs on a narrow scr
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   await page.goto(`/workspaces/${workspace.id}/manage#directory`);
   await expect(tabs.getByRole("tab", { name: "常规" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("region", { name: "重命名路径" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "移动或重命名" })).toBeVisible();
 });
 
 test("manages a local account and applies Workspace membership through Reader", async ({

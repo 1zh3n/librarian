@@ -81,6 +81,23 @@ test("document AI leaves text readable at desktop and 360px", async ({ page }) =
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 });
 
+test("only the AI input draws a focus border, including when actions receive focus", async ({
+  page,
+}) => {
+  await createNote(page, "AiComposerFocus.md", "正文\n");
+  await openDocumentTool(page, "AI");
+  const form = page.getByRole("form", { name: "AI 请求" });
+  const input = form.getByRole("textbox", { name: "提示词" });
+  await expect(input).toHaveCSS("border-top-width", "1px");
+  await input.fill("这是一条待发送的问题");
+  await expect(input).toBeFocused();
+  await expect(form).toHaveCSS("border-top-width", "0px");
+  const submit = form.getByRole("button", { name: "询问" });
+  await input.press("Tab");
+  await expect(submit).toBeFocused();
+  await expect(form).toHaveCSS("border-top-width", "0px");
+});
+
 test("document AI sends selection and displays only actual sources", async ({ page }) => {
   const markdown = "# 摘要\n\n大雨过后🌱选择这一段，再看其他内容。\n";
   const { document } = await createNote(page, "AiSources.md", markdown);
