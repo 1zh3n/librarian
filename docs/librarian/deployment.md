@@ -4,6 +4,8 @@
 
 本次本机发行需要 glibc 2.39 或更新版本。
 
+存储目录应放在 Git 检出之外，以便每个受管 Workspace 创建独立的 Git 历史。
+
 ```bash
 sha256sum -c librarian-0.1.0-linux-x86_64.tar.gz.sha256
 tar -xzf librarian-0.1.0-linux-x86_64.tar.gz
@@ -26,6 +28,7 @@ unset librarian_password
 - [Zola 发布](zola-publication.md)
 - [外部项目投递和 docs CLI](delivery.md)
 - [独立 AI 执行器](ai-runner.md)
+- [内网 HTTPS 预发布](lan-pre-release.md)
 
 ## 阅读离线副本
 

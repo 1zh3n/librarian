@@ -1,0 +1,23 @@
+{
+	admin off
+	auto_https disable_redirects
+	skip_install_trust
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$LIBRARIAN_LAN_IP}:{$LIBRARIAN_LAN_TLS_PORT:18443} {
+	bind {$LIBRARIAN_LAN_IP}
+	tls internal
+
+	@lan remote_ip {$LIBRARIAN_LAN_CIDR}
+	handle @lan {
+		reverse_proxy 127.0.0.1:{$LIBRARIAN_LAN_BACKEND_PORT:18080} {
+			header_up X-Forwarded-Proto https
+		}
+	}
+	handle {
+		respond 403
+	}
+}
