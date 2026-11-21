@@ -88,14 +88,18 @@ test("only the AI input draws a focus border, including when actions receive foc
   await openDocumentTool(page, "AI");
   const form = page.getByRole("form", { name: "AI 请求" });
   const input = form.getByRole("textbox", { name: "提示词" });
+  const toolTabs = page.getByRole("tablist", { name: "文档工具" }).locator("..");
   await expect(input).toHaveCSS("border-top-width", "1px");
   await input.fill("这是一条待发送的问题");
   await expect(input).toBeFocused();
+  await expect(input).toHaveCSS("outline-style", "solid");
   await expect(form).toHaveCSS("border-top-width", "0px");
+  await expect(toolTabs).toHaveCSS("outline-style", "none");
   const submit = form.getByRole("button", { name: "询问" });
   await input.press("Tab");
   await expect(submit).toBeFocused();
   await expect(form).toHaveCSS("border-top-width", "0px");
+  await expect(toolTabs).toHaveCSS("outline-style", "none");
 });
 
 test("document AI sends selection and displays only actual sources", async ({ page }) => {

@@ -130,6 +130,10 @@
   gap: 0;
 }
 
+.toolTabs[data-focus-visible]:not(:focus-visible) {
+  outline: none;
+}
+
 .tabList[data-orientation="horizontal"] {
   display: flex;
   flex: 0 0 auto;
