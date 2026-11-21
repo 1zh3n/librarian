@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(space.join("野外"))?;
     fs::create_dir_all(root.path().join("spaces/other"))?;
     fs::create_dir_all(root.path().join("spaces/release-backup"))?;
+    fs::create_dir_all(root.path().join("spaces/zz-history"))?;
     fs::write(
         root.path().join("spaces.json"),
         json!({
@@ -50,6 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                       "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}},
             "other": {"name":"另一空间","binding":{"prefix":"/other"},"access":"none",
                       "members":{"reader":{"role":"write"},"offline-reader":{"role":"read"}},"revisions":"managed",
+                      "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}},
+            "zz-history": {"name":"版本归档用例","binding":{"prefix":"/zz-history"},"access":"none",
+                      "members":{"reader":{"role":"write"}},"revisions":"managed",
                       "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}},
             "release-backup": {"name":"浏览器本地备份","binding":{"prefix":"/release-backup"},
                       "access":"none","revisions":"managed"}

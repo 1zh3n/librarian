@@ -6,7 +6,8 @@ type History = components["schemas"]["DocumentHistory"];
 
 test("reads a saved diff and restores it as a new Git commit", async ({ page }) => {
   const original = "---\ntitle: 历史测试\n---\n\n初始稿  \r\n";
-  const { apiUrl, document } = await createNote(page, "HistoryRoundTrip.md", original, "另一空间");
+  // Other workers write to the shared spaces and restart their Git archive quiet period.
+  const { apiUrl, document } = await createNote(page, "HistoryRoundTrip.md", original, "版本归档用例");
   const history = async () =>
     (await (await page.request.get(`${apiUrl}/revisions`)).json()) as History;
   await expect.poll(async () => (await history()).revisions?.length, { timeout: 10_000 }).toBe(1);
