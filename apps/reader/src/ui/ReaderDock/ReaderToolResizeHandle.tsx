@@ -26,7 +26,11 @@ export function ReaderToolResizeHandle({
     if (!pane || !layout) return;
     grid.current = layout;
     function measure() {
-      if (!pane || !layout || !handle.current?.getClientRects().length) return;
+      if (!pane || !layout) return;
+      if (!handle.current?.getClientRects().length) {
+        cancel();
+        return;
+      }
       const now = Math.round(pane.getBoundingClientRect().width);
       // Ask the actual grid for its largest usable width at this breakpoint.
       const previous = layout.style.getPropertyValue("--tool-width");
@@ -70,8 +74,12 @@ export function ReaderToolResizeHandle({
   }
 
   function cancel() {
-    if (!drag.current) return;
+    const start = drag.current;
+    if (!start) return;
     drag.current = null;
+    if (handle.current?.hasPointerCapture(start.pointer)) {
+      handle.current.releasePointerCapture(start.pointer);
+    }
     grid.current?.style.removeProperty("--tool-width");
   }
 
@@ -128,6 +136,10 @@ export function ReaderToolResizeHandle({
           onPointerUp={(event) => {
             const start = drag.current;
             if (start?.pointer !== event.pointerId) return;
+            if (!event.currentTarget.getClientRects().length) {
+              cancel();
+              return;
+            }
             const next = preview(start.width + start.x - event.clientX);
             drag.current = null;
             if (next !== start.width) void commit(next);

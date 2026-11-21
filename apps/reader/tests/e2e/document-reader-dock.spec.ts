@@ -133,3 +133,34 @@ test("resizes document tools from their visible width and saves only completed a
   const max = Number(await handle.getAttribute("aria-valuemax"));
   await expect.poll(async () => (await deviceSettings(page)).toolsWidth).toBe(max);
 });
+
+test("hiding the tool divider cancels a drag still held across the narrow breakpoint", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(page, "拖动时转为窄屏.md", "继续同一篇文档");
+  await openDocumentTool(page, "AI");
+  const pane = page.getByRole("region", { name: "文档辅助区", exact: true });
+  const handle = page.getByRole("separator", { name: "调整文档辅助区宽度" });
+  const initial = (await deviceSettings(page)).toolsWidth;
+  const rect = await bounds(handle);
+  const x = rect.x + rect.width / 2;
+  const y = rect.y + 28;
+  const writes: number[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && request.url().includes("/settings/devices/")) {
+      writes.push((request.postDataJSON() as DevicePreferences).toolsWidth);
+    }
+  });
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 24, y);
+  await expect.poll(async () => Math.round((await bounds(pane)).width)).toBe(initial + 24);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(handle).toBeHidden();
+  await page.mouse.up();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(async () => Math.round((await bounds(pane)).width)).toBe(initial);
+  expect(writes).toEqual([]);
+  expect((await deviceSettings(page)).toolsWidth).toBe(initial);
+});
