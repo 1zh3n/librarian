@@ -1,4 +1,6 @@
 .header {
+  width: min(100%, var(--measure));
+  margin-inline: auto;
   margin-block-end: 1rem;
 }
 

@@ -1,0 +1,12 @@
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.files {
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  overflow-wrap: anywhere;
+}

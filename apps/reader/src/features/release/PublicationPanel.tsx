@@ -86,14 +86,18 @@ export function PublicationPanel({
 
   return (
     <section aria-label="Zola 发布" className={styles.section}>
-      <h2>Zola 发布</h2>
+      <h3>Zola 发布</h3>
+      {targets.isPending && <output className={styles.status}>正在读取发布目标…</output>}
       {targets.isError && (
         <p role="alert" className={styles.status}>
           无法读取发布目标。
         </p>
       )}
       {targets.data && choices.length === 0 && (
-        <p className={styles.status}>此空间尚未配置发布目标。</p>
+        <p className={styles.empty}>此空间尚未配置发布目标。</p>
+      )}
+      {choices.length > 0 && documents.length === 0 && (
+        <p className={styles.empty}>添加文档后即可选择发布版本。</p>
       )}
       {choices.length > 0 && documents.length > 0 && (
         <Form
@@ -132,6 +136,7 @@ export function PublicationPanel({
           无法读取发布记录。
         </p>
       )}
+      {list.data?.publications.length === 0 && <p className={styles.empty}>暂无发布记录。</p>}
       {Boolean(list.data?.publications.length) && (
         <ul aria-label="发布记录" className={styles.records}>
           {list.data?.publications.map((result) => (
@@ -159,7 +164,11 @@ export function PublicationPanel({
                     isDisabled={busy}
                     onPress={() => confirm.mutate(result.id)}
                   >
-                    {result.status === "pending" ? "确认发布" : "重试发布"}
+                    {confirm.isPending && confirm.variables === result.id
+                      ? "正在发布…"
+                      : result.status === "pending"
+                        ? "确认发布"
+                        : "重试发布"}
                   </Button>
                 </>
               )}

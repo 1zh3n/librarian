@@ -64,14 +64,15 @@ export function BackupPanel({ workspace }: { workspace: string }) {
 
   return (
     <section aria-label="工作区备份" className={styles.section}>
-      <h2>工作区备份</h2>
+      <h3>工作区备份</h3>
+      {config.isPending && <output className={styles.status}>正在读取备份设置…</output>}
       {config.isError && (
         <p role="alert" className={styles.status}>
           无法读取备份设置。
         </p>
       )}
       {saved && saved.targets.length === 0 && (
-        <p className={styles.status}>部署尚未配置备份目标。</p>
+        <p className={styles.empty}>部署尚未配置备份目标。</p>
       )}
       {saved && saved.targets.length > 0 && (
         <Form
@@ -113,7 +114,7 @@ export function BackupPanel({ workspace }: { workspace: string }) {
               type="submit"
               isDisabled={settings.isPending || start.isPending}
             >
-              保存备份设置
+              {settings.isPending ? "正在保存…" : "保存备份设置"}
             </Button>
             <Button
               className={styles.primary}
@@ -124,6 +125,9 @@ export function BackupPanel({ workspace }: { workspace: string }) {
             </Button>
           </div>
         </Form>
+      )}
+      {saved?.targetId && !latest && !start.isPending && !start.isError && (
+        <p className={styles.empty}>暂无备份记录。</p>
       )}
       {start.isPending && <output className={styles.status}>正在备份…</output>}
       {!start.isPending && running(latest) && <output className={styles.status}>备份待完成</output>}

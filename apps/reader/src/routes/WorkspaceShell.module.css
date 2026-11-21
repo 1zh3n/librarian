@@ -17,11 +17,29 @@
 }
 
 .breadcrumb {
+  display: flex;
+  min-width: 0;
+  gap: 0.35rem;
   overflow: hidden;
   color: var(--ink-secondary);
   font-size: var(--ui-size);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.breadcrumbFolder,
+.breadcrumbTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumbFolder {
+  max-width: 42%;
+}
+
+.breadcrumbTitle {
+  color: var(--ink);
+  font-weight: 550;
 }
 
 .button,
@@ -112,6 +130,14 @@
   min-width: 0;
 }
 
+.newDocument {
+  width: calc(100% - 1rem);
+  min-height: 40px;
+  justify-content: flex-start;
+  margin: 0 0.5rem 0.4rem;
+  padding-inline: 0.75rem;
+}
+
 .workspace {
   display: flex;
   box-sizing: border-box;
@@ -186,6 +212,7 @@
 }
 
 .viewport {
+  container: reading-viewport / inline-size;
   height: 100%;
   min-width: 0;
   overflow: auto;
@@ -215,6 +242,10 @@
 }
 
 @media (max-width: 800px) {
+  .breadcrumbFolder {
+    display: none;
+  }
+
   .navigation {
     border-inline-end: 0;
     border-block-end: 1px solid var(--border);

@@ -1,6 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Link,
+  Outlet,
+  useNavigate,
+  useParams,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Button,
   ListBox,
@@ -17,8 +24,10 @@ import {
 } from "../ui/primitives";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { api, ApiError } from "../api/client";
-import type { DevicePreferences, DocumentSummary } from "../api/client";
-import { documentsQuery, sessionQuery, workspacesQuery } from "../api/queries";
+import type { DevicePreferences, DocumentSnapshot, DocumentSummary } from "../api/client";
+import { documentsQuery, sessionQuery, workspaceKeys, workspacesQuery } from "../api/queries";
+import { CreateDocumentDialog } from "../features/document/CreateDocumentDialog";
+import { rememberRecentDocument } from "../features/navigation/recentDocuments";
 import { SpaceTree } from "../features/navigation/SpaceTree";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
 import {
@@ -51,6 +60,7 @@ const presets = [
 export function WorkspaceShell() {
   const { workspaceId, documentId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const toolRoute = useRouterState({
     select: ({ matches }) =>
       matches.find(
@@ -73,6 +83,8 @@ export function WorkspaceShell() {
   const resource = useQuery({ ...documentsQuery(selected), enabled: Boolean(workspace) });
   const documents = resource.data ?? noDocuments;
   const active = documents.find((item) => item.id === documentId);
+  const username = session.data?.username;
+  const activeFolder = active?.path.split("/").slice(0, -1).join("/") ?? "";
   const firstDocument = documents[0]?.id;
   const viewport = useRef<HTMLElement>(null);
   const layout = useRef<HTMLDivElement>(null);
@@ -86,8 +98,62 @@ export function WorkspaceShell() {
   const [settingsError, setSettingsError] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [createDocumentFor, setCreateDocumentFor] = useState<string>();
+  const [createdDocument, setCreatedDocument] = useState<string>();
+  const [creationNotice, setCreationNotice] = useState<string>();
+  const pendingCreation = useRef<DocumentSummary>(undefined);
+  const router = useRouter();
+  const clearCreatedDocument = useCallback(() => setCreatedDocument(undefined), []);
+  const listCreatedDocument = useCallback(
+    (created: DocumentSummary) => {
+      queryClient.setQueryData<DocumentSummary[]>(
+        workspaceKeys.documents(created.workspaceId),
+        (previous) => [
+          ...(previous ?? []).filter((document) => document.id !== created.id),
+          created,
+        ],
+      );
+    },
+    [queryClient],
+  );
+  const navigationCancelled = useCallback(
+    (pathname: string) => {
+      const created = pendingCreation.current;
+      if (!created || pathname !== `/workspaces/${created.workspaceId}/documents/${created.id}`)
+        return;
+      pendingCreation.current = undefined;
+      clearCreatedDocument();
+      listCreatedDocument(created);
+      setCreationNotice(`已新建「${created.title}」。可在目录中打开。`);
+    },
+    [clearCreatedDocument, listCreatedDocument],
+  );
   const navigation = navigationOverride ?? preferences.navigation ?? wide;
   const navigationVisible = Boolean(workspace && navigation && !focus.active);
+  const canCreate = Boolean(workspace?.canWrite);
+
+  function showCreateDocument() {
+    if (canCreate) {
+      setCreationNotice(undefined);
+      setCreateDocumentFor(selected);
+    }
+  }
+
+  async function openCreatedDocument(snapshot: DocumentSnapshot) {
+    const { id } = snapshot.document;
+    queryClient.setQueryData(workspaceKeys.document(selected, id), snapshot);
+    pendingCreation.current = snapshot.document;
+    setCreatedDocument(id);
+    setCreateDocumentFor(undefined);
+    await navigate({
+      to: "/workspaces/$workspaceId/documents/$documentId",
+      params: { workspaceId: selected, documentId: id },
+    });
+    if (pendingCreation.current !== snapshot.document) return;
+    pendingCreation.current = undefined;
+    if (!wide) setNavigationOverride(false);
+    listCreatedDocument(snapshot.document);
+  }
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 801px)");
@@ -107,17 +173,28 @@ export function WorkspaceShell() {
   }, [navigationPanel, navigationVisible, preferences.sidebarWidth, wide]);
 
   useEffect(() => {
-    if (!selected || documentId || toolRoute || !firstDocument) return;
+    if (!selected || documentId || toolRoute || !firstDocument || createDocumentFor) return;
     void navigate({
       to: "/workspaces/$workspaceId/documents/$documentId",
       params: { workspaceId: selected, documentId: firstDocument },
       replace: true,
     });
-  }, [selected, documentId, firstDocument, navigate, toolRoute]);
+  }, [selected, documentId, firstDocument, navigate, toolRoute, createDocumentFor]);
 
   useEffect(() => {
     viewport.current?.scrollTo({ top: 0, left: 0 });
   }, [documentId, toolRoute]);
+  useEffect(
+    () =>
+      router.subscribe("onResolved", ({ pathChanged }) => {
+        if (pathChanged) setCreationNotice(undefined);
+      }),
+    [router],
+  );
+
+  useEffect(() => {
+    if (active && username && selected) rememberRecentDocument(username, selected, active.id);
+  }, [active, selected, username]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -145,11 +222,11 @@ export function WorkspaceShell() {
     }
   }
 
-  function openDocument(id: string) {
-    if (!selected || id === documentId) return;
+  function openDocument(id: string, destination = selected) {
+    if (!destination || id === documentId) return;
     void navigate({
       to: "/workspaces/$workspaceId/documents/$documentId",
-      params: { workspaceId: selected, documentId: id },
+      params: { workspaceId: destination, documentId: id },
     });
     if (!wide) setNavigationOverride(false);
   }
@@ -204,7 +281,16 @@ export function WorkspaceShell() {
   ];
 
   return (
-    <ReaderLayoutContext value={{ focus, preferences, savePreferences: save }}>
+    <ReaderLayoutContext
+      value={{
+        focus,
+        preferences,
+        savePreferences: save,
+        createdDocument,
+        clearCreatedDocument,
+        navigationCancelled,
+      }}
+    >
       <div className={styles.application} data-reading-focus={focus.active || undefined}>
         <header className={styles.bar}>
           {workspace ? (
@@ -227,7 +313,8 @@ export function WorkspaceShell() {
             </Link>
           )}
           <div className={styles.breadcrumb} title={active?.path}>
-            {active?.path ?? workspace?.name}
+            {activeFolder && <span className={styles.breadcrumbFolder}>{activeFolder} / </span>}
+            <span className={styles.breadcrumbTitle}>{active?.title ?? workspace?.name}</span>
           </div>
           {authenticated && (
             <div className={styles.topActions}>
@@ -360,6 +447,11 @@ export function WorkspaceShell() {
                     </TooltipTrigger>
                   )}
                 </div>
+                {canCreate && (
+                  <Button className={styles.newDocument} onPress={showCreateDocument}>
+                    <span aria-hidden="true">＋</span> 新建文档
+                  </Button>
+                )}
                 {resource.data && (
                   <SpaceTree
                     key={selected}
@@ -422,16 +514,32 @@ export function WorkspaceShell() {
               ) : resource.isPending || firstDocument ? (
                 <output className={styles.state}>正在打开空间…</output>
               ) : (
-                <p className={styles.state}>这个空间还没有文档</p>
+                <div className={styles.state}>
+                  <p>这个空间还没有文档</p>
+                  {canCreate && !navigationVisible && (
+                    <Button variant="primary" onPress={showCreateDocument}>
+                      新建文档
+                    </Button>
+                  )}
+                </div>
               )}
             </main>
           </Panel>
         </Group>
+        {canCreate && createDocumentFor === selected && (
+          <CreateDocumentDialog
+            workspace={selected}
+            folder={activeFolder}
+            created={openCreatedDocument}
+            close={() => setCreateDocumentFor(undefined)}
+          />
+        )}
         {settingsError && (
           <p role="alert" className={styles.notice}>
             布局未保存，请重试。
           </p>
         )}
+        {creationNotice && <output className={styles.notice}>{creationNotice}</output>}
         {logoutError && (
           <p role="alert" className={styles.notice}>
             无法完成退出登录，请重试。
@@ -442,6 +550,8 @@ export function WorkspaceShell() {
           <Suspense>
             <CommandPalette
               workspace={selected}
+              workspaces={workspaces.data ?? []}
+              username={username ?? ""}
               documents={documents}
               commands={commands}
               onClose={() => setSearch(false)}

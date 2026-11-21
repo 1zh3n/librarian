@@ -1511,6 +1511,63 @@
         }
       }
     },
+    "/documents/{document}/references": {
+      "parameters": [
+        {
+          "name": "document",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDocumentReferences",
+        "responses": {
+          "200": {
+            "description": "Document links and backlinks in the current Workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReferences"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/documents/{document}/outline": {
       "parameters": [
         {
@@ -3862,6 +3919,32 @@
           },
           "outlineEnabled": {
             "type": "boolean"
+          }
+        }
+      },
+      "DocumentReferences": {
+        "type": "object",
+        "required": [
+          "outgoing",
+          "backlinks",
+          "partial"
+        ],
+        "properties": {
+          "outgoing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummary"
+            }
+          },
+          "backlinks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummary"
+            }
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "A scan or result limit may have omitted some references."
           }
         }
       },

@@ -12,7 +12,7 @@ const defaults: DevicePreferences = {
   measure: 42,
   navigation: null,
   sidebarWidth: 236,
-  toolsWidth: 256,
+  toolsWidth: 336,
   eink: false,
   reduceMotion: false,
   focusKey: "f",

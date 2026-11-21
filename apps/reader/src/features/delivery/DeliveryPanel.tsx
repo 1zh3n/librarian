@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { DeliveryManifest, DeliveryReceipt } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form } from "../../ui/primitives";
+import { Button, FilePicker, Form } from "../../ui/primitives";
 import { Field } from "../workspace/ManagementFields";
 import styles from "../workspace/Management.module.css";
 
@@ -46,7 +46,6 @@ export function DeliveryPanel({ workspace, writable }: { workspace: string; writ
   const [version, setVersion] = useState("");
   const [generatedAt, setGeneratedAt] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const input = useRef<HTMLInputElement>(null);
   const zip = files.filter((file) => /\.zip$/iu.test(file.name));
   const mixed = zip.length > 0 && files.length > 1;
   const tooLarge = limitExceeded(files, zip[0]);
@@ -71,7 +70,6 @@ export function DeliveryPanel({ workspace, writable }: { workspace: string; writ
       });
     },
     onSuccess: async (receipt) => {
-      if (input.current) input.current.value = "";
       setFiles([]);
       client.setQueryData<DeliveryReceipt[]>(key, (records) => [
         receipt,
@@ -86,7 +84,7 @@ export function DeliveryPanel({ workspace, writable }: { workspace: string; writ
 
   return (
     <section className={styles.section} aria-label="投递文件">
-      <h2>投递文件</h2>
+      <h3>投递文件</h3>
       {writable && (
         <Form
           className={styles.form}
@@ -107,17 +105,7 @@ export function DeliveryPanel({ workspace, writable }: { workspace: string; writ
               onChange={setGeneratedAt}
             />
           </div>
-          <label className={styles.field}>
-            选择文件
-            <input
-              className={styles.input}
-              ref={input}
-              type="file"
-              multiple
-              disabled={upload.isPending}
-              onChange={(event) => setFiles(Array.from(event.currentTarget.files ?? []))}
-            />
-          </label>
+          <FilePicker files={files} disabled={upload.isPending} onChange={setFiles} />
           {mixed && (
             <p className={styles.status} role="alert">
               每次可上传一个 ZIP，或一组单独文件。
@@ -146,11 +134,12 @@ export function DeliveryPanel({ workspace, writable }: { workspace: string; writ
         </Form>
       )}
       <section aria-label="投递记录" className={styles.section}>
-        <h2>投递记录</h2>
+        <h4>投递记录</h4>
+        {history.isPending && <output className={styles.status}>正在读取投递记录…</output>}
         {history.isError && !history.data && <p role="alert">无法读取投递记录。</p>}
-        {history.data?.length === 0 && <p className={styles.status}>暂无投递。</p>}
+        {history.data?.length === 0 && <p className={styles.empty}>暂无投递记录。</p>}
         {Boolean(history.data?.length) && (
-          <ul className={styles.records}>
+          <ul className={styles.records} aria-label="投递回执">
             {history.data?.map((record) => (
               <li key={record.operationId}>
                 <div>

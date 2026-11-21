@@ -54,7 +54,7 @@ export function RenamePathForm({ workspace }: { workspace: string }) {
         </p>
       )}
       <Button className={styles.primary} type="submit" isDisabled={!ready || rename.isPending}>
-        重命名
+        {rename.isPending ? "正在重命名…" : "重命名"}
       </Button>
     </Form>
   );

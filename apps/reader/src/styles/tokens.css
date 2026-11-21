@@ -8,7 +8,7 @@
   --ink: light-dark(#252629, #eeedf0);
   --ink-secondary: light-dark(#5a5b61, #babac0);
   --border: light-dark(#e0dfdc, #3d3e44);
-  --border-strong: light-dark(#bcbcc0, #64666f);
+  --border-strong: light-dark(#828389, #797b84);
   --accent: light-dark(#244f85, #9abced);
   --muted-accent: light-dark(#425b79, #a7bdd7);
   --muted-code: light-dark(#e9e8e4, #2e3034);
@@ -16,6 +16,7 @@
   --radius: 5px;
   --ui-size: 0.875rem;
   --reading-size: 1.125rem;
+  --reading-title-size: clamp(1.85rem, 4vw, 3.25rem);
   --reading-measure: 42;
   --reading-line-height: 1.85;
   --reading-font: ui-serif, Georgia, "Noto Serif CJK SC", "Songti SC", serif;

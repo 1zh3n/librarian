@@ -11,6 +11,7 @@ pub mod mcp_bridge;
 mod mutations;
 pub mod password_limits;
 mod publication;
+mod references;
 mod revisions;
 pub mod router;
 mod search;

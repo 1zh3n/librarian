@@ -43,9 +43,9 @@ export function SnapshotPanel({
 
   return (
     <section className={styles.section} aria-label="阅读地址">
-      <h2>阅读地址</h2>
+      <h3>阅读地址</h3>
       {documents.length === 0 ? (
-        <p className={styles.status}>空间中还没有可选文档。</p>
+        <p className={styles.empty}>添加文档后即可创建阅读地址。</p>
       ) : (
         <Form
           className={styles.form}
@@ -117,9 +117,12 @@ export function SnapshotPanel({
             type="submit"
             isDisabled={!documentIds.length || create.isPending}
           >
-            创建阅读地址
+            {create.isPending ? "正在创建阅读地址…" : "创建阅读地址"}
           </Button>
         </Form>
+      )}
+      {create.isSuccess && addresses.some(({ id }) => id === create.data.id) && (
+        <output className={styles.status}>已创建阅读地址</output>
       )}
       {addresses.length > 0 && (
         <ul className={styles.records} aria-label="已创建的阅读地址">
@@ -136,7 +139,7 @@ export function SnapshotPanel({
                 isDisabled={revoke.isPending}
                 onPress={() => revoke.mutate(address.id)}
               >
-                撤销阅读地址
+                {revoke.isPending && revoke.variables === address.id ? "正在撤销…" : "撤销阅读地址"}
               </Button>
             </li>
           ))}

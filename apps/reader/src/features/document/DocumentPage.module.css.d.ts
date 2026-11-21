@@ -5,11 +5,14 @@ declare const styles: {
   readonly documentTools: string;
   readonly actionButton: string;
   readonly documentGrid: string;
-  readonly aiSlot: string;
+  readonly toolPane: string;
   readonly canvas: string;
   readonly contents: string;
   readonly outlineCanvas: string;
   readonly metadata: string;
+  readonly referenceHeading: string;
+  readonly referenceNotice: string;
+  readonly referenceList: string;
   readonly sideError: string;
   readonly metadataField: string;
   readonly tags: string;

@@ -66,7 +66,7 @@ impl Default for DevicePreferences {
             measure: 42,
             navigation: None,
             sidebar_width: 236,
-            tools_width: 256,
+            tools_width: 336,
             eink: false,
             reduce_motion: false,
             focus_key: "f".into(),

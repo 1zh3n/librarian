@@ -33,6 +33,7 @@ import {
 } from "../reading/semanticFocus";
 import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
+import { DocumentReferencesPanel } from "./DocumentReferencesPanel";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
 import type { OutlineSession } from "./OutlineCanvas";
@@ -41,7 +42,7 @@ import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
-type Tool = "contents" | "outline" | "metadata" | "history" | "ai";
+type Tool = "contents" | "outline" | "metadata" | "history" | "ai" | "references";
 
 export function DocumentPage({
   workspace,
@@ -78,7 +79,8 @@ function DocumentWorkspace({
   writable: boolean;
 }) {
   const { id: documentId, title } = snapshot.document;
-  const { focus, preferences } = useReaderLayout();
+  const { focus, preferences, createdDocument, clearCreatedDocument, navigationCancelled } =
+    useReaderLayout();
   const navigate = useNavigate();
   const documents = useQuery(documentsQuery(workspace)).data;
   const path = snapshot.document.path;
@@ -126,6 +128,7 @@ function DocumentWorkspace({
       queryKey: workspaceKeys.history(workspace, documentId),
       exact: true,
     });
+    void queryClient.invalidateQueries({ queryKey: workspaceKeys.references(workspace) });
   }
 
   const [body] = useState(() =>
@@ -173,12 +176,50 @@ function DocumentWorkspace({
     : normalTool?.layout === preferences.layout
       ? normalTool.tool
       : defaultTool;
-  function setTool(tool: Tool | undefined) {
-    if (focus.activation !== undefined) setFocusTool({ activation: focus.activation, tool });
-    else setNormalTool({ layout: preferences.layout, tool });
+  const toolAnchor = useRef<ReturnType<typeof captureReaderAnchor>>(undefined);
+  const toolPane = useRef<HTMLElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const inlineVisit = useRef<{
+    anchor: ReturnType<typeof captureReaderAnchor>;
+    source: string;
+    scrollTop: number;
+    opener: HTMLElement | undefined;
+  }>(undefined);
+  const moveToTool = useRef(false);
+  const returnFromTool = useRef(false);
+  const chooseTool = useCallback(
+    (next: Tool | undefined) => {
+      if (focus.activation !== undefined)
+        setFocusTool({ activation: focus.activation, tool: next });
+      else setNormalTool({ layout: preferences.layout, tool: next });
+    },
+    [focus.activation, preferences.layout],
+  );
+  function setTool(next: Tool | undefined) {
+    const viewport = canvas.current?.closest("main");
+    toolAnchor.current =
+      viewport && modeRef.current === "read"
+        ? captureReaderAnchor(viewport, analysis.blocks)
+        : undefined;
+    returnFromTool.current = !next;
+    if (next && viewport && toolPane.current) {
+      const inline =
+        getComputedStyle(toolPane.current).getPropertyValue("--inline-tool").trim() === "1";
+      if (inline) {
+        const active = window.document.activeElement;
+        inlineVisit.current ??= {
+          anchor: toolAnchor.current,
+          source: reading.source,
+          scrollTop: viewport.scrollTop,
+          opener:
+            active instanceof HTMLElement && toolbar.current?.contains(active) ? active : undefined,
+        };
+        moveToTool.current = true;
+      }
+    }
+    chooseTool(next);
   }
   const outline = useQuery({ ...outlineQuery(workspace, documentId), enabled: outlineEnabled });
-  const grid = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
   const [aiOpened, setAiOpened] = useState(false);
@@ -198,21 +239,71 @@ function DocumentWorkspace({
   useEffect(() => () => body.saves.cancelScheduledSave(), [body]);
 
   useLayoutEffect(() => {
-    const layout = grid.current;
-    const article = canvas.current;
-    if (!layout || !article || tool !== "ai") return;
-    const place = () => {
-      layout.toggleAttribute("data-ai-aside", layout.clientWidth - article.offsetWidth >= 448);
-    };
-    const observer = new ResizeObserver(place);
-    observer.observe(layout);
-    observer.observe(article);
-    place();
-    return () => {
-      observer.disconnect();
-      layout.removeAttribute("data-ai-aside");
-    };
-  }, [tool]);
+    const bar = toolbar.current;
+    const page = bar?.parentElement;
+    if (!bar || !page) return;
+    const update = () =>
+      page.style.setProperty("--document-toolbar-height", `${bar.offsetHeight}px`);
+    const observer = new ResizeObserver(update);
+    update();
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const viewport = canvas.current?.closest("main");
+    const anchor = toolAnchor.current;
+    toolAnchor.current = undefined;
+    if (!viewport) return;
+    const pane = toolPane.current;
+    if (tool && pane && moveToTool.current) {
+      moveToTool.current = false;
+      const top = pane.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+      const inset = (toolbar.current?.offsetHeight ?? 0) + 8;
+      if (top < inset || top + Math.min(pane.offsetHeight, 88) > viewport.clientHeight) {
+        viewport.scrollTop += top - inset;
+      }
+      pane.focus({ preventScroll: true });
+      return;
+    }
+    if (!tool && inlineVisit.current && returnFromTool.current) {
+      const visit = inlineVisit.current;
+      inlineVisit.current = undefined;
+      returnFromTool.current = false;
+      visit.opener?.focus({ preventScroll: true });
+      if (visit.anchor && modeRef.current === "read") {
+        return restoreReaderAnchor(
+          viewport,
+          analysis.blocks,
+          visit.anchor,
+          visit.source === reading.source,
+        );
+      }
+      viewport.scrollTop = visit.scrollTop;
+      return;
+    }
+    if (anchor && modeRef.current === "read") {
+      return restoreReaderAnchor(viewport, analysis.blocks, anchor, true);
+    }
+  }, [tool, analysis.blocks, reading.source]);
+
+  useEffect(() => {
+    const pane = toolPane.current;
+    function closeInlineTool(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.key !== "Escape" ||
+        !inlineVisit.current
+      )
+        return;
+      event.preventDefault();
+      returnFromTool.current = true;
+      chooseTool(undefined);
+    }
+    pane?.addEventListener("keydown", closeInlineTool);
+    return () => pane?.removeEventListener("keydown", closeInlineTool);
+  }, [chooseTool]);
 
   const rememberReadingSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -335,7 +426,9 @@ function DocumentWorkspace({
     shouldBlockFn: async ({ current, next }) => {
       if (current.pathname === next.pathname || !isDirty()) return false;
       await flush();
-      return isDirty() && !window.confirm("还有未保存的内容。确定离开文档？");
+      const blocked = isDirty() && !window.confirm("还有未保存的内容。确定离开文档？");
+      if (blocked) navigationCancelled(next.pathname);
+      return blocked;
     },
   });
 
@@ -379,6 +472,12 @@ function DocumentWorkspace({
     },
     [analysis, body, mode, reading, restoringVersion, writable],
   );
+
+  useEffect(() => {
+    if (createdDocument !== documentId || !writable || modeRef.current !== "read") return;
+    enterEditor("preview", 0);
+    clearCreatedDocument();
+  }, [clearCreatedDocument, createdDocument, documentId, enterEditor, writable]);
 
   const leaveEditor = useCallback(() => {
     if (body.editor.isComposing()) return;
@@ -519,10 +618,10 @@ function DocumentWorkspace({
     <div
       className={styles.page}
       data-editing={mode !== "read" || undefined}
+      data-tool-open={Boolean(tool) || undefined}
       style={
         {
           "--focus-measure": focus.width ? `${focus.width}px` : undefined,
-          "--focus-header": focus.headerWidth ? `${focus.headerWidth}px` : undefined,
           "--focus-tool-inset": focus.toolInset ? `${focus.toolInset}px` : undefined,
           "--tool-width": `${preferences.toolsWidth}px`,
         } as CSSProperties
@@ -531,7 +630,7 @@ function DocumentWorkspace({
       <header className={styles.header} data-reading-header>
         {!titleIsFirstHeading && <h1 className={styles.title}>{title}</h1>}
       </header>
-      <div className={styles.documentTools}>
+      <div className={styles.documentTools} ref={toolbar}>
         {mode !== "read" && (
           <Button className={styles.actionButton} onPress={leaveEditor}>
             返回阅读
@@ -575,6 +674,15 @@ function DocumentWorkspace({
         >
           文档 AI
         </ToggleButton>
+        {mode === "read" && (
+          <ToggleButton
+            isSelected={tool === "references"}
+            onChange={(selected) => setTool(selected ? "references" : undefined)}
+            className={styles.actionButton}
+          >
+            引用
+          </ToggleButton>
+        )}
         {(writable || semantic.length > 0) && (
           <MenuTrigger>
             <Button
@@ -611,24 +719,90 @@ function DocumentWorkspace({
           </MenuTrigger>
         )}
       </div>
-      <div
-        className={styles.documentGrid}
-        data-tool={tool === "ai" ? undefined : tool}
-        data-reading-grid
-        ref={grid}
-      >
-        {aiOpened && (
-          <div className={styles.aiSlot} hidden={tool !== "ai"}>
-            <AiPanel
-              id={aiPanelId}
+      <div className={styles.documentGrid} data-tool={tool} data-reading-grid>
+        <section
+          className={styles.toolPane}
+          ref={toolPane}
+          hidden={!tool}
+          aria-label="文档辅助区"
+          tabIndex={-1}
+        >
+          {aiOpened && (
+            <div hidden={tool !== "ai"}>
+              <AiPanel
+                id={aiPanelId}
+                workspace={workspace}
+                documentId={documentId}
+                documents={documents ?? []}
+                writable={writable}
+                resolveContext={resolveAiContext}
+              />
+            </div>
+          )}
+          {tool === "contents" && (
+            <nav className={styles.contents} aria-label="文档目录">
+              {analysis.headings.map((heading) => (
+                <a
+                  key={heading.id}
+                  href={`#${encodeURIComponent(heading.id)}`}
+                  style={{ paddingInlineStart: Math.max(heading.level - 2, 0) * 12 + 8 }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    window.document.getElementById(heading.id)?.scrollIntoView({ block: "start" });
+                  }}
+                >
+                  {heading.label}
+                </a>
+              ))}
+            </nav>
+          )}
+          {outline.data && (
+            <OutlineCanvas
+              snapshot={outline.data}
+              visible={tool === "outline"}
+              writable={writable}
+              write={writeOutline}
+              confirmed={confirmOutline}
+              readCurrent={() => api.getOutline(documentId)}
+              register={setOutlineSession}
+            />
+          )}
+          {tool === "outline" && outline.isError && (
+            <p role="alert" className={styles.sideError}>
+              无法打开提纲
+            </p>
+          )}
+          {tool === "metadata" && (
+            <MetadataPanel
+              editor={body.editor}
+              onApply={() => {
+                if (mode === "read") {
+                  const source = body.editor.source();
+                  setReading((previous) => ({
+                    source,
+                    analysis: reanalyzeMarkdown(source, documentId, previous),
+                  }));
+                }
+                setTool(undefined);
+              }}
+              openSource={() => {
+                setTool(undefined);
+                enterEditor("source", 0);
+              }}
+            />
+          )}
+          {tool === "history" && (
+            <VersionPanel
               workspace={workspace}
               documentId={documentId}
-              documents={documents ?? []}
               writable={writable}
-              resolveContext={resolveAiContext}
+              onRestore={restore}
             />
-          </div>
-        )}
+          )}
+          {tool === "references" && (
+            <DocumentReferencesPanel workspace={workspace} document={documentId} />
+          )}
+        </section>
         <div
           className={styles.canvas}
           data-editable={writable || undefined}
@@ -648,66 +822,6 @@ function DocumentWorkspace({
             <div ref={mountBody} />
           )}
         </div>
-        {tool === "contents" && (
-          <nav className={styles.contents} aria-label="文档目录">
-            {analysis.headings.map((heading) => (
-              <a
-                key={heading.id}
-                href={`#${encodeURIComponent(heading.id)}`}
-                style={{ paddingInlineStart: Math.max(heading.level - 2, 0) * 12 + 8 }}
-                onClick={(event) => {
-                  event.preventDefault();
-                  window.document.getElementById(heading.id)?.scrollIntoView({ block: "start" });
-                }}
-              >
-                {heading.label}
-              </a>
-            ))}
-          </nav>
-        )}
-        {outline.data && (
-          <OutlineCanvas
-            snapshot={outline.data}
-            visible={tool === "outline"}
-            writable={writable}
-            write={writeOutline}
-            confirmed={confirmOutline}
-            readCurrent={() => api.getOutline(documentId)}
-            register={setOutlineSession}
-          />
-        )}
-        {tool === "outline" && outline.isError && (
-          <p role="alert" className={styles.sideError}>
-            无法打开提纲
-          </p>
-        )}
-        {tool === "metadata" && (
-          <MetadataPanel
-            editor={body.editor}
-            onApply={() => {
-              if (mode === "read") {
-                const source = body.editor.source();
-                setReading((previous) => ({
-                  source,
-                  analysis: reanalyzeMarkdown(source, documentId, previous),
-                }));
-              }
-              setTool(undefined);
-            }}
-            openSource={() => {
-              setTool(undefined);
-              enterEditor("source", 0);
-            }}
-          />
-        )}
-        {tool === "history" && (
-          <VersionPanel
-            workspace={workspace}
-            documentId={documentId}
-            writable={writable}
-            onRestore={restore}
-          />
-        )}
       </div>
       {mode === "read" && selectedBlock && (
         <Group className={styles.semanticControls} aria-label="语义聚焦">

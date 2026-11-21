@@ -1,0 +1,59 @@
+.overlay {
+  position: fixed;
+  z-index: 8;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 1rem;
+  overflow: auto;
+  background: var(--overlay);
+}
+
+.modal {
+  width: min(100%, 29rem);
+}
+
+.dialog {
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--border-strong);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.dialog h2 {
+  margin: 0 0 1rem;
+  font-size: 1.3rem;
+}
+
+.form,
+.field {
+  display: grid;
+  min-width: 0;
+}
+
+.form {
+  gap: 0.875rem;
+}
+
+.field {
+  gap: 0.35rem;
+}
+
+.field input {
+  min-height: 44px;
+  font-size: 1rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.error {
+  margin: 0;
+  color: light-dark(#962d25, #ffa89c);
+  font-size: var(--ui-size);
+}

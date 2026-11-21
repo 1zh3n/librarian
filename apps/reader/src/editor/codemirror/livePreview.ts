@@ -302,10 +302,14 @@ const previewBlocks = StateField.define<DecorationSet>({
 });
 
 const previewTheme = EditorView.baseTheme({
-  ".cm-content": { fontFamily: "inherit", lineHeight: "1.65" },
+  ".cm-scroller": { fontFamily: "var(--reading-font, inherit)" },
+  ".cm-content": { fontFamily: "inherit", lineHeight: "var(--reading-line-height, 1.65)" },
   "[data-preview-heading]": { fontWeight: "650", fontSize: "1.2em" },
-  "[data-preview-heading='1']": { fontSize: "1.65em" },
-  "[data-preview-heading='2']": { fontSize: "1.35em" },
+  "[data-preview-heading='1']": {
+    fontSize: "var(--reading-title-size, 1.65em)",
+    lineHeight: "1.16",
+  },
+  "[data-preview-heading='2']": { fontSize: "1.45em" },
   "[data-preview-link]": { textDecoration: "underline" },
   "[data-preview-list], [data-preview-task]": { color: "var(--ink)" },
   "[data-preview-quote]": {

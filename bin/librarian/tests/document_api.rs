@@ -188,6 +188,121 @@ async fn workspace_search_is_scoped() {
 }
 
 #[tokio::test]
+async fn document_references_use_current_markdown_and_workspace_read_access() {
+    let f = Fixture::new(false);
+    let left = f.workspace("Left").await;
+    let right = f.workspace("Right").await;
+    let empty = f.document(&left, "Empty.md").await;
+    let journal = f.document(&left, "left-journal.md").await;
+    let markdown = concat!(
+        "\u{feff}---\r\ntitle: 深入阅读\r\nmetadata: '[[Note]]'\r\n---\r\n\r\n",
+        "[相关][other] · [重复](../Empty.md#intro) · [[left-journal|日记]]\r\n\r\n",
+        "[other]: /Empty.md\r\n\r\n",
+        "[附件](../Note.outline.md) [跨空间](../right-journal.md) [不存在](../Missing.md)\r\n\r\n",
+        "[目录](../Note.md/.) [编码后的目录](%2E%2E%2FNote.md)\r\n\r\n",
+        "[外部](https://example.com/Note.md) [本节](#section) `[[Note]]`\r\n\r\n",
+        "```markdown\r\n[代码示例](../Note.md)\r\n```\r\n",
+    );
+    for (workspace, path, body) in [
+        (&left, "notes/深读.md", markdown),
+        (
+            &left,
+            "Related.md",
+            "[阅读](notes/%E6%B7%B1%E8%AF%BB.md#section)",
+        ),
+        (&left, "notes/Wiki.md", "[[深读]]"),
+        (&left, "Example.md", "`[示例](notes/深读.md)`"),
+        (&right, "Private.md", "[跨空间](notes/深读.md)"),
+    ] {
+        let (status, response) = f
+            .request(
+                "POST",
+                &format!("/workspaces/{workspace}/documents"),
+                Some(&f.editor),
+                json!({"path":path,"markdown":body,"baseRevision":null}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{response}");
+    }
+
+    let id = f.document(&left, "notes/深读.md").await;
+    let endpoint = format!("/documents/{id}/references");
+    let (status, references) = f
+        .request("GET", &endpoint, Some(&f.reader), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{references}");
+    let specification: Value =
+        serde_json::from_str(include_str!("../../../api/librarian.openapi.json")).unwrap();
+    let schema = &specification["paths"]["/documents/{document}/references"]["get"]["responses"]
+        ["200"]["content"]["application/json"]["schema"];
+    assert_response_shape(&specification, schema, &references);
+    let outgoing = references["outgoing"].as_array().unwrap();
+    assert_eq!(outgoing.len(), 2, "{outgoing:?}");
+    assert_eq!(outgoing[0]["id"], empty);
+    assert_eq!(outgoing[1]["id"], journal);
+    assert_eq!(outgoing[1]["title"], "田野日记");
+    let backlinks = references["backlinks"].as_array().unwrap();
+    assert_eq!(backlinks.len(), 2, "{backlinks:?}");
+    assert_eq!(backlinks[0]["path"], "Related.md");
+    assert_eq!(backlinks[1]["path"], "notes/Wiki.md");
+    assert_eq!(references["partial"], false);
+    for (token, expected) in [
+        (Some(f.outsider.as_str()), StatusCode::NOT_FOUND),
+        (None, StatusCode::UNAUTHORIZED),
+    ] {
+        let (status, response) = f.request("GET", &endpoint, token, Value::Null).await;
+        assert_eq!(status, expected, "{response}");
+    }
+
+    let source = format!("/documents/{id}");
+    let (_, original) = f
+        .request("GET", &source, Some(&f.reader), Value::Null)
+        .await;
+    assert_eq!(original["markdown"], markdown);
+    let (status, response) = f
+        .request(
+            "PUT",
+            &source,
+            Some(&f.editor),
+            json!({"markdown":"更新后没有出链", "baseRevision":original["revision"]}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let (status, updated) = f
+        .request("GET", &endpoint, Some(&f.reader), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["outgoing"], json!([]));
+    assert_eq!(updated["backlinks"], references["backlinks"]);
+}
+
+#[tokio::test]
+async fn document_references_report_partial_when_unreadable_files_use_the_scan_budget() {
+    let mut f = Fixture::new(false);
+    let invalid_markdown = vec![255; 4 * 1024 * 1024];
+    let folder = f.root.path().join("spaces/left");
+    f.app = Router::new();
+    for file in 0..5 {
+        fs::write(folder.join(format!("Large-{file}.md")), &invalid_markdown).unwrap();
+    }
+    fs::write(folder.join("Related.md"), "[阅读](Note.md)").unwrap();
+    f.app = open(f.root.path());
+
+    let note = f.document(&f.workspace("Left").await, "Note.md").await;
+    let (status, references) = f
+        .request(
+            "GET",
+            &format!("/documents/{note}/references"),
+            Some(&f.reader),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{references}");
+    assert_eq!(references["backlinks"][0]["path"], "Related.md");
+    assert_eq!(references["partial"], true, "{references}");
+}
+
+#[tokio::test]
 async fn outline_and_body_save_independently() {
     let f = Fixture::new(false);
     let workspace = f.workspace("Left").await;

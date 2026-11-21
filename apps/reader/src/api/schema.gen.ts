@@ -343,6 +343,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/documents/{document}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        document: string;
+      };
+      cookie?: never;
+    };
+    get: operations["getDocumentReferences"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/documents/{document}/outline": {
     parameters: {
       query?: never;
@@ -899,6 +917,12 @@ export interface components {
       path: string;
       title: string;
       outlineEnabled: boolean;
+    };
+    DocumentReferences: {
+      outgoing: components["schemas"]["DocumentSummary"][];
+      backlinks: components["schemas"]["DocumentSummary"][];
+      /** @description A scan or result limit may have omitted some references. */
+      partial: boolean;
     };
     DocumentSnapshot: {
       document: components["schemas"]["DocumentSummary"];
@@ -2383,6 +2407,55 @@ export interface operations {
       };
       /** @description Workspace unavailable */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getDocumentReferences: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        document: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Document links and backlinks in the current Workspace */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentReferences"];
+        };
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Resource not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
         headers: {
           [name: string]: unknown;
         };

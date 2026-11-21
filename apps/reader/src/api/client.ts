@@ -3,6 +3,7 @@ import type { components, operations } from "./schema.gen";
 export type Workspace = components["schemas"]["Workspace"];
 export type DocumentSummary = components["schemas"]["DocumentSummary"];
 export type DocumentSnapshot = components["schemas"]["DocumentSnapshot"];
+export type DocumentReferences = components["schemas"]["DocumentReferences"];
 export type SearchHit = components["schemas"]["SearchHit"];
 export type OutlineSnapshot = components["schemas"]["OutlineSnapshot"];
 export type DocumentHistory = components["schemas"]["DocumentHistory"];
@@ -301,6 +302,9 @@ export const api = {
   },
   getDocument(document: string, signal?: AbortSignal) {
     return request<DocumentSnapshot>(documentPath(document), signal);
+  },
+  getDocumentReferences(document: string, signal?: AbortSignal) {
+    return request<DocumentReferences>(`${documentPath(document)}/references`, signal);
   },
   saveDocument(document: string, body: SaveDocument, signal?: AbortSignal) {
     return request<DocumentSnapshot>(documentPath(document), signal, {

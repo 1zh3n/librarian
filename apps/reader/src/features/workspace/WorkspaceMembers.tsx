@@ -40,7 +40,7 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
       : "无法更新成员权限，请检查后重试。";
   return (
     <section aria-label="空间成员" className={styles.section}>
-      <h2>空间成员</h2>
+      <h3>空间成员</h3>
       {members.isError && (
         <p role="alert" className={styles.status}>
           无法读取成员。
@@ -68,7 +68,9 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
               className={styles.primary}
               isDisabled={!username.trim() || mutation.isPending}
             >
-              保存成员
+              {mutation.isPending && mutation.variables.next !== null
+                ? "正在保存成员…"
+                : "保存成员"}
             </Button>
           </Form>
           {mutation.isError && (
@@ -76,6 +78,12 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
               {memberError}
             </p>
           )}
+          {mutation.isSuccess && (
+            <output className={styles.status}>
+              {mutation.variables.next === null ? "已移除成员" : "成员权限已保存"}
+            </output>
+          )}
+          {members.data.length === 0 && <p className={styles.empty}>暂无成员。</p>}
           {members.data.length > 0 && (
             <ul aria-label="成员列表" className={styles.records}>
               {members.data.map((member) => (
@@ -102,7 +110,11 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
                         isDisabled={mutation.isPending}
                         onPress={() => mutation.mutate({ name: member.username, next: null })}
                       >
-                        移除成员
+                        {mutation.isPending &&
+                        mutation.variables.next === null &&
+                        mutation.variables.name === member.username
+                          ? "正在移除…"
+                          : "移除成员"}
                       </Button>
                     </div>
                   )}

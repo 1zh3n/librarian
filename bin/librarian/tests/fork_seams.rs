@@ -181,6 +181,18 @@ impl Server {
             .unwrap();
         assert_eq!(consent.status(), StatusCode::OK);
         let form = consent.text().await.unwrap();
+        assert!(form.contains("href=\"/.auth/librarian/consent.css\""));
+        let theme = self
+            .client
+            .get(format!("{}/.auth/librarian/consent.css", self.url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(theme.status(), StatusCode::OK);
+        assert_eq!(
+            theme.headers()[header::CONTENT_TYPE],
+            "text/css; charset=utf-8"
+        );
         let csrf = form
             .split_once("name=\"csrf_token\" value=\"")
             .unwrap()

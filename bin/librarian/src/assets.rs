@@ -4,6 +4,7 @@ use silverbullet_server::product::router::ProductAsset;
 #[derive(RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../apps/reader/dist/"]
 #[include = "index.html"]
+#[include = "login.html"]
 #[include = "sw.js"]
 #[include = "assets/*"]
 struct ReaderAssets;

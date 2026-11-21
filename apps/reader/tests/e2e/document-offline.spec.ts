@@ -118,6 +118,15 @@ test("only an explicitly saved fixed address and its assets open after a direct 
   await page.goto(current.url);
   await expect(page.getByRole("article")).toContainText("离线固定稿");
   await expect(page.getByRole("button", { name: "保存离线副本" })).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const [badge, article] = await Promise.all([
+        page.getByText("当前地址", { exact: true }).boundingBox(),
+        page.getByRole("article").boundingBox(),
+      ]);
+      return badge && article ? Math.abs(badge.x - article.x) : Infinity;
+    })
+    .toBeLessThanOrEqual(1);
   await fixture.save(saved);
 
   const visitor = await context.newPage();

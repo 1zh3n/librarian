@@ -112,7 +112,7 @@ export function WorkspaceEditor({
       )}
       {save.isSuccess && current && <output className={styles.status}>空间设置已保存</output>}
       <Button className={styles.primary} type="submit" isDisabled={save.isPending || !name.trim()}>
-        {current ? "保存空间设置" : "创建空间"}
+        {save.isPending ? "正在保存…" : current ? "保存空间设置" : "创建空间"}
       </Button>
     </Form>
   );

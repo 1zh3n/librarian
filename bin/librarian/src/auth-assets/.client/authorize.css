@@ -1,0 +1,53 @@
+.consent-panel {
+  inline-size: min(100%, 33rem);
+  overflow-wrap: anywhere;
+}
+
+.consent-panel .heading {
+  font-size: clamp(1.5rem, 4.2vw, 2rem);
+}
+
+.consent-panel p {
+  color: var(--ink-secondary);
+  line-height: 1.55;
+}
+
+.consent-scope {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.consent-scope legend {
+  padding: 0;
+  font-weight: 650;
+}
+
+.consent-scope label {
+  display: flex;
+  min-block-size: 44px;
+  align-items: center;
+  gap: 0.7rem;
+  padding-inline: 0.65rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.consent-scope input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.consent-actions button {
+  margin: 0;
+  padding-inline: 1rem;
+  cursor: pointer;
+}

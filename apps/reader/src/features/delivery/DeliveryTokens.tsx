@@ -41,27 +41,31 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
 
   return (
     <section aria-label="投递凭证" className={styles.section}>
-      <h2>投递凭证</h2>
+      <h3>投递凭证</h3>
       <Form
         className={styles.form}
+        aria-label="签发投递凭证"
         onSubmit={(event) => {
           event.preventDefault();
           if (canIssue && !issue.isPending)
             issue.mutate({ name: name.trim(), deliveryId: deliveryId.trim() });
         }}
       >
-        <Field label="凭证名称" value={name} onChange={setName} required />
-        <Field label="投递 ID" value={deliveryId} onChange={setDeliveryId} required />
+        <div className={styles.fields}>
+          <Field label="凭证名称" value={name} onChange={setName} required />
+          <Field label="投递 ID" value={deliveryId} onChange={setDeliveryId} required />
+        </div>
         {issue.isError && (
           <p role="alert" className={styles.status}>
             无法签发投递凭证。
           </p>
         )}
         <Button className={styles.primary} type="submit" isDisabled={!canIssue || issue.isPending}>
-          签发凭证
+          {issue.isPending ? "正在签发…" : "签发凭证"}
         </Button>
         {issued && (
-          <div className={styles.form}>
+          <div className={`${styles.form} ${styles.result}`}>
+            <output className={styles.status}>投递凭证已签发</output>
             <TextField className={styles.field} isReadOnly value={issued.token}>
               <Label>新签发的凭证</Label>
               <Input className={styles.input} autoComplete="off" />
@@ -78,8 +82,9 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
           无法读取投递凭证。
         </p>
       )}
+      {tokens.data?.length === 0 && <p className={styles.empty}>暂无投递凭证。</p>}
       {Boolean(tokens.data?.length) && (
-        <ul className={styles.records}>
+        <ul className={styles.records} aria-label="投递凭证列表">
           {tokens.data?.map((token) => (
             <li key={token.id}>
               <div>{token.name}</div>
@@ -94,14 +99,14 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
                 </time>
               )}
               {token.revoked ? (
-                <span>已撤销</span>
+                <output>已撤销</output>
               ) : (
                 <Button
                   className={styles.secondary}
                   isDisabled={revoke.isPending}
                   onPress={() => revoke.mutate(token.id)}
                 >
-                  撤销凭证
+                  {revoke.isPending && revoke.variables === token.id ? "正在撤销…" : "撤销凭证"}
                 </Button>
               )}
               {revoke.isError && revoke.variables === token.id && (

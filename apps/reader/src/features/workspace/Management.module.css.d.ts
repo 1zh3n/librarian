@@ -1,5 +1,8 @@
 declare const styles: {
   readonly page: string;
+  readonly navigation: string;
+  readonly group: string;
+  readonly groupTitle: string;
   readonly section: string;
   readonly form: string;
   readonly field: string;
@@ -14,6 +17,7 @@ declare const styles: {
   readonly checkbox: string;
   readonly checkboxMark: string;
   readonly status: string;
+  readonly empty: string;
   readonly records: string;
   readonly fieldset: string;
   readonly address: string;

@@ -81,7 +81,7 @@ function PasswordForm({
         </p>
       )}
       <Button type="submit" className={styles.primary} isDisabled={pending}>
-        保存密码
+        {pending ? "正在保存…" : "保存密码"}
       </Button>
     </Form>
   );
@@ -90,17 +90,20 @@ function PasswordForm({
 function NewAccount({ onCreated }: { onCreated: () => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   async function create(form: HTMLFormElement) {
     const values = new FormData(form);
     const username = values.get("username");
     const password = values.get("password");
-    form.reset();
     if (typeof username !== "string" || typeof password !== "string") return;
     setPending(true);
     setError("");
+    setNotice("");
     try {
       await api.createAccount({ username: username.trim(), password });
+      form.reset();
+      setNotice("账号已创建");
       onCreated();
     } catch (failure) {
       setError(
@@ -135,8 +138,9 @@ function NewAccount({ onCreated }: { onCreated: () => void }) {
           {error}
         </p>
       )}
+      {notice && <output className={styles.status}>{notice}</output>}
       <Button type="submit" className={styles.primary} isDisabled={pending}>
-        创建账号
+        {pending ? "正在创建…" : "创建账号"}
       </Button>
     </Form>
   );
@@ -168,6 +172,7 @@ function AccountRow({
         setNotice("已撤销会话");
         if (self) void signInAgain();
       } else {
+        setNotice(account.disabled ? "账号已启用" : "账号已停用");
         onChanged();
       }
     },
@@ -186,7 +191,11 @@ function AccountRow({
               isDisabled={action.isPending || resetting}
               onPress={() => action.mutate("toggle")}
             >
-              {account.disabled ? "启用账号" : "停用账号"}
+              {action.isPending && action.variables === "toggle"
+                ? "正在更新…"
+                : account.disabled
+                  ? "启用账号"
+                  : "停用账号"}
             </Button>
             <Button
               className={styles.secondary}
@@ -206,7 +215,7 @@ function AccountRow({
           isDisabled={action.isPending || resetting}
           onPress={() => action.mutate("revoke")}
         >
-          撤销会话
+          {action.isPending && action.variables === "revoke" ? "正在撤销…" : "撤销会话"}
         </Button>
       </div>
       {resetting && (
@@ -273,7 +282,12 @@ export function AccountsRoute() {
   return (
     <div className={styles.page}>
       <h1>{session.data?.isAdmin ? "账号管理" : "账号设置"}</h1>
-      {session.isError && <p role="alert">无法读取当前账号。</p>}
+      {session.isPending && <output className={styles.status}>正在读取当前账号…</output>}
+      {session.isError && (
+        <p className={styles.status} role="alert">
+          无法读取当前账号。
+        </p>
+      )}
       {session.data && (
         <>
           <section aria-label="修改密码" className={styles.section}>

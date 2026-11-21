@@ -1,4 +1,7 @@
 declare const styles: {
+  readonly newDocument: string;
+  readonly breadcrumbFolder: string;
+  readonly breadcrumbTitle: string;
   readonly application: string;
   readonly bar: string;
   readonly breadcrumb: string;

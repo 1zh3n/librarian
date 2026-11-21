@@ -24,6 +24,29 @@ async function openCommand(page: Page, title: string) {
   await page.getByRole("option", { name: title, exact: true }).click();
 }
 
+test("jumps to the release tools from the management navigation on a narrow screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const workspaces = (await (await page.request.get("/api/v1/workspaces")).json()) as Workspace[];
+  const workspace = workspaces.find(({ name }) => name === "田野笔记");
+  if (!workspace) throw new Error("Missing managed Workspace fixture");
+
+  await page.goto(`/workspaces/${workspace.id}/manage`);
+  const navigation = page.getByRole("navigation", { name: "工作区管理" });
+  const release = navigation.getByRole("link", { name: "备份、发布与分享" });
+  await release.focus();
+  await page.keyboard.press("Enter");
+
+  const section = page.getByRole("heading", { name: "备份、发布与分享" });
+  await expect(section).toBeFocused();
+  await expect(section).toBeInViewport();
+  await expect(page.getByRole("banner")).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("region", { name: "阅读地址" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+});
+
 test("manages a local account and applies Workspace membership through Reader", async ({
   page,
   browser,

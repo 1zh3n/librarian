@@ -7,14 +7,12 @@ type Focus = null | {
   activation: number;
   document: string;
   width: number | undefined;
-  headerWidth: number | undefined;
   toolInset: number;
   navigationInset: number;
 };
 type SemanticSelection = { document: string; block: string };
 
 const readMeasure = "[data-reading-measure]";
-const headerMeasure = "[data-reading-header]";
 const gridMeasure = "[data-reading-grid]";
 
 export function useReadingFocus(
@@ -58,9 +56,6 @@ export function useReadingFocus(
     }
     if (!documentId) return;
     const canvas = viewport.current?.querySelector(readMeasure)?.getBoundingClientRect();
-    const headerWidth = viewport.current
-      ?.querySelector(headerMeasure)
-      ?.getBoundingClientRect().width;
     const grid = viewport.current?.querySelector(gridMeasure)?.getBoundingClientRect();
     const viewportTop = viewport.current?.getBoundingClientRect().top ?? 0;
     const layoutTop = layout.current?.getBoundingClientRect().top ?? viewportTop;
@@ -69,7 +64,6 @@ export function useReadingFocus(
       activation: activation.current,
       document: documentId,
       width: canvas?.width || undefined,
-      headerWidth: headerWidth || undefined,
       toolInset: Math.max(0, grid && canvas ? canvas.top - grid.top : 0),
       navigationInset: Math.max(0, viewportTop - layoutTop),
     });
@@ -102,7 +96,6 @@ export function useReadingFocus(
     active: focus !== null,
     activation: focus?.activation,
     width: focus?.width,
-    headerWidth: focus?.headerWidth,
     toolInset: focus?.document === documentId ? focus?.toolInset : undefined,
     navigationInset: focus?.document === documentId ? focus?.navigationInset : undefined,
     announce,
@@ -125,6 +118,9 @@ type ReaderLayout = {
   focus: ReturnType<typeof useReadingFocus>;
   preferences: DevicePreferences;
   savePreferences: (patch: Partial<DevicePreferences>) => Promise<DevicePreferences>;
+  createdDocument: string | undefined;
+  clearCreatedDocument: () => void;
+  navigationCancelled: (pathname: string) => void;
 };
 
 export const ReaderLayoutContext = createContext<ReaderLayout | null>(null);

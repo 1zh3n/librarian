@@ -1,17 +1,24 @@
+export { Form } from "@heroui/react/form";
+export { Input } from "@heroui/react/input";
+export { Label } from "@heroui/react/label";
+export { TextArea } from "@heroui/react/textarea";
+export { TextField } from "@heroui/react/textfield";
+export { ToggleButton } from "@heroui/react/toggle-button";
+export { Button } from "./Button";
+export { FilePicker } from "./FilePicker";
+
 export {
   Autocomplete,
-  Button,
   Checkbox,
   Collection,
   Dialog,
-  Form,
   Group,
+  Header,
   Heading,
   I18nProvider,
-  Input,
-  Label,
   ListBox,
   ListBoxItem,
+  ListBoxSection,
   Menu,
   MenuItem,
   MenuTrigger,
@@ -21,9 +28,6 @@ export {
   SearchField,
   Select,
   SelectValue,
-  TextArea,
-  TextField,
-  ToggleButton,
   Tooltip,
   TooltipTrigger,
   Tree,

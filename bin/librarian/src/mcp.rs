@@ -29,26 +29,16 @@ use silverbullet_server::{
 };
 use silverbullet_server_common::space::EmbeddedSpace;
 
-use crate::assets::ConsentAssets;
+use crate::assets::{reader_asset, ConsentAssets};
 use silverbullet_server_mcp::{
     error_result, json_result, mcp_router_gated, Caller, CallerCredential, MultiHost, ToolDef,
     ToolResult, ToolSet,
 };
 
 const LOGIN_PATH: &str = "/.auth/librarian/login";
+const CONSENT_STYLES_PATH: &str = "/.auth/librarian/consent.css";
 const CONSENT_PATH: &str = "/.auth/mcp/authorize";
 type McpEnabled = Arc<dyn Fn() -> bool + Send + Sync>;
-const LOGIN_PAGE: &str = r#"<!doctype html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 Librarian</title></head>
-<body><main>
-<h1>登录 Librarian</h1>
-<form method="post">
-<label>用户名 <input name="username" autocomplete="username" required></label>
-<label>密码 <input type="password" name="password" autocomplete="current-password" required></label>
-<button>登录</button>
-</form>
-</main></body></html>"#;
 
 pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router), String> {
     let spaces = bridge.spaces();
@@ -101,6 +91,7 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
     });
     let tools = Arc::new(ProductTools(bridge));
     let login_router = Router::new()
+        .route(CONSENT_STYLES_PATH, get(consent_styles))
         .route(
             LOGIN_PATH,
             get(login_page)
@@ -119,6 +110,24 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
         .merge(mcp_oauth::router(oauth, enabled))
         .merge(login_router);
     Ok((host, router))
+}
+
+async fn consent_styles() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        concat!(
+            include_str!("../../../apps/reader/src/styles/tokens.css"),
+            "\n",
+            include_str!("../../../apps/reader/src/login/Login.module.css"),
+            "\n",
+            include_str!("auth-assets/.client/authorize.css"),
+        ),
+    )
+        .into_response()
 }
 
 struct ProductTools(McpBridge);
@@ -328,16 +337,33 @@ async fn login_page(State(login): State<LoginState>, Query(query): Query<LoginQu
     if query.target(&*login.mcp_enabled).is_none() {
         return StatusCode::BAD_REQUEST.into_response();
     }
+    sign_in_page(StatusCode::OK)
+}
+
+fn sign_in_page(status: StatusCode) -> Response {
+    let Some(page) = reader_asset("login.html") else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let Ok(document) = std::str::from_utf8(&page.bytes) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let state = match status {
+        StatusCode::OK => "ready",
+        StatusCode::UNAUTHORIZED => "incorrect",
+        StatusCode::TOO_MANY_REQUESTS => "limited",
+        _ => "unavailable",
+    };
     (
+        status,
         [
             (header::CACHE_CONTROL, "no-store"),
             (header::REFERRER_POLICY, "strict-origin"),
             (
                 header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "default-src 'none'; script-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             ),
         ],
-        Html(LOGIN_PAGE),
+        Html(document.replacen("librarian-login-ready", state, 1)),
     )
         .into_response()
 }
@@ -379,7 +405,7 @@ async fn login_submit(
         .reserve_login(&credentials.username, source)
         .await
     else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
+        return sign_in_page(StatusCode::TOO_MANY_REQUESTS);
     };
 
     let verifier = login.manager.clone();
@@ -402,8 +428,8 @@ async fn login_submit(
     .await;
     let token = match token {
         Ok(Ok(token)) => token,
-        Ok(Err(status)) => return status.into_response(),
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(Err(status)) => return sign_in_page(status),
+        Err(_) => return sign_in_page(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
     let options = CookieOptions {

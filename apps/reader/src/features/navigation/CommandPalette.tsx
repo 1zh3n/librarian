@@ -1,33 +1,45 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   Autocomplete,
+  Collection,
   Dialog,
+  Header,
   Input,
   ListBox,
   ListBoxItem,
+  ListBoxSection,
   Modal,
   ModalOverlay,
   SearchField,
+  ToggleButton,
 } from "../../ui/primitives";
-import type { DocumentSummary, SearchHit } from "../../api/client";
+import type { DocumentSummary, SearchHit, Workspace } from "../../api/client";
 import { searchQuery } from "../../api/queries";
+import { recentDocuments } from "./recentDocuments";
 import styles from "./CommandPalette.module.css";
+
+type Result = { id: string; title: string; detail?: string; run: () => void };
 
 export function CommandPalette({
   workspace,
+  workspaces,
+  username,
   documents,
   commands,
   onClose,
   openDocument,
 }: {
   workspace: string;
+  workspaces: readonly Workspace[];
+  username: string;
   documents: readonly DocumentSummary[];
   commands: readonly { id: string; title: string; run: () => void }[];
   onClose: () => void;
-  openDocument: (id: string) => void;
+  openDocument: (id: string, workspace: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [across, setAcross] = useState(false);
   const query = text.trim();
   const [debounced, setDebounced] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -39,37 +51,72 @@ export function CommandPalette({
     return () => window.clearTimeout(timeout);
   }, [query]);
 
-  const results = useQuery({
-    ...searchQuery(workspace, debounced),
-    enabled: Boolean(workspace && debounced),
+  const current = workspaces.find((item) => item.id === workspace);
+  const spaces = [
+    ...(current ? [current] : []),
+    ...(across ? workspaces.filter((item) => item.id !== workspace) : []),
+  ];
+  const results = useQueries({
+    queries: debounced ? spaces.map((item) => searchQuery(item.id, debounced)) : [],
   });
   const options = new Map<string, SearchHit>();
   if (debounced === query) {
-    for (const hit of results.data ?? []) options.set(hit.document.id, hit);
+    for (const result of results) {
+      for (const hit of result.data ?? []) {
+        if (options.size >= 20) break;
+        options.set(hit.document.id, hit);
+      }
+    }
   }
+  const recent = query
+    ? []
+    : recentDocuments(username, workspace).flatMap((id) => {
+        const document = documents.find((item) => item.id === id);
+        return document ? [document] : [];
+      });
+  const recentIds = new Set(recent.map((item) => item.id));
   const folded = query.toLocaleLowerCase();
   for (const document of documents) {
     if (options.size >= 20) break;
     if (
       !options.has(document.id) &&
+      !recentIds.has(document.id) &&
       `${document.title} ${document.path}`.toLocaleLowerCase().includes(folded)
     ) {
       options.set(document.id, { document, excerpt: "" });
     }
   }
-  const searching = workspace && query && (query !== debounced || results.isFetching);
-  const visibleCommands = commands.filter((command) => command.title.includes(query));
-  const items = [
-    ...visibleCommands.map(({ id, title }) => ({ id, title, detail: "" })),
-    ...Array.from(options.values(), ({ document, excerpt }) => ({
+  const searching =
+    workspace && query && (query !== debounced || results.some((entry) => entry.isFetching));
+  function documentResult(document: DocumentSummary, excerpt?: string): Result {
+    const space = workspaces.find((item) => item.id === document.workspaceId);
+    const detail = excerpt || document.path;
+    return {
       id: document.id,
       title: document.title,
-      detail: excerpt || document.path,
-    })),
-  ];
+      detail: across && space ? `${space.name} · ${detail}` : detail,
+      run: () => openDocument(document.id, document.workspaceId),
+    };
+  }
+  const sections = [
+    { id: "recent", title: "最近打开", items: recent.map((item) => documentResult(item)) },
+    {
+      id: "documents",
+      title: query ? "文档" : "当前空间",
+      items: Array.from(options.values(), ({ document, excerpt }) =>
+        documentResult(document, excerpt),
+      ),
+    },
+    {
+      id: "commands",
+      title: "命令",
+      items: commands.filter((command) => command.title.includes(query)),
+    },
+  ].filter((section) => section.items.length);
+  const items = sections.flatMap((section) => section.items);
   const emptyMessage = searching
     ? "正在搜索…"
-    : results.isError
+    : results.some((entry) => entry.isError)
       ? "全文搜索暂不可用"
       : workspace
         ? "未找到文档"
@@ -86,31 +133,43 @@ export function CommandPalette({
       <Modal className={styles.modal}>
         <Dialog aria-label={workspace ? "快速打开与全文搜索" : "命令"} className={styles.dialog}>
           <Autocomplete inputValue={text} onInputChange={setText} disableAutoFocusFirst>
-            <SearchField aria-label={inputLabel}>
-              <Input
-                ref={input}
-                placeholder={inputLabel}
-                className={styles.input}
-                maxLength={256}
-              />
-            </SearchField>
+            <div className={styles.toolbar}>
+              <SearchField aria-label={inputLabel} className={styles.field}>
+                <Input
+                  ref={input}
+                  placeholder={inputLabel}
+                  className={styles.input}
+                  maxLength={256}
+                />
+              </SearchField>
+              {current && workspaces.length > 1 && (
+                <ToggleButton className={styles.scope} isSelected={across} onChange={setAcross}>
+                  跨空间
+                </ToggleButton>
+              )}
+            </div>
             <ListBox
               aria-label="搜索结果"
               className={styles.results}
-              items={items}
+              items={sections}
               renderEmptyState={() => <output className={styles.empty}>{emptyMessage}</output>}
               onAction={(id) => {
                 onClose();
-                const command = visibleCommands.find((item) => item.id === id);
-                if (command) command.run();
-                else openDocument(String(id));
+                items.find((item) => item.id === id)?.run();
               }}
             >
-              {({ id, title, detail }) => (
-                <ListBoxItem id={id} textValue={title} className={styles.result}>
-                  <span>{title}</span>
-                  {detail && <span className={styles.detail}>{detail}</span>}
-                </ListBoxItem>
+              {({ id, title, items }) => (
+                <ListBoxSection id={id}>
+                  <Header className={styles.sectionTitle}>{title}</Header>
+                  <Collection items={items}>
+                    {({ id, title, detail }: Result) => (
+                      <ListBoxItem id={id} textValue={title} className={styles.result}>
+                        <span>{title}</span>
+                        {detail && <span className={styles.detail}>{detail}</span>}
+                      </ListBoxItem>
+                    )}
+                  </Collection>
+                </ListBoxSection>
               )}
             </ListBox>
           </Autocomplete>

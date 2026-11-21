@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { I18nProvider } from "../ui/primitives";
 import { router } from "./router";
 import "../styles/tokens.css";
+import "../ui/theme.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

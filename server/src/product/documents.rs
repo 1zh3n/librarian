@@ -505,6 +505,10 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .route("/workspaces/{workspace}/search", get(super::search::search))
         .route("/documents/{document}", get(document).put(edit))
         .route(
+            "/documents/{document}/references",
+            get(super::references::get_references),
+        )
+        .route(
             "/documents/{document}/outline",
             get(outline).put(save_outline),
         )
