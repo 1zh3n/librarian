@@ -1,6 +1,6 @@
 use std::{
     io,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
 };
 
@@ -38,6 +38,7 @@ pub(crate) struct DocumentService {
     pub(crate) spaces: NativeSpaces,
     pub(super) metadata: Metadata,
     pub(super) ai_discovery: super::ai_settings::AiDiscoveryService,
+    pub(super) material_parser: Option<PathBuf>,
 }
 
 impl DocumentService {
@@ -46,6 +47,7 @@ impl DocumentService {
         Ok(Self {
             reader_links: super::reader_links::ReaderLinks::load(&metadata)?,
             ai_discovery: super::ai_settings::AiDiscoveryService::open(&metadata)?,
+            material_parser: None,
             metadata,
             spaces,
         })

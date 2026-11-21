@@ -29,7 +29,22 @@ pub fn build_configured_product_router(
     root: &FilePath,
     spaces: super::space_adapter::NativeSpaces,
 ) -> Result<(Router, McpBridge), String> {
-    let service = Arc::new(super::documents::DocumentService::open(root, spaces)?);
+    build_configured_product_router_with_parser(state, root, spaces, None)
+}
+
+/// Embedders can supply the absolute path of the trusted Librarian executable.
+pub fn build_configured_product_router_with_parser(
+    state: Arc<ProductState>,
+    root: &FilePath,
+    spaces: super::space_adapter::NativeSpaces,
+    parser: Option<&FilePath>,
+) -> Result<(Router, McpBridge), String> {
+    if parser.is_some_and(|path| !path.is_absolute()) {
+        return Err("Material parser requires an absolute executable path".into());
+    }
+    let mut service = super::documents::DocumentService::open(root, spaces)?;
+    service.material_parser = parser.map(FilePath::to_owned);
+    let service = Arc::new(service);
     super::ai_materials::sweep(&service, true).map_err(|error| format!("{error:?}"))?;
     sweep(&service);
     let maintain = Arc::downgrade(&service);

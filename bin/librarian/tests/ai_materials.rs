@@ -1,5 +1,6 @@
 use std::{
     io::{Cursor, Write},
+    path::Path,
     process::{Command, Stdio},
 };
 
@@ -124,7 +125,7 @@ impl Site {
         let (owner, peer) = (token("owner"), token("peer"));
         fs::create_dir_all(root.path().join("spaces/notes")).unwrap();
         fs::write(root.path().join("spaces.json"), json!({"notes":{"name":"Notes","binding":{"prefix":"/notes"},"access":"none","revisions":"managed","members":{"owner":{"role":"write"},"peer":{"role":"read"}}}}).to_string()).unwrap();
-        let app = librarian::Product::open(root.path(), 0).unwrap().router();
+        let app = Self::router(root.path());
         let mut site = Self {
             root,
             app,
@@ -221,10 +222,71 @@ impl Site {
     }
     fn reopen(&mut self) {
         self.app = Router::new();
-        self.app = librarian::Product::open(self.root.path(), 0)
-            .unwrap()
-            .router();
+        self.app = Self::router(self.root.path());
     }
+
+    fn router(root: &Path) -> Router {
+        librarian::Product::open_with_material_parser(
+            root,
+            0,
+            Path::new(env!("CARGO_BIN_EXE_librarian")),
+        )
+        .unwrap()
+        .router()
+    }
+}
+
+#[tokio::test]
+async fn installed_server_reexecutes_itself_for_recovered_materials() {
+    let site = Site::open().await;
+    let base = site.conversation().await;
+    let uploaded = site
+        .upload(&base, "plain.txt", "text/plain", b"local text".to_vec())
+        .await;
+    let id = uploaded["id"].as_str().unwrap();
+    site.ready(&base, id).await;
+    drop(site.app);
+    let db =
+        rusqlite::Connection::open(site.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute("UPDATE ai_materials SET status='working' WHERE id=?", [id])
+        .unwrap();
+    let segments = site
+        .root
+        .path()
+        .join(".librarian/ai-materials")
+        .join(format!("{id}.json"));
+    fs::remove_file(&segments).unwrap();
+
+    // A packaged CLI may be renamed and installed in a directory also used by Cargo.
+    let install = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let bin = install.path().join("deps");
+    fs::create_dir(&bin).unwrap();
+    let installed = bin.join(format!("reader-server{}", std::env::consts::EXE_SUFFIX));
+    fs::hard_link(env!("CARGO_BIN_EXE_librarian"), &installed).unwrap();
+    let mut child = Command::new(installed)
+        .arg("--data-root")
+        .arg(site.root.path())
+        .args(["--listen", "127.0.0.1:0"])
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        let row = db.query_row("SELECT status FROM ai_materials WHERE id=?", [id], |r| {
+            r.get::<_, String>(0)
+        });
+        if row.as_deref().is_ok_and(|s| s == "ready" || s == "failed")
+            || row.is_err()
+            || std::time::Instant::now() >= deadline
+        {
+            break row;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let _ = child.kill();
+    child.wait().unwrap();
+    assert_eq!(status.unwrap(), "ready");
+    let output: Value = serde_json::from_slice(&fs::read(segments).unwrap()).unwrap();
+    assert_eq!(output[0]["text"], "local text");
 }
 
 #[tokio::test]

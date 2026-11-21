@@ -1,5 +1,8 @@
 //! An already configured, isolated installation for the managed Reader browser suite.
 //! Enrollment, heartbeat, claims, tools, SSE and result writes use product entry points.
+#[path = "support/product.rs"]
+mod fixture_product;
+
 use std::{error::Error, fs, io, net::Ipv4Addr, path::PathBuf};
 
 use rusqlite::{params, Connection};
@@ -40,7 +43,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     fs::write(dir.join("ai-test-loopback"), &endpoint)?;
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     let addr = listener.local_addr()?;
-    let product = librarian::Product::open(&root, addr.port()).map_err(io::Error::other)?;
+    let product = fixture_product::open(&root, addr.port())?;
 
     let key = [32; 32];
     let keyfile = dir.join("ai-install.key");

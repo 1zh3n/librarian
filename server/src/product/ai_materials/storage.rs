@@ -138,7 +138,7 @@ pub(super) fn kick(service: &Arc<DocumentService>) {
         };
         let _ = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            if let Err(err) = drain(&service.metadata) {
+            if let Err(err) = drain(&service) {
                 tracing::warn!(?err, "Material parser queue will retry");
             }
         })
@@ -146,7 +146,8 @@ pub(super) fn kick(service: &Arc<DocumentService>) {
     });
 }
 
-fn drain(db: &Metadata) -> Result<(), ApiError> {
+fn drain(service: &DocumentService) -> Result<(), ApiError> {
+    let db = &service.metadata;
     let dir = directory(db)?;
     loop {
         let job = db
@@ -161,7 +162,7 @@ fn drain(db: &Metadata) -> Result<(), ApiError> {
         let Some((id, format)) = job else {
             return Ok(());
         };
-        let parsed = parse_file(&dir, &id, &format);
+        let parsed = parse_file(service.material_parser.as_deref(), &dir, &id, &format);
         let con = db.connection()?;
         let live: bool = con.query_row(
             "SELECT EXISTS(SELECT 1 FROM ai_materials WHERE id=?1 AND status='working' AND expires_at>?2)",
@@ -194,16 +195,16 @@ fn drain(db: &Metadata) -> Result<(), ApiError> {
     }
 }
 
-fn parse_file(dir: &Path, id: &str, format: &str) -> Result<Vec<Segment>, &'static str> {
-    let mut exe = std::env::current_exe().map_err(|_| "parser_unavailable")?;
-    // Cargo integration-test executables are in debug/deps beside debug/librarian.
-    if let Some(target) = exe
-        .parent()
-        .filter(|p| p.ends_with("deps") || p.ends_with("examples"))
-        .and_then(Path::parent)
-    {
-        exe = target.join(format!("librarian{}", std::env::consts::EXE_SUFFIX));
-    }
+fn parse_file(
+    parser: Option<&Path>,
+    dir: &Path,
+    id: &str,
+    format: &str,
+) -> Result<Vec<Segment>, &'static str> {
+    let exe = match parser {
+        Some(path) => path.to_owned(),
+        None => std::env::current_exe().map_err(|_| "parser_unavailable")?,
+    };
     let input = File::open(dir.join(format!("{id}.raw"))).map_err(|_| "interrupted")?;
     let mut output = tempfile::tempfile_in(dir).map_err(|_| "storage_error")?;
     let mut cmd = Command::new(exe);

@@ -1,6 +1,9 @@
 #[path = "../tests/fixtures/ai-materials/setup.rs"]
 mod material_fixture;
 
+#[path = "support/product.rs"]
+mod fixture_product;
+
 use std::{fs, io, path::Path, process::Command};
 
 use axum::{
@@ -92,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if managed_materials {
         fs::write(metadata.join("ai-test-loopback"), "127.0.0.1:9")?;
     }
-    let app = librarian::Product::open(root.path(), port).map_err(io::Error::other)?;
+    let app = fixture_product::open(root.path(), port)?;
     if managed_materials {
         material_fixture::configure(root.path())?;
     }
