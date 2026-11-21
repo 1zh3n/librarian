@@ -1,0 +1,83 @@
+{
+  "tests": [
+    {
+      "file": "tests/e2e/document-accounts.spec.ts",
+      "case": "opens a legacy release anchor and switches management tabs on a narrow screen"
+    },
+    {
+      "file": "tests/e2e/document-accounts.spec.ts",
+      "case": "manages a local account and applies Workspace membership through Reader"
+    },
+    {
+      "file": "tests/e2e/document-accounts.spec.ts",
+      "case": "lets a member replace their password and starts a fresh browser session"
+    },
+    {
+      "file": "tests/e2e/document-offline.spec.ts",
+      "case": "only an explicitly saved fixed address and its assets open after a direct offline navigation"
+    },
+    {
+      "file": "tests/e2e/document-offline.spec.ts",
+      "case": "an online revocation defeats a saved response and removes its offline fallback"
+    },
+    {
+      "file": "tests/e2e/document-offline.spec.ts",
+      "case": "signing out clears saved member snapshots before opening the login page"
+    },
+    {
+      "file": "tests/e2e/document-offline.spec.ts",
+      "case": "a newly signed-in account loses the previous account's saved snapshots"
+    },
+    {
+      "file": "tests/e2e/document-release.spec.ts",
+      "case": "shows the deployment path when no backup target is configured"
+    },
+    {
+      "file": "tests/e2e/document-release.spec.ts",
+      "case": "configures a Workspace backup and reloads its confirmed Git receipt"
+    },
+    {
+      "file": "tests/e2e/document-release.spec.ts",
+      "case": "publishes the explicitly selected Git version and documents to the configured target"
+    },
+    {
+      "file": "tests/e2e/document-release.spec.ts",
+      "case": "shows the document scope of a pending publication before explicit confirmation"
+    },
+    {
+      "file": "tests/e2e/document-release.spec.ts",
+      "case": "opens sharing directly and keeps the scope when filtering a collection"
+    },
+    {
+      "file": "tests/e2e/document-release.spec.ts",
+      "case": "starts a long shared collection in the article and focuses the chosen chapter"
+    },
+    {
+      "file": "tests/e2e/document-workspace.spec.ts",
+      "case": "imports Chinese Markdown and retries the same request after losing the response"
+    },
+    {
+      "file": "tests/e2e/document-workspace.spec.ts",
+      "case": "keeps an interrupted source update retryable after CI sends the same manifest"
+    },
+    {
+      "file": "tests/e2e/document-workspace.spec.ts",
+      "case": "uploads a ZIP and keeps its receipt and readable relative attachment"
+    },
+    {
+      "file": "tests/e2e/document-workspace.spec.ts",
+      "case": "a read-only workspace member can open an import receipt without upload or token controls"
+    },
+    {
+      "file": "tests/e2e/document-workspace.spec.ts",
+      "case": "a share snapshot reads the selected documents anonymously and revokes the same address"
+    },
+    {
+      "file": "tests/e2e/document-workspace.spec.ts",
+      "case": "a fixed reading address preserves delivered Markdown and its selected attachment"
+    }
+  ],
+  "result": [
+    "19 passed (49.3s)"
+  ]
+}
