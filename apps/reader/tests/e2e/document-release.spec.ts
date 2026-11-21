@@ -51,18 +51,33 @@ async function workspaceAsAdmin(page: Page, name = "田野笔记") {
   return workspace;
 }
 
+test("shows the deployment path when no backup target is configured", async ({ page }) => {
+  const workspace = await workspaceAsAdmin(page);
+  await page.goto(`/workspaces/${workspace.id}/manage`);
+  await page.getByRole("tab", { name: "备份与发布" }).click();
+  const panel = page.getByRole("region", { name: "GitHub 备份" });
+  await expect(panel).toContainText("尚未配置备份目标");
+  await expect(panel).toContainText(".librarian/backup-targets.json");
+  await expect(panel.getByRole("button", { name: "立即备份" })).toHaveCount(0);
+});
+
 test("configures a Workspace backup and reloads its confirmed Git receipt", async ({ page }) => {
   const workspace = await workspaceAsAdmin(page, "浏览器本地备份");
   const { commitId } = await deliver(page, workspace.id, "browser-backup");
   await page.goto(`/workspaces/${workspace.id}/manage`);
+  await page.getByRole("tab", { name: "备份与发布" }).click();
 
-  const panel = page.getByRole("region", { name: "工作区备份" });
+  const panel = page.getByRole("region", { name: "Git 备份" });
+  await expect(panel).toContainText("备份目标已配置");
+  await expect(panel.getByRole("button", { name: "立即备份" })).toBeDisabled();
   await panel.getByRole("button", { name: /备份目标/ }).click();
   await page.getByRole("option", { name: "本地备份" }).click();
   await panel.getByRole("button", { name: /备份粒度/ }).click();
   await page.getByRole("option", { name: "逐操作" }).click();
   await panel.getByRole("button", { name: "保存备份设置" }).click();
   await expect(panel.getByText("备份设置已保存")).toBeVisible();
+  await expect(panel).toContainText("已选择目标，尚未备份");
+  await expect(panel).toContainText("workspace-backup");
   const completed = page.waitForResponse(
     (response) => response.request().method() === "POST" && response.url().endsWith("/backup/jobs"),
   );
@@ -82,12 +97,19 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
     const prior = { ...receipt, status, commitId: null };
     const configPath = `**/api/v1/workspaces/${workspace.id}/backup`;
     const receiptPath = `${configPath}/jobs/${receipt.id}`;
+    const startPath = `${configPath}/jobs`;
+    let pending = true;
     await page.route(configPath, async (route) => {
       const response = await route.fetch();
       const config = await response.json();
-      await route.fulfill({ response, json: { ...config, lastJob: prior } });
+      await route.fulfill({ response, json: pending ? { ...config, lastJob: prior } : config });
     });
     await page.route(receiptPath, (route) => route.fulfill({ json: prior }));
+    await page.route(startPath, async (route) => {
+      const response = await route.fetch();
+      pending = false;
+      await route.fulfill({ response });
+    });
     await page.reload();
 
     const [response] = await Promise.all([
@@ -101,7 +123,19 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
     await expect(panel.getByText("备份已完成")).toBeVisible();
     await page.unroute(configPath);
     await page.unroute(receiptPath);
+    await page.unroute(startPath);
   }
+  await page.route(`**/api/v1/workspaces/${workspace.id}/backup`, async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...config, targetId: null, targetNeedsSelection: true, lastJob: null },
+    });
+  });
+  await page.reload();
+  await expect(panel.getByRole("alert")).toContainText("请重新选择并保存");
+  await expect(panel.getByRole("button", { name: "立即备份" })).toBeDisabled();
 });
 
 test("publishes the explicitly selected Git version and documents to the configured target", async ({
@@ -110,6 +144,7 @@ test("publishes the explicitly selected Git version and documents to the configu
   const workspace = await workspaceAsAdmin(page);
   const { note, commitId } = await deliver(page, workspace.id, "browser-publication");
   await page.goto(`/workspaces/${workspace.id}/manage`);
+  await page.getByRole("tab", { name: "备份与发布" }).click();
   const panel = page.getByRole("region", { name: "Zola 发布" });
   await panel.getByRole("button", { name: /发布目标/ }).click();
   await page.getByRole("option", { name: "本地博客" }).click();
@@ -158,6 +193,7 @@ test("shows the document scope of a pending publication before explicit confirma
   expect(proposal.status).toBe("pending");
 
   await page.goto(`/workspaces/${workspace.id}/manage`);
+  await page.getByRole("tab", { name: "备份与发布" }).click();
   const record = page
     .getByRole("list", { name: "发布记录" })
     .getByRole("listitem")

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { DocumentSnapshot, OutlineSnapshot } from "../../src/api/client";
-import { createNote } from "./productFixture";
+import { closeDocumentTool, createNote, openDocumentTool } from "./productFixture";
 
 function editor(page: Page, name: string) {
   return page.locator(`[contenteditable="true"][aria-label="${name}"]`);
@@ -10,6 +10,70 @@ function editor(page: Page, name: string) {
 async function readNote(page: Page, path: string) {
   return (await (await page.request.get(path)).json()) as DocumentSnapshot;
 }
+
+test("edits in place without a canvas outline and resumes reading when focus leaves", async ({
+  page,
+}) => {
+  const { apiUrl } = await createNote(
+    page,
+    "InlineEditor.md",
+    "---\ntitle: 就地编辑\n---\n\n在这里继续写。\n",
+  );
+  const article = page.getByRole("article");
+  await article.getByText("在这里继续写。").click();
+  const body = editor(page, "Markdown 正文");
+  await expect(body).toBeFocused();
+  await expect(page.locator(".cm-editor.cm-focused")).toHaveCSS("outline-style", "none");
+  await expect(body.getByRole("button", { name: "Front Matter" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "返回阅读" })).toHaveCount(0);
+  await body.press("End");
+  await page.keyboard.insertText("继续写下去。");
+  await page.getByRole("button", { name: "文档更多" }).focus();
+  await expect(article).toContainText("继续写下去。");
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toContain("继续写下去。");
+  await page.keyboard.press("Alt+e");
+  await expect(body).toBeFocused();
+  await body.press("Control+z");
+  await expect(body).not.toContainText("继续写下去。");
+  await body.press("Escape");
+  await expect(article).toBeFocused();
+});
+
+test("places the editor caret at the clicked text within a paragraph", async ({ page }) => {
+  const { apiUrl } = await createNote(page, "ClickCaret.md", "甲乙丙丁\n");
+  const paragraph = page.getByRole("article").getByText("甲乙丙丁");
+  const point = await paragraph.evaluate((element) => {
+    const text = element.firstChild;
+    if (!text) throw new Error("Missing paragraph text");
+    const range = document.createRange();
+    range.setStart(text, 2);
+    range.collapse(true);
+    const bounds = range.getBoundingClientRect();
+    return { x: bounds.x + 0.5, y: bounds.y + bounds.height / 2 };
+  });
+  await page.mouse.click(point.x, point.y);
+  await expect(editor(page, "Markdown 正文")).toBeFocused();
+  await page.keyboard.insertText("中");
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe("甲乙中丙丁\n");
+});
+
+test("finishes an active IME composition before leaving the editor on blur", async ({ page }) => {
+  await createNote(page, "CompositionBlur.md", "继续记录。\n");
+  const article = page.getByRole("article");
+  await article.getByText("继续记录。").click();
+  const body = editor(page, "Markdown 正文");
+  await expect(body).toBeFocused();
+  await body.evaluate((element) =>
+    element.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+  );
+  await page.getByRole("button", { name: "文档更多" }).focus();
+  await expect(body).toBeVisible();
+  await body.evaluate((element) =>
+    element.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })),
+  );
+  await expect(article).toBeVisible();
+  await expect(page.getByRole("button", { name: "文档更多" })).toBeFocused();
+});
 
 test("save response keeps edits typed while waiting", async ({ page }) => {
   const before = "\uFEFF---\r\ntitle: 测试慢保存\r\n---\r\n初稿";
@@ -64,10 +128,10 @@ test("outline and body use independent revisions and sessions", async ({ page })
     (await (await page.request.get(`${apiUrl}/outline`)).json()) as OutlineSnapshot;
   await expect.poll(async () => (await persisted()).markdown).toBe("写作提纲");
   await expect(page.getByText("已保存")).toBeVisible();
-  await page.getByRole("button", { name: "提纲", exact: true }).click();
+  await closeDocumentTool(page);
   await expect(outline).toHaveCount(0);
-  await page.getByRole("button", { name: "提纲", exact: true }).click();
-  await expect(outline).toBeFocused();
+  await openDocumentTool(page, "提纲");
+  await expect(outline).toBeVisible();
   await outline.press("Control+z");
   await expect.poll(async () => (await persisted()).markdown).toBe("");
   expect(await readNote(page, apiUrl)).toEqual({

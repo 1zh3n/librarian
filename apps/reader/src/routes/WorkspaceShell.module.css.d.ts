@@ -24,5 +24,13 @@ declare const styles: {
   readonly viewport: string;
   readonly state: string;
   readonly signIn: string;
+  readonly presets: string;
+  readonly layoutOption: string;
+  readonly preview: string;
+  readonly previewNavigation: string;
+  readonly previewBody: string;
+  readonly previewTools: string;
+  readonly workspaceName: string;
+  readonly workspaceArrow: string;
 };
 export default styles;

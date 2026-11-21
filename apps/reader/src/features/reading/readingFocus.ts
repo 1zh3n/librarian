@@ -117,6 +117,7 @@ export function isEditingTarget(target: EventTarget | null) {
 type ReaderLayout = {
   focus: ReturnType<typeof useReadingFocus>;
   preferences: DevicePreferences;
+  layoutSelection: number;
   savePreferences: (patch: Partial<DevicePreferences>) => Promise<DevicePreferences>;
   createdDocument: string | undefined;
   clearCreatedDocument: () => void;

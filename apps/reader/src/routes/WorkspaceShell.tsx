@@ -14,6 +14,7 @@ import {
   ListBoxItem,
   Menu,
   MenuItem,
+  MenuSection,
   MenuTrigger,
   Popover,
   Select,
@@ -53,8 +54,7 @@ const presets = [
   ["reading", "阅读布局", false],
   ["writing", "写作布局", true],
   ["research", "研究布局", true],
-  ["review", "校订布局", true],
-  ["custom", "自定义布局", null],
+  ["review", "校订布局", false],
 ] as const;
 
 export function WorkspaceShell() {
@@ -93,6 +93,7 @@ export function WorkspaceShell() {
   const focus = useReadingFocus(viewport, layout, documentId);
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
   const [navigationOverride, setNavigationOverride] = useState<boolean>();
+  const [layoutSelection, setLayoutSelection] = useState(0);
   const [search, setSearch] = useState(false);
   const [settings, setSettings] = useState(false);
   const [settingsError, setSettingsError] = useState(false);
@@ -217,9 +218,19 @@ export function WorkspaceShell() {
     setSettingsError(false);
     try {
       await save(patch);
+      return true;
     } catch {
       setSettingsError(true);
+      return false;
     }
+  }
+
+  async function selectLayout(preset: (typeof presets)[number]) {
+    const [layout, , navigation] = preset;
+    if (!(await saveLayout({ layout, navigation }))) return;
+    if (focus.active) focus.toggle();
+    setNavigationOverride(undefined);
+    setLayoutSelection((selection) => selection + 1);
   }
 
   function openDocument(id: string, destination = selected) {
@@ -285,6 +296,7 @@ export function WorkspaceShell() {
       value={{
         focus,
         preferences,
+        layoutSelection,
         savePreferences: save,
         createdDocument,
         clearCreatedDocument,
@@ -302,7 +314,7 @@ export function WorkspaceShell() {
               isDisabled={focus.active}
               onChange={(next) => {
                 setNavigationOverride(next);
-                void saveLayout({ navigation: next, layout: "custom" });
+                void saveLayout({ navigation: next });
               }}
             >
               目录
@@ -322,30 +334,44 @@ export function WorkspaceShell() {
                 <MenuTrigger>
                   <Button className={styles.button}>布局</Button>
                   <Popover className={styles.popover}>
-                    <Menu
-                      className={styles.layoutMenu}
-                      onAction={(id) => {
-                        if (id === "focus") focus.toggle();
-                        if (id === "settings") setSettings(true);
-                        const preset = presets.find(([key]) => key === id);
-                        if (preset) {
-                          if (focus.active) focus.toggle();
-                          setNavigationOverride(undefined);
-                          void saveLayout({ layout: preset[0], navigation: preset[2] });
-                        }
-                      }}
-                    >
-                      {presets.map(([id, label]) => (
-                        <MenuItem key={id} id={id} className={styles.spaceOption}>
-                          {label}
-                        </MenuItem>
-                      ))}
+                    <Menu className={styles.layoutMenu}>
+                      <MenuSection
+                        aria-label="布局预设"
+                        className={styles.presets}
+                        selectionMode="single"
+                        selectedKeys={preferences.layout === "custom" ? [] : [preferences.layout]}
+                        shouldCloseOnSelect
+                      >
+                        {presets.map((preset) => {
+                          const [id, label, navigation] = preset;
+                          return (
+                            <MenuItem
+                              key={id}
+                              id={id}
+                              textValue={label}
+                              className={styles.layoutOption}
+                              onAction={() => void selectLayout(preset)}
+                            >
+                              <span aria-hidden="true" className={styles.preview} data-preset={id}>
+                                {navigation && <span className={styles.previewNavigation} />}
+                                <span className={styles.previewBody} />
+                                {id !== "reading" && <span className={styles.previewTools} />}
+                              </span>
+                              {label}
+                            </MenuItem>
+                          );
+                        })}
+                      </MenuSection>
                       {documentId && (
-                        <MenuItem id="focus" className={styles.spaceOption}>
+                        <MenuItem id="focus" className={styles.spaceOption} onAction={focus.toggle}>
                           {focusLabel}
                         </MenuItem>
                       )}
-                      <MenuItem id="settings" className={styles.spaceOption}>
+                      <MenuItem
+                        id="settings"
+                        className={styles.spaceOption}
+                        onAction={() => setSettings(true)}
+                      >
                         阅读设置
                       </MenuItem>
                     </Menu>
@@ -374,7 +400,7 @@ export function WorkspaceShell() {
             if (!panel) return;
             const width = Math.round(panel.getSize().inPixels);
             if (width >= 176 && width <= 360 && width !== preferences.sidebarWidth) {
-              void saveLayout({ sidebarWidth: width, layout: "custom" });
+              void saveLayout({ sidebarWidth: width });
             }
           }}
         >
@@ -412,8 +438,8 @@ export function WorkspaceShell() {
                     }}
                   >
                     <Button className={styles.workspace}>
-                      <SelectValue />
-                      <span aria-hidden="true">⌄</span>
+                      <SelectValue className={styles.workspaceName} />
+                      <span className={styles.workspaceArrow} aria-hidden="true" />
                     </Button>
                     <Popover className={styles.popover}>
                       <ListBox className={styles.spaces}>
@@ -428,24 +454,22 @@ export function WorkspaceShell() {
                       </ListBox>
                     </Popover>
                   </Select>
-                  {(workspace.canManage || workspace.canWrite) && (
-                    <TooltipTrigger>
-                      <Button
-                        aria-label="空间设置"
-                        className={styles.workspaceSettings}
-                        onPress={() => {
-                          if (!wide) setNavigationOverride(false);
-                          void navigate({
-                            to: "/workspaces/$workspaceId/manage",
-                            params: { workspaceId: workspace.id },
-                          });
-                        }}
-                      >
-                        <span aria-hidden="true">⚙</span>
-                      </Button>
-                      <Tooltip className={styles.tooltip}>空间设置</Tooltip>
-                    </TooltipTrigger>
-                  )}
+                  <TooltipTrigger>
+                    <Button
+                      aria-label="空间设置"
+                      className={styles.workspaceSettings}
+                      onPress={() => {
+                        if (!wide) setNavigationOverride(false);
+                        void navigate({
+                          to: "/workspaces/$workspaceId/manage",
+                          params: { workspaceId: workspace.id },
+                        });
+                      }}
+                    >
+                      <span aria-hidden="true">⚙</span>
+                    </Button>
+                    <Tooltip className={styles.tooltip}>空间设置</Tooltip>
+                  </TooltipTrigger>
                 </div>
                 {canCreate && (
                   <Button className={styles.newDocument} onPress={showCreateDocument}>

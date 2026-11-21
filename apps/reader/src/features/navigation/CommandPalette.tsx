@@ -2,6 +2,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   Autocomplete,
+  Button,
   Collection,
   Dialog,
   Header,
@@ -135,6 +136,7 @@ export function CommandPalette({
           <Autocomplete inputValue={text} onInputChange={setText} disableAutoFocusFirst>
             <div className={styles.toolbar}>
               <SearchField aria-label={inputLabel} className={styles.field}>
+                <span className={styles.searchIcon} aria-hidden="true" />
                 <Input
                   ref={input}
                   placeholder={inputLabel}
@@ -142,11 +144,16 @@ export function CommandPalette({
                   maxLength={256}
                 />
               </SearchField>
-              {current && workspaces.length > 1 && (
-                <ToggleButton className={styles.scope} isSelected={across} onChange={setAcross}>
-                  跨空间
-                </ToggleButton>
-              )}
+              <div className={styles.actions}>
+                {current && workspaces.length > 1 && (
+                  <ToggleButton className={styles.scope} isSelected={across} onChange={setAcross}>
+                    跨空间
+                  </ToggleButton>
+                )}
+                <Button aria-label="关闭搜索" className={styles.close} onPress={onClose}>
+                  Esc
+                </Button>
+              </div>
             </div>
             <ListBox
               aria-label="搜索结果"

@@ -2,6 +2,26 @@ import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { DocumentSnapshot, Workspace } from "../../src/api/client";
 
+export async function openDocumentTool(
+  page: Page,
+  name: "提纲" | "AI" | "版本" | "引用" | "文档目录",
+) {
+  if (name === "文档目录") {
+    await page.getByRole("button", { name: "文档更多" }).click();
+    await page.getByRole("menuitem", { name, exact: true }).click();
+    return;
+  }
+  const open = page.getByRole("button", { name: "打开文档辅助区" });
+  const tabs = page.getByRole("tablist", { name: "文档工具" });
+  await open.or(tabs).first().waitFor({ state: "visible" });
+  if (await open.isVisible()) await open.click();
+  await tabs.getByRole("tab", { name, exact: true }).click();
+}
+
+export async function closeDocumentTool(page: Page) {
+  await page.getByRole("button", { name: "收起文档辅助区" }).click();
+}
+
 export async function openFieldWorkspace(page: Page, name = "田野笔记") {
   await page.goto("/.auth/librarian/login");
   await page.getByLabel("用户名").fill("reader");

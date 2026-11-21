@@ -24,7 +24,80 @@ async function openCommand(page: Page, title: string) {
   await page.getByRole("option", { name: title, exact: true }).click();
 }
 
-test("jumps to the release tools from the management navigation on a narrow screen", async ({
+for (const account of [
+  { username: "reader", password: "reader-test-password", crossSpace: true },
+  { username: "offline-reader", password: "offline-reader-test-password", crossSpace: false },
+]) {
+  test(`aligns search controls with ${account.crossSpace ? "multiple spaces" : "one space"}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await signIn(page, account.username, account.password);
+    const search = page.getByRole("button", { name: "搜索文档" });
+    await search.click();
+    const palette = page.getByRole("dialog", { name: "快速打开与全文搜索" });
+    const input = palette.getByRole("searchbox");
+    const close = palette.getByRole("button", { name: "关闭搜索" });
+    const scope = palette.getByRole("button", { name: "跨空间" });
+    await expect(input).toBeFocused();
+    await expect(close).toBeVisible();
+    await expect(scope).toHaveCount(account.crossSpace ? 1 : 0);
+    const left = await input.boundingBox();
+    const right = await close.boundingBox();
+    if (!left || !right) throw new Error("Missing search row controls");
+    expect(right.x).toBeGreaterThanOrEqual(left.x + left.width);
+    expect(right.width).toBeGreaterThanOrEqual(44);
+    expect(right.height).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(left.y + left.height / 2 - right.y - right.height / 2)).toBeLessThan(1);
+    if (account.crossSpace) {
+      const middle = await scope.boundingBox();
+      if (!middle) throw new Error("Missing search scope");
+      expect(Math.abs(middle.y + middle.height / 2 - right.y - right.height / 2)).toBeLessThan(1);
+    }
+    await input.press("Escape");
+    await expect(search).toBeFocused();
+    await search.press("Enter");
+    await close.click();
+    await expect(search).toBeFocused();
+  });
+}
+
+test("switches to a long space name at 125% zoom on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const origin = new URL(page.url()).origin;
+  const longName = `缩放时保持箭头和空间设置可用的超长空间名称-${randomUUID()}`;
+  const workspace = await page.request.post("/api/v1/workspaces", {
+    headers: { origin },
+    data: { name: longName },
+  });
+  expect(workspace.status()).toBe(201);
+  const workspaces = (await (await page.request.get("/api/v1/workspaces")).json()) as Workspace[];
+  const field = workspaces.find(({ name }) => name === "田野笔记");
+  if (!field) throw new Error("Missing managed Workspace fixture");
+  await page.goto(`/workspaces/${field.id}`);
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "125%";
+  });
+  await page.getByRole("button", { name: "展开目录" }).click();
+  const currentSpace = page.getByRole("button", { name: /田野笔记/ });
+  await currentSpace.click();
+  await page.getByRole("option", { name: longName, exact: true }).click();
+  const selectedSpace = page.getByRole("button", { name: new RegExp(longName, "u") });
+  const settings = page.getByRole("button", { name: "空间设置", exact: true });
+  await expect(selectedSpace).toBeVisible();
+  await expect(settings).toBeVisible();
+  const arrow = await selectedSpace.locator("[aria-hidden=true]").boundingBox();
+  const choice = await selectedSpace.boundingBox();
+  const next = await settings.boundingBox();
+  if (!arrow || !choice || !next) throw new Error("Missing space controls");
+  expect(arrow.width).toBe(20);
+  expect(arrow.x + arrow.width).toBeLessThan(choice.x + choice.width);
+  expect(choice.x + choice.width).toBeLessThanOrEqual(next.x);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("opens a legacy release anchor and switches management tabs on a narrow screen", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 720 });
@@ -33,18 +106,26 @@ test("jumps to the release tools from the management navigation on a narrow scre
   const workspace = workspaces.find(({ name }) => name === "田野笔记");
   if (!workspace) throw new Error("Missing managed Workspace fixture");
 
-  await page.goto(`/workspaces/${workspace.id}/manage`);
-  const navigation = page.getByRole("navigation", { name: "工作区管理" });
-  const release = navigation.getByRole("link", { name: "备份、发布与分享" });
-  await release.focus();
-  await page.keyboard.press("Enter");
-
-  const section = page.getByRole("heading", { name: "备份、发布与分享" });
-  await expect(section).toBeFocused();
-  await expect(section).toBeInViewport();
+  await page.goto(`/workspaces/${workspace.id}/manage#release`);
+  const tabs = page.getByRole("tablist", { name: "空间设置" });
+  const release = tabs.getByRole("tab", { name: "备份与发布" });
+  await expect(release).toHaveAttribute("aria-selected", "true");
+  const tabTops = await tabs
+    .getByRole("tab")
+    .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().top));
+  expect(Math.max(...tabTops) - Math.min(...tabTops)).toBeLessThan(1);
+  await expect(release).toBeInViewport();
   await expect(page.getByRole("banner")).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("region", { name: "阅读地址" })).toBeVisible();
+  await release.press("ArrowLeft");
+  const imports = tabs.getByRole("tab", { name: "外部导入" });
+  await expect(imports).toBeFocused();
+  await expect(imports).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: "阅读地址" })).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.goto(`/workspaces/${workspace.id}/manage#directory`);
+  await expect(tabs.getByRole("tab", { name: "常规" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: "重命名路径" })).toBeVisible();
 });
 
 test("manages a local account and applies Workspace membership through Reader", async ({
@@ -73,6 +154,7 @@ test("manages a local account and applies Workspace membership through Reader", 
   expect(response.status()).toBe(201);
   const workspace = (await response.json()) as Workspace;
   await page.goto(`/workspaces/${workspace.id}/manage`);
+  await page.getByRole("tab", { name: "成员", exact: true }).click();
   const panel = page.getByRole("region", { name: "空间成员" });
   await panel.getByLabel("成员用户名").fill(username);
   await panel.getByRole("button", { name: "保存成员" }).click();
@@ -87,6 +169,21 @@ test("manages a local account and applies Workspace membership through Reader", 
       await memberPage.request.get("/api/v1/workspaces")
     ).json()) as Workspace[];
     expect(readOnly.find(({ id }) => id === workspace.id)?.canWrite).toBe(false);
+    await memberPage.goto(`/workspaces/${workspace.id}`);
+    const memberSettings = memberPage.getByRole("button", { name: "空间设置", exact: true });
+    await expect(memberSettings).toBeVisible();
+    await memberSettings.click();
+    await expect(memberPage.getByRole("tab", { name: "外部导入" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await memberPage.goto(`/workspaces/${workspace.id}/manage#release`);
+    const memberTabs = memberPage.getByRole("tablist", { name: "空间设置" });
+    await expect(memberTabs.getByRole("tab")).toHaveText(["外部导入"]);
+    await expect(memberTabs.getByRole("tab", { name: "外部导入" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await member.getByRole("button", { name: "编辑权限" }).click();
     await panel.getByRole("button", { name: /阅读.*权限|权限.*阅读/ }).click();
     await page.getByRole("option", { name: "编辑", exact: true }).click();
@@ -96,6 +193,9 @@ test("manages a local account and applies Workspace membership through Reader", 
       await memberPage.request.get("/api/v1/workspaces")
     ).json()) as Workspace[];
     expect(writable.find(({ id }) => id === workspace.id)?.canWrite).toBe(true);
+    await memberPage.reload();
+    await expect(memberTabs.getByRole("tab")).toHaveText(["外部导入", "备份与发布"]);
+    await expect(memberPage.getByRole("region", { name: "阅读地址" })).toBeVisible();
     await member.getByRole("button", { name: "移除成员" }).click();
     await expect(member).toHaveCount(0);
     const removed = (await (

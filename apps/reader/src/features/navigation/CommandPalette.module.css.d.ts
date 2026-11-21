@@ -11,5 +11,8 @@ declare const styles: {
   readonly result: string;
   readonly detail: string;
   readonly empty: string;
+  readonly searchIcon: string;
+  readonly actions: string;
+  readonly close: string;
 };
 export default styles;

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { DocumentSnapshot } from "../../src/api/client";
 import type { components } from "../../src/api/schema.gen";
-import { createNote } from "./productFixture";
+import { closeDocumentTool, createNote, openDocumentTool } from "./productFixture";
 
 type Claim = components["schemas"]["AiClaim"];
 type RunnerResult = components["schemas"]["AiRunnerResult"];
@@ -56,24 +56,23 @@ test("document AI leaves text readable at desktop and 360px", async ({ page }) =
   await page.setViewportSize({ width: 1700, height: 850 });
   await createNote(page, "AiLayout.md", "# 读写距离\n\n对话期间可继续阅读。\n");
   const article = page.getByRole("article");
-  const toggle = page.getByRole("button", { name: "文档 AI", exact: true });
   await expect(article).toContainText("对话期间可继续阅读。");
   const before = await article.boundingBox();
-  await expect(toggle).toHaveCount(1);
-  await toggle.click();
+  await expect(page.getByRole("button", { name: "打开文档辅助区" })).toHaveCount(1);
+  await openDocumentTool(page, "AI");
   const panel = page.getByRole("region", { name: "文档 AI" });
   await expect(panel).toBeVisible();
   expect((await article.boundingBox())?.width).toBe(before?.width);
   const aside = await panel.boundingBox();
   expect(aside && before && aside.x >= before.x + before.width).toBe(true);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await toggle.click();
+  await closeDocumentTool(page);
   await expect(panel).toBeHidden();
 
   await page.setViewportSize({ width: 360, height: 800 });
   await expect.poll(async () => (await article.boundingBox())?.width ?? 0).toBeGreaterThan(300);
   const narrow = await article.boundingBox();
-  await toggle.click();
+  await openDocumentTool(page, "AI");
   await expect(panel).toBeVisible();
   const text = await article.boundingBox();
   const side = await panel.boundingBox();
@@ -101,7 +100,7 @@ test("document AI sends selection and displays only actual sources", async ({ pa
     selection?.removeAllRanges();
     selection?.addRange(range);
   });
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   const selected = await send(page, "解释所选内容");
   expect(selected.input.context).toEqual([
     expect.objectContaining({
@@ -132,10 +131,36 @@ test("document AI sends selection and displays only actual sources", async ({ pa
   await expect(sources).not.toContainText("北岸/未读.md");
 });
 
+test("keeps the live editor selection as AI context after focus exits", async ({ page }) => {
+  const markdown = "正文前缀。片段甲乙。结束。\n";
+  const { document } = await createNote(page, "AiEditorSelection.md", markdown);
+  await page.getByRole("article").getByText("正文前缀。片段甲乙。结束。").click();
+  const editor = page.getByRole("textbox", { name: "Markdown 正文" });
+  await editor.press("Control+Home");
+  const from = markdown.indexOf("片段甲乙");
+  for (let index = 0; index < from; index++) await page.keyboard.press("ArrowRight");
+  for (let index = 0; index < 4; index++) await page.keyboard.press("Shift+ArrowRight");
+  await openDocumentTool(page, "AI");
+  await expect(page.getByRole("article")).toBeVisible();
+  const task = await send(page, "解释这段编辑选区");
+  expect(task.input.context).toEqual([
+    {
+      documentId: document.document.id,
+      revision: document.revision,
+      from,
+      to: from + 4,
+      blockId: null,
+    },
+  ]);
+  const source = await readSource(page, task, document.document.id);
+  expect(source.markdown).toBe("片段甲乙");
+  await complete(page, task, { answer: "已读取编辑选区", sourceIds: [source.source.id] });
+});
+
 test("AI commits preserve the active local draft and expose diff and undo", async ({ page }) => {
   const { apiUrl, document } = await createNote(page, "AiDirty.md", "共同原件\n");
   const second = await addNote(page, document.document.workspaceId, "AiCompanion.md", "旁注\n");
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   const task = await send(page, "修订正文和旁注", true);
   const bodySource = await readSource(page, task, document.document.id);
   await readSource(page, task, second.document.id);
@@ -178,6 +203,8 @@ test("AI commits preserve the active local draft and expose diff and undo", asyn
   await expect(changes.getByLabel("版本差异")).toContainText("+远程改动");
   await page.getByRole("button", { name: "撤销", exact: true }).click();
   await expect(page.getByText("已撤销并保存为新版本")).toBeVisible();
+  await expect(page.getByRole("article")).toContainText("本地草稿");
+  await page.keyboard.press("Alt+e");
   await expect(editor).toContainText("本地草稿");
   expect(((await (await page.request.get(apiUrl)).json()) as DocumentSnapshot).markdown).toBe(
     "共同原件\n",
@@ -199,7 +226,7 @@ test("context falls back to the active semantic block and outline stays independ
   await article.focus();
   await article.press("]");
   await expect(page.getByRole("group", { name: "语义聚焦" })).toBeVisible();
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   const task = await send(page, "总结当前聚焦段落");
   const selected = await readSource(page, task, document.document.id);
   expect(selected.markdown).toBe("# 河口\n\n水位持续上涨。");
@@ -211,11 +238,11 @@ test("context falls back to the active semantic block and outline stays independ
     sourceIds: [selected.source.id, outline.source.id],
   });
   await expect(page.getByRole("list", { name: "引用来源" })).toContainText("AiSemantic.outline.md");
-  await page.getByRole("button", { name: "提纲", exact: true }).click();
+  await openDocumentTool(page, "提纲");
   await expect(page.getByRole("textbox", { name: "Markdown 提纲" })).toContainText(
     "检查水位与鸟类。",
   );
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   await expect(page.getByRole("region", { name: "文档 AI" })).toContainText("水位持续上涨");
   await expect(page.getByRole("group", { name: "语义聚焦" })).toBeVisible();
 });
@@ -228,7 +255,7 @@ test("Workspace AI stays in a separate route and resumes an interrupted event re
   await page.getByRole("option", { name: "Workspace AI", exact: true }).click();
   await expect(page).toHaveURL(`/workspaces/${document.document.workspaceId}/ai`);
   await expect(page.getByRole("heading", { name: "Workspace AI" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "文档 AI", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "打开文档辅助区" })).toHaveCount(0);
 
   const cursors: number[] = [];
   let abortNext = false;
@@ -271,7 +298,7 @@ test("Workspace AI stays in a separate route and resumes an interrupted event re
   await expect(page.getByText("空间任务已完成", { exact: true })).toBeVisible();
   await expect(page.getByText("询问整个空间", { exact: true })).toHaveCount(0);
   await page.goto(pathToNote);
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   await expect(page.getByText("空间任务已完成", { exact: true })).toHaveCount(0);
 });
 
@@ -285,7 +312,7 @@ test("AI destructive change awaits confirmation and shows the deleted file diff"
     "AiDelete.md",
     "请确认后删除这行。\n",
   );
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   const task = await send(page, "删除过期文档", true);
   const source = await readSource(page, task, deleted.document.id);
   await complete(page, task, {
@@ -307,8 +334,7 @@ test("an AI commit refreshes the clean reader, and undo is available after reloa
   page,
 }) => {
   const { document } = await createNote(page, "AiClean.md", "# 礁石\n\n确认之前的记载。\n");
-  const toggle = page.getByRole("button", { name: "文档 AI", exact: true });
-  await toggle.click();
+  await openDocumentTool(page, "AI");
   const task = await send(page, "更新这份记录", true);
   const original = await readSource(page, task, document.document.id);
   await complete(page, task, {
@@ -325,7 +351,7 @@ test("an AI commit refreshes the clean reader, and undo is available after reloa
   const article = page.getByRole("article");
   await expect(article).toContainText("确认之后的记载。");
   await page.reload();
-  await toggle.click();
+  await openDocumentTool(page, "AI");
   await expect(page.getByText("记录已更新", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "撤销", exact: true }).click();
   await expect(article).toContainText("确认之前的记载。");

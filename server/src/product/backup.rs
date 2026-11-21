@@ -4,7 +4,7 @@ use std::{
     collections::HashSet,
     fs,
     io::ErrorKind,
-    path::PathBuf,
+    path::{Path as DiskPath, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -103,6 +103,51 @@ impl Target {
 
     fn reference(&self) -> String {
         format!("refs/heads/{}", self.branch)
+    }
+
+    fn summary(self) -> BackupTargetSummary {
+        let repository_label = self.github_repository();
+        let kind = if repository_label.is_some() {
+            BackupTargetKind::Github
+        } else if DiskPath::new(&self.repository).is_absolute() {
+            BackupTargetKind::Local
+        } else {
+            BackupTargetKind::Git
+        };
+        BackupTargetSummary {
+            id: self.id,
+            label: self.label,
+            kind,
+            repository_label,
+            branch: self.branch,
+        }
+    }
+
+    fn github_repository(&self) -> Option<String> {
+        let url = reqwest::Url::parse(&self.repository).ok()?;
+        let host = url.host_str()?;
+        let github_ssh =
+            host.eq_ignore_ascii_case("github.com") && matches!(url.port(), None | Some(22));
+        let github_ssh_over_https =
+            host.eq_ignore_ascii_case("ssh.github.com") && url.port() == Some(443);
+        if url.scheme() != "ssh"
+            || url.username() != "git"
+            || !(github_ssh || github_ssh_over_https)
+        {
+            return None;
+        }
+        let (owner, repository) = url.path().strip_prefix('/')?.split_once('/')?;
+        let repository = repository.strip_suffix(".git").unwrap_or(repository);
+        if owner.is_empty()
+            || !owner
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || repository.is_empty()
+            || repository.contains('/')
+        {
+            return None;
+        }
+        Some(format!("{owner}/{repository}"))
     }
 }
 
@@ -209,16 +254,29 @@ impl Settings {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Status {
-    targets: Vec<TargetSummary>,
+    targets: Vec<BackupTargetSummary>,
     target_id: Option<String>,
+    target_needs_selection: bool,
     mode: Mode,
     last_job: Option<BackupJob>,
 }
 
 #[derive(Serialize)]
-struct TargetSummary {
+#[serde(rename_all = "camelCase")]
+struct BackupTargetSummary {
     id: String,
     label: String,
+    kind: BackupTargetKind,
+    repository_label: Option<String>,
+    branch: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum BackupTargetKind {
+    Github,
+    Git,
+    Local,
 }
 
 #[derive(Serialize)]
@@ -343,13 +401,8 @@ fn view(metadata: &Metadata, workspace: &str, targets: Vec<Target>) -> Result<St
         Err(_) => (None, None),
     };
     Ok(Status {
-        targets: targets
-            .into_iter()
-            .map(|target| TargetSummary {
-                id: target.id,
-                label: target.label,
-            })
-            .collect(),
+        targets: targets.into_iter().map(Target::summary).collect(),
+        target_needs_selection: settings.target_id.is_some() && target_id.is_none(),
         target_id,
         mode: settings.mode,
         last_job,

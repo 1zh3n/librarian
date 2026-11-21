@@ -9,7 +9,7 @@ import {
   Transaction,
 } from "@codemirror/state";
 import type { ChangeSet } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
 import {
   applyTextEdits,
@@ -24,11 +24,19 @@ import { anchorSampleInset, blockAtOffset, resolveAnchor } from "../../markdown/
 import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
-import { livePreview } from "./livePreview";
+import { hideFrontMatterControl, livePreview } from "./livePreview";
 import { frontMatterRange } from "./syntax";
 
 const replaceSource = StateEffect.define<SourceDocument>();
 const restoreLineEndings = StateEffect.define<readonly TextEdit[]>();
+const editorFocus = EditorView.theme({
+  "&.cm-focused": { outline: "none" },
+  ".cm-content:focus-visible": { outline: "none" },
+  "&.cm-focused .cm-activeLine": {
+    backgroundColor: "transparent",
+    boxShadow: "inset 2px 0 var(--accent, currentColor)",
+  },
+});
 
 function projectSource(source: SourceDocument, changes: ChangeSet): SourceDocument {
   const edits: TextEdit[] = [];
@@ -120,6 +128,7 @@ type EditorOptions = {
   readonly selection?: SourceSelection;
   readonly readOnly?: boolean;
   readonly ariaLabel?: string;
+  readonly hideMetadataInPreview?: boolean;
   readonly onDeferredExternalResult?: (revision: string | null, result: ExternalResult) => void;
   readonly onBufferChange?: (source: string, composing: boolean) => void;
 };
@@ -144,7 +153,7 @@ export interface EditorSession {
     sameRevision: boolean,
     keepSelection?: boolean,
   ): Promise<boolean>;
-  mount(parent: HTMLElement): () => void;
+  mount(parent: HTMLElement, autoFocus?: boolean): () => void;
 }
 
 export function openEditor(initial: string, options: EditorOptions = {}): EditorSession {
@@ -174,6 +183,9 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       composing,
       compositionEvents,
       preview.of(livePreview),
+      hideFrontMatterControl.of(options.hideMetadataInPreview ?? false),
+      editorFocus,
+      highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(options.readOnly ?? false),
@@ -354,7 +366,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       }
       return true;
     },
-    mount(parent) {
+    mount(parent, autoFocus = true) {
       if (view) {
         throw new Error("The editor is already mounted");
       }
@@ -373,7 +385,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         },
       });
       view = mounted;
-      mounted.focus();
+      if (autoFocus) mounted.focus();
       return () => {
         mounted.destroy();
         if (view === mounted) {

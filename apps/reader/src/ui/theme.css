@@ -4,6 +4,7 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "@heroui/styles/base" layer(base);
 @import "@heroui/styles/components/label.css" layer(components);
+@import "@heroui/styles/components/tabs.css" layer(components);
 @import "@heroui/styles/components/button.css" layer(components);
 @import "@heroui/styles/components/toggle-button.css" layer(components);
 @import "@heroui/styles/components/input.css" layer(components);

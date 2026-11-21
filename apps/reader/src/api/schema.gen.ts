@@ -850,14 +850,24 @@ export interface components {
       id: string;
       label: string;
     };
+    BackupTargetSummary: {
+      id: string;
+      label: string;
+      /** @enum {string} */
+      kind: "github" | "git" | "local";
+      repositoryLabel: string | null;
+      branch: string;
+    };
     SaveBackupSettings: {
       targetId: string | null;
       /** @enum {string} */
       mode: "grouped" | "each-operation";
     };
     BackupSettings: {
-      targets: components["schemas"]["ConfiguredTarget"][];
+      targets: components["schemas"]["BackupTargetSummary"][];
       targetId: string | null;
+      /** @description A previously selected deployment target has been removed or changed. */
+      targetNeedsSelection: boolean;
       /** @enum {string} */
       mode: "grouped" | "each-operation";
       lastJob: components["schemas"]["BackupJob"] | null;

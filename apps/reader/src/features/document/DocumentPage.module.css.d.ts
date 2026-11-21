@@ -1,11 +1,17 @@
 declare const styles: {
   readonly page: string;
-  readonly header: string;
   readonly title: string;
   readonly documentTools: string;
+  readonly iconButton: string;
+  readonly closePane: string;
+  readonly icon: string;
   readonly actionButton: string;
   readonly documentGrid: string;
   readonly toolPane: string;
+  readonly toolTabs: string;
+  readonly tabList: string;
+  readonly toolTab: string;
+  readonly tabPanel: string;
   readonly canvas: string;
   readonly contents: string;
   readonly outlineCanvas: string;

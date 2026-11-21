@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { components } from "../../src/api/schema.gen";
-import { createNote } from "./productFixture";
+import { createNote, openDocumentTool } from "./productFixture";
 
 type History = components["schemas"]["DocumentHistory"];
 
@@ -12,7 +12,7 @@ test("reads a saved diff and restores it as a new Git commit", async ({ page }) 
   await expect.poll(async () => (await history()).revisions?.length, { timeout: 10_000 }).toBe(1);
   const initialCommit = (await history()).revisions[0]?.commitId;
   expect(initialCommit).toBeDefined();
-  await page.getByRole("button", { name: "版本", exact: true }).click();
+  await openDocumentTool(page, "版本");
   const panel = page.getByRole("region", { name: "版本历史" });
   await expect(panel.getByRole("button", { name: /Create HistoryRoundTrip.md/ })).toBeVisible();
   await expect(panel.getByText("当前修改等待归档")).toHaveCount(0);
@@ -23,7 +23,7 @@ test("reads a saved diff and restores it as a new Git commit", async ({ page }) 
   await page.keyboard.insertText("编辑的新版本");
   await expect(page.getByText("已保存")).toBeVisible();
   await expect(panel.getByText("当前修改等待归档")).toBeVisible();
-  await page.getByRole("button", { name: "返回阅读" }).click();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("article")).toContainText("编辑的新版本");
 
   await panel.getByRole("button", { name: /Create HistoryRoundTrip.md/ }).click();

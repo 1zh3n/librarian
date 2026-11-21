@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField } from "@codemirror/state";
+import { Facet, StateField } from "@codemirror/state";
 import type { EditorState, Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
@@ -10,6 +10,9 @@ import { composing } from "./composition";
 import { frontMatterRange, selectionTouches } from "./syntax";
 
 const hide = Decoration.replace({});
+export const hideFrontMatterControl = Facet.define<boolean, boolean>({
+  combine: (values) => values.includes(true),
+});
 
 class MarkerWidget extends WidgetType {
   readonly text: string;
@@ -261,12 +264,10 @@ function blockDecorations(state: EditorState): DecorationSet {
   const frontMatter = frontMatterRange(state.doc);
   if (frontMatter && !selectionTouches(state, frontMatter.from, frontMatter.to)) {
     const { from, to } = frontMatter;
-    ranges.push(
-      Decoration.replace({ block: true, widget: new BlockWidget("frontmatter", from) }).range(
-        from,
-        to,
-      ),
-    );
+    const widget = state.facet(hideFrontMatterControl)
+      ? undefined
+      : new BlockWidget("frontmatter", from);
+    ranges.push(Decoration.replace({ block: true, ...(widget && { widget }) }).range(from, to));
   }
   for (let node = syntaxTree(state).topNode.firstChild; node; node = node.nextSibling) {
     if (node.name === "Table" && !selectionTouches(state, node.from, node.to)) {

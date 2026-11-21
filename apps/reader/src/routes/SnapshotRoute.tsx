@@ -91,7 +91,7 @@ function SnapshotReader({ snapshot, offline }: { snapshot: Snapshot; offline: bo
 
   return (
     <>
-      <header className={`${documentStyles.header} ${styles.header}`}>
+      <header className={styles.header}>
         <p className={styles.kind}>{kind === "release" ? "固定版本" : "当前地址"}</p>
         {kind === "release" && <OfflineSnapshotControl key={id} id={id} offline={offline} />}
         {documents.length > 1 && (

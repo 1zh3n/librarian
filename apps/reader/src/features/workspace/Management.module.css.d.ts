@@ -1,8 +1,6 @@
 declare const styles: {
   readonly page: string;
-  readonly navigation: string;
   readonly group: string;
-  readonly groupTitle: string;
   readonly section: string;
   readonly form: string;
   readonly field: string;
@@ -23,5 +21,7 @@ declare const styles: {
   readonly address: string;
   readonly actions: string;
   readonly result: string;
+  readonly tabList: string;
+  readonly tab: string;
 };
 export default styles;

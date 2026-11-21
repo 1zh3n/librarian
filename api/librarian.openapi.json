@@ -3619,6 +3619,41 @@
           }
         }
       },
+      "BackupTargetSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "repositoryLabel",
+          "branch"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "github",
+              "git",
+              "local"
+            ]
+          },
+          "repositoryLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": "string"
+          }
+        }
+      },
       "SaveBackupSettings": {
         "type": "object",
         "required": [
@@ -3646,6 +3681,7 @@
         "required": [
           "targets",
           "targetId",
+          "targetNeedsSelection",
           "mode",
           "lastJob"
         ],
@@ -3653,7 +3689,7 @@
           "targets": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ConfiguredTarget"
+              "$ref": "#/components/schemas/BackupTargetSummary"
             }
           },
           "targetId": {
@@ -3661,6 +3697,10 @@
               "string",
               "null"
             ]
+          },
+          "targetNeedsSelection": {
+            "type": "boolean",
+            "description": "A previously selected deployment target has been removed or changed."
           },
           "mode": {
             "type": "string",

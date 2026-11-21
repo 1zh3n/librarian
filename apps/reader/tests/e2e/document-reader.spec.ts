@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { DocumentSummary } from "../../src/api/client";
-import { createNote, openFieldWorkspace } from "./productFixture";
+import {
+  closeDocumentTool,
+  createNote,
+  openDocumentTool,
+  openFieldWorkspace,
+} from "./productFixture";
 
 async function fieldDocument(page: Page): Promise<string> {
   const space = await openFieldWorkspace(page);
@@ -21,6 +26,39 @@ test("reloads a document deep link", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "河岸清晨", level: 1 })).toBeVisible();
   await expect(page.getByRole("article")).toContainText("观鸟站");
   await expect(page).toHaveURL(target);
+});
+
+test("opens one accessible document tool pane and keeps AI input when switching tabs", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const field = await openFieldWorkspace(page);
+  const notes = (await (
+    await page.request.get(`/api/v1/workspaces/${field.id}/documents`)
+  ).json()) as DocumentSummary[];
+  const note = notes.find(({ path }) => path === "野外/02.md");
+  if (!note) throw new Error("Missing outline fixture");
+  await page.goto(`/workspaces/${field.id}/documents/${note.id}`);
+  const open = page.getByRole("button", { name: "打开文档辅助区" });
+  const tabs = page.getByRole("tablist", { name: "文档工具" });
+  await expect(open).toBeVisible();
+  await expect(tabs).toHaveCount(0);
+  await open.press("Enter");
+  await expect(tabs.getByRole("tab")).toHaveCount(4);
+  const outline = tabs.getByRole("tab", { name: "提纲", exact: true });
+  await expect(outline).toHaveAttribute("aria-selected", "true");
+  await expect(outline).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  const ai = tabs.getByRole("tab", { name: "AI", exact: true });
+  await expect(ai).toHaveAttribute("aria-selected", "true");
+  const prompt = page.getByRole("textbox", { name: "提示词" });
+  await prompt.fill("保留的草稿提示词");
+  await tabs.getByRole("tab", { name: "版本", exact: true }).click();
+  await ai.click();
+  await expect(prompt).toHaveValue("保留的草稿提示词");
+  await page.getByRole("button", { name: "收起文档辅助区" }).click();
+  await expect(tabs).toHaveCount(0);
+  await expect(open).toBeFocused();
 });
 
 test("opens a Chinese search result with the keyboard using the only search entry", async ({
@@ -77,7 +115,7 @@ test("opens outgoing links and backlinks from the document tools", async ({ page
     });
     expect(response.status()).toBe(201);
   }
-  await page.getByRole("button", { name: "引用", exact: true }).click();
+  await openDocumentTool(page, "引用");
   const panel = page.getByRole("region", { name: "文档引用" });
   await expect(panel.getByRole("link", { name: "引用本文的草稿" })).toBeVisible();
   await panel.getByRole("link", { name: "被引资料" }).click();
@@ -90,7 +128,7 @@ test("keeps the canvas readable when document contents open", async ({ page }) =
   const article = page.getByRole("article");
   await expect(article).toBeVisible();
   await page.getByRole("button", { name: "收起目录" }).click();
-  await page.getByRole("button", { name: "文档目录" }).click();
+  await openDocumentTool(page, "文档目录");
   await expect(page.getByRole("navigation", { name: "文档目录" })).toBeVisible();
   expect((await article.boundingBox())?.width).toBeGreaterThan(560);
   await page.getByRole("link", { name: "水线" }).click();
@@ -105,7 +143,7 @@ test("opens document AI alongside reading at normal desktop width", async ({ pag
   const before = await article.boundingBox();
   if (!before) throw new Error("Missing reading canvas");
 
-  await page.getByRole("button", { name: "文档 AI", exact: true }).click();
+  await openDocumentTool(page, "AI");
   const panel = page.getByRole("region", { name: "文档 AI", exact: true });
   await expect(panel).toBeVisible();
   await expect
@@ -136,18 +174,19 @@ for (const width of [390, 1440]) {
     });
     const before = (await heading.boundingBox())?.y ?? 0;
     const trigger = page.getByRole("button", {
-      name: width === 390 ? "文档 AI" : "版本",
+      name: "打开文档辅助区",
       exact: true,
     });
     await expect(trigger).toBeInViewport({ ratio: 1 });
     await trigger.press("Enter");
+    if (width === 1440) await openDocumentTool(page, "版本");
     const panel = page.getByRole("region", {
       name: width === 390 ? "文档 AI" : "版本历史",
       exact: true,
     });
     await expect(panel).toBeInViewport({ ratio: 0.6 });
     if (width === 390) await page.keyboard.press("Escape");
-    else await trigger.press("Enter");
+    else await closeDocumentTool(page);
     await expect(panel).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await expect

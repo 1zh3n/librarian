@@ -9,7 +9,6 @@ import { chromium } from "playwright";
 const origin = process.env.LIBRARIAN_PERF_ORIGIN;
 assert.ok(origin, "Set LIBRARIAN_PERF_ORIGIN to the local reader_fixture server");
 const expectedDist = fileURLToPath(new URL("../dist/", import.meta.url));
-const more = process.env.LIBRARIAN_PERF_ENTER !== "shortcut";
 const plainSample = "## 河边的笔记\n\n清晨潮水尚低，芦苇间有几只鸟。**记录**风向和水位。\n\n";
 const sample = process.env.LIBRARIAN_PERF_RICH_PATTERN
   ? plainSample.replace("笔记", "**笔记**")
@@ -26,7 +25,7 @@ try {
       markdownLength: markdown.length,
       markdownBytes: Buffer.byteLength(markdown),
       sha256: hash(markdown),
-      entry: more ? "menu click" : "Alt+E",
+      entry: "Alt+E / Escape",
     }),
   );
   page.on("pageerror", (error) => console.error(error));
@@ -66,9 +65,6 @@ try {
   const article = page.getByRole("article");
   await article.waitFor();
   console.log("blocks", await article.locator("[data-block-id]").count());
-  const leave = page.getByRole("button", { name: "返回阅读" });
-  const edit = page.getByRole("menuitem", { name: "编辑正文" });
-  const actions = page.getByRole("button", { name: "文档更多" });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   const waitAnimation = () =>
     page.evaluate(
@@ -99,37 +95,18 @@ try {
       };
       requestAnimationFrame(pollSurface);
     };
-    const action = (event) => {
-      const clickable =
-        event.target instanceof Element && event.target.closest("button,[role=menuitem]");
-      if (clickable?.textContent?.trim() === "编辑正文") return "enter";
-      if (clickable?.textContent?.trim() === "返回阅读") return "leave";
-    };
     addEventListener("input", (event) => record(event, "input"), true);
-    addEventListener(
-      "click",
-      (event) => {
-        const type = action(event);
-        if (type) record(event, type);
-      },
-      true,
-    );
     addEventListener(
       "keydown",
       (event) => {
         if (event.altKey && event.key.toLowerCase() === "e") record(event, "enter");
+        if (event.key === "Escape" && !visible()) record(event, "leave");
       },
       true,
     );
   });
-  const enter = async () => {
-    if (more) {
-      await actions.click();
-      await edit.click();
-    } else {
-      await page.keyboard.press("Alt+e");
-    }
-  };
+  const enter = () => page.keyboard.press("Alt+e");
+  const leave = () => page.keyboard.press("Escape");
   let count = 0;
   const flush = () => page.waitForFunction((n) => window.samples.length >= n, ++count);
   await enter();
@@ -144,7 +121,7 @@ try {
     insertTextInExpectedSource(text, i);
     await flush();
   }
-  await leave.click();
+  await leave();
   await flush();
   for (let i = 0; i < 4; i++) {
     await enter();
@@ -153,7 +130,7 @@ try {
     await page.keyboard.insertText("。");
     insertTextInExpectedSource("。", 0);
     await flush();
-    await leave.click();
+    await leave();
     await flush();
   }
   const values = await page.evaluate(() => window.samples);

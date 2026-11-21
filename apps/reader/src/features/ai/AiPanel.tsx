@@ -25,6 +25,7 @@ export function AiPanel({
   id,
   workspace,
   documentId,
+  active = true,
   documents,
   writable,
   resolveContext,
@@ -32,6 +33,7 @@ export function AiPanel({
   id?: string;
   workspace: string;
   documentId?: string;
+  active?: boolean;
   documents: readonly DocumentSummary[];
   writable: boolean;
   resolveContext?: () => Promise<AiContext[]>;
@@ -43,6 +45,7 @@ export function AiPanel({
     queryKey: [...workspaceKeys.workspace(workspace), "ai", "operations", documentId ?? null],
     queryFn: ({ signal }) => api.listAiOperations(workspace, documentId, signal),
     staleTime: 0,
+    enabled: active,
   });
   const byId = new Map<string, Turn>();
   for (const operation of history.data ?? []) byId.set(operation.id, { operation, prompt: "" });
@@ -175,7 +178,12 @@ export function AiPanel({
   }
 
   return (
-    <section id={id} className={styles.panel} aria-label={documentId ? "文档 AI" : "Workspace AI"}>
+    <section
+      id={id}
+      className={styles.panel}
+      data-document-ai={Boolean(documentId) || undefined}
+      aria-label={documentId ? "文档 AI" : "Workspace AI"}
+    >
       {!hasTurns && history.isError && <p role="alert">无法读取 AI 操作记录。</p>}
       {hasTurns && (
         <div

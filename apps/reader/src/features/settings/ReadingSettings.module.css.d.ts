@@ -12,5 +12,9 @@ declare const styles: {
   readonly mark: string;
   readonly actions: string;
   readonly error: string;
+  readonly tabList: string;
+  readonly tab: string;
+  readonly panel: string;
+  readonly shortcuts: string;
 };
 export default styles;

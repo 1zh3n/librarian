@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OutlineSnapshot } from "../../api/client";
 import { openMarkdownSession } from "./documentSession";
 import type { MarkdownWrite } from "./saveController";
@@ -10,6 +10,7 @@ export function OutlineCanvas({
   snapshot,
   writable,
   visible,
+  focusOnCreate,
   write,
   confirmed,
   readCurrent,
@@ -18,6 +19,7 @@ export function OutlineCanvas({
   snapshot: OutlineSnapshot;
   writable: boolean;
   visible: boolean;
+  focusOnCreate: boolean;
   write: (draft: MarkdownWrite) => Promise<OutlineSnapshot>;
   confirmed: (saved: OutlineSnapshot) => void;
   readCurrent: () => Promise<OutlineSnapshot>;
@@ -33,6 +35,8 @@ export function OutlineCanvas({
       readCurrent,
     }),
   );
+  const [focusOnFirstMount] = useState(focusOnCreate);
+  const mounted = useRef(false);
   useEffect(() => {
     register(session);
     return () => {
@@ -46,9 +50,12 @@ export function OutlineCanvas({
 
   const mount = useCallback(
     (parent: HTMLDivElement | null) => {
-      if (parent) return session.editor.mount(parent);
+      if (!parent) return;
+      const clear = session.editor.mount(parent, focusOnFirstMount && !mounted.current);
+      mounted.current = true;
+      return clear;
     },
-    [session],
+    [focusOnFirstMount, session],
   );
   if (!visible) return null;
   return <div className={styles.outlineCanvas} ref={mount} />;

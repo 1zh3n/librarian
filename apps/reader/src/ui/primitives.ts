@@ -21,6 +21,7 @@ export {
   ListBoxSection,
   Menu,
   MenuItem,
+  MenuSection,
   MenuTrigger,
   Modal,
   ModalOverlay,

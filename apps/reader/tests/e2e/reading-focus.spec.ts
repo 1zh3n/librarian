@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { DevicePreferences } from "../../src/api/client";
-import { createNote } from "./productFixture";
+import { createNote, openDocumentTool } from "./productFixture";
 
 const longParagraph = "同一段文字保持换行。沿着湿地栈道观测候鸟和水线。".repeat(110);
 const markdown = `## 第一段\n\n${longParagraph}\n\n## 走到桥头\n\n${longParagraph}\n\n最后一段。\n`;
@@ -12,7 +12,7 @@ test("focus keeps width, wrapping, and scroll, then restores the layout", async 
   const viewport = page.getByRole("main");
   const directory = page.getByRole("treegrid", { name: "空间目录" });
   await expect(directory).toBeVisible();
-  await page.getByRole("button", { name: "文档目录" }).click();
+  await openDocumentTool(page, "文档目录");
   const contents = page.getByRole("navigation", { name: "文档目录" });
   await expect(contents).toBeVisible();
   await reader.focus();
@@ -85,14 +85,13 @@ test("reader shortcuts leave active editors alone and invalid blocks clear safel
   await reader.press("]");
   await expect(page.getByRole("group", { name: "语义聚焦" })).toBeVisible();
 
-  await page.getByRole("button", { name: "文档更多" }).click();
-  await page.getByRole("menuitem", { name: "编辑正文" }).click();
+  await reader.press("Alt+e");
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+a");
   await page.keyboard.type("f[]");
   await expect(editor).toContainText("f[]");
   await expect(page.getByRole("treegrid", { name: "空间目录" })).toBeVisible();
-  await page.getByRole("button", { name: "返回阅读" }).click();
+  await page.getByRole("textbox", { name: "Markdown 正文" }).press("Escape");
   await expect(reader).toContainText("f[]");
   await expect(page.getByRole("group", { name: "语义聚焦" })).toBeHidden();
 });
@@ -115,6 +114,93 @@ test("device preferences survive reload", async ({ page }) => {
   await expect(page.getByRole("article")).toContainText("设备设置测试");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator("html")).toHaveAttribute("data-eink", "true");
+});
+
+test("settings tabs preserve drafts and save values from inactive tabs", async ({ page }) => {
+  await createNote(page, "SettingsTabs.md", "设备设置分组");
+  await page.getByRole("button", { name: "布局" }).click();
+  await page.getByRole("menuitem", { name: "阅读设置" }).click();
+  const settings = page.getByRole("dialog", { name: "阅读设置" });
+  const appearance = settings.getByRole("tab", { name: "外观" });
+  const reading = settings.getByRole("tab", { name: "阅读与布局" });
+  const shortcuts = settings.getByRole("tab", { name: "快捷键" });
+  await expect(appearance).toHaveAttribute("aria-selected", "true");
+  await settings.getByRole("checkbox", { name: "减少动画" }).press("Space");
+  await appearance.press("ArrowRight");
+  await expect(reading).toHaveAttribute("aria-selected", "true");
+  const fontSize = settings.getByLabel("字号", { exact: true });
+  await fontSize.fill("");
+  await reading.press("ArrowRight");
+  await expect(shortcuts).toHaveAttribute("aria-selected", "true");
+  await settings.getByLabel("专注快捷键").fill("g");
+  const save = settings.getByRole("button", { name: "保存设置" });
+  await save.click();
+  await expect(reading).toHaveAttribute("aria-selected", "true");
+  await expect(fontSize).toBeFocused();
+  await fontSize.fill("23");
+  await reading.press("ArrowRight");
+  await shortcuts.press("ArrowLeft");
+  await expect(fontSize).toHaveValue("23");
+  await save.click();
+  await expect(settings).toBeHidden();
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "true");
+  await expect(page.locator("html")).toHaveCSS("--reading-size", "23px");
+  await page.getByRole("article").press("g");
+  await expect(page.getByText("专注阅读 · Esc 退出")).toBeVisible();
+});
+
+test("selects layout previews and keeps the active tool when resizing the directory", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(page, "LayoutPresets.md", markdown);
+  await page.getByRole("button", { name: "搜索文档" }).click();
+  await page.getByRole("searchbox").fill("林间回声");
+  await page.getByRole("option", { name: /林间回声/ }).click();
+  const layout = page.getByRole("button", { name: "布局" });
+  const directory = page.getByRole("treegrid", { name: "空间目录" });
+
+  await layout.click();
+  await page.getByRole("menuitemradio", { name: "写作布局" }).click();
+  await expect(directory).toBeVisible();
+  await expect(page.getByRole("tab", { name: "提纲" })).toHaveAttribute("aria-selected", "true");
+
+  await layout.click();
+  const research = page.getByRole("menuitemradio", { name: "研究布局" });
+  await research.click();
+  const ai = page.getByRole("tab", { name: "AI" });
+  await expect(ai).toHaveAttribute("aria-selected", "true");
+  const message = page.getByRole("textbox", { name: "提示词" });
+  await message.fill("保留这条草稿");
+  const divider = page.getByRole("separator", { name: "调整空间目录宽度" });
+  const previousWidth = (await directory.boundingBox())?.width ?? 0;
+  await divider.press("ArrowRight");
+  await expect
+    .poll(async () => (await directory.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(previousWidth);
+  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expect(message).toHaveValue("保留这条草稿");
+  await layout.click();
+  await expect(research).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "引用" }).click();
+  await layout.click();
+  await research.click();
+  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expect(message).toHaveValue("保留这条草稿");
+
+  await page.reload();
+  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await layout.click();
+  await expect(research).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("menuitemradio", { name: "校订布局" }).click();
+  await expect(directory).toBeHidden();
+  await expect(page.getByRole("tab", { name: "版本" })).toHaveAttribute("aria-selected", "true");
+  await layout.click();
+  await page.getByRole("menuitemradio", { name: "阅读布局" }).click();
+  await expect(page.getByRole("tablist", { name: "文档工具" })).toBeHidden();
 });
 
 test("focus layout follows navigation and the old semantic block clears", async ({ page }) => {
@@ -174,7 +260,7 @@ test("focus keeps the narrow reading position when an inline tool closes", async
   await page.setViewportSize({ width: 390, height: 800 });
   await createNote(page, "NarrowFocus.md", markdown);
   const reader = page.getByRole("article");
-  await page.getByRole("button", { name: "文档目录" }).click();
+  await openDocumentTool(page, "文档目录");
   await expect(page.getByRole("navigation", { name: "文档目录" })).toBeVisible();
   await reader.focus();
   const firstHeading = reader.getByRole("heading", { name: "第一段" });
@@ -198,11 +284,10 @@ test("inserting an identical block earlier never moves semantic focus to the wro
   await reader.press("]");
   const anchored = reader.locator("[data-semantic-active]");
   await expect(anchored).toHaveAttribute("data-block-id", /-2$/);
-  await page.getByRole("button", { name: "文档更多" }).click();
-  await page.getByRole("menuitem", { name: "编辑正文" }).click();
+  await reader.press("Alt+e");
   await page.getByRole("textbox", { name: "Markdown 正文" }).press("Control+Home");
   await page.keyboard.insertText("重复。\n\n");
-  await page.getByRole("button", { name: "返回阅读" }).click();
+  await page.getByRole("textbox", { name: "Markdown 正文" }).press("Escape");
   await expect(reader.getByText("重复。", { exact: true })).toHaveCount(3);
   await expect(anchored).toHaveCount(0);
 });

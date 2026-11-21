@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
-import type { DocumentSnapshot, DocumentSummary, Workspace } from "../../src/api/client";
+import type {
+  DeliveryReceipt,
+  DocumentSnapshot,
+  DocumentSummary,
+  Workspace,
+} from "../../src/api/client";
 import { openFieldWorkspace } from "./productFixture";
 
 async function createWorkspace(page: Page, name: string, temporary = false) {
@@ -100,36 +105,199 @@ async function selectDeliveryFile(
   await chooser.setFiles(file);
 }
 
+test("imports Chinese Markdown and retries the same request after losing the response", async ({
+  page,
+}) => {
+  const workspace = await createWorkspace(page, "浏览器手动导入与重试");
+  await page.getByRole("tab", { name: "外部导入" }).click();
+  const form = page.getByRole("form", { name: "导入文件" });
+  const submit = form.getByRole("button", { name: "确认导入" });
+  await expect(submit).toBeDisabled();
+  await selectDeliveryFile(page, form, {
+    name: "空白.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.alloc(0),
+  });
+  await expect(form.getByRole("alert")).toContainText("空文件");
+  await selectDeliveryFile(page, form, {
+    name: "不支持.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("文本"),
+  });
+  await expect(form.getByRole("alert")).toContainText("Markdown");
+  await expect(submit).toBeDisabled();
+  await selectDeliveryFile(page, form, {
+    name: "中文手记.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 中文手记\n"),
+  });
+  const endpoint = `/api/v1/workspaces/${workspace.id}/deliveries`;
+  const submissions: unknown[] = [];
+  let interrupt: "before commit" | "after commit" | undefined = "after commit";
+  await page.route(`**${endpoint}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    submissions.push(route.request().postDataJSON());
+    const mode = interrupt;
+    interrupt = undefined;
+    if (mode === "before commit") return route.abort();
+    const result = await route.fetch();
+    expect(result.status()).toBe(201);
+    if (mode === "after commit") await route.abort();
+    else await route.fulfill({ response: result });
+  });
+  await submit.click();
+  await expect(form.getByRole("alert")).toContainText("重试");
+  await form.getByRole("button", { name: "重试导入" }).click();
+  await expect(form.getByRole("status")).toContainText("新增 1");
+  expect(submissions[0]).toMatchObject({
+    manifest: {
+      deliveryId: expect.stringMatching(/^manual-[a-f\d-]{36}$/),
+      sourceName: "手动导入",
+    },
+  });
+  expect(submissions).toEqual([submissions[0], submissions[0]]);
+  const records = (await (await page.request.get(endpoint)).json()) as DeliveryReceipt[];
+  expect(records).toHaveLength(1);
+
+  const secondFile = {
+    name: "下一批.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 下一批\n"),
+  };
+  interrupt = "before commit";
+  await selectDeliveryFile(page, form, secondFile);
+  await submit.click();
+  await expect(form.getByRole("alert")).toContainText("重试");
+  await page.reload();
+  await expect(form.getByRole("status")).toContainText("请重新选择同一批文件");
+  const retry = form.getByRole("button", { name: "重试导入" });
+  await expect(retry).toBeDisabled();
+  interrupt = "after commit";
+  await selectDeliveryFile(page, form, secondFile);
+  await retry.click();
+  await expect(form.getByRole("alert")).toContainText("重试");
+  expect(submissions[2]).not.toEqual(submissions[0]);
+  expect(submissions[3]).toEqual(submissions[2]);
+  await page.reload();
+  await expect(form.getByRole("status")).toContainText("导入已完成");
+  const completed = (await (await page.request.get(endpoint)).json()) as DeliveryReceipt[];
+  expect(completed).toHaveLength(2);
+  expect(completed[0]?.deliveryId).not.toBe(completed[1]?.deliveryId);
+  const history = page.getByRole("region", { name: "导入记录" });
+  await history.getByRole("link", { name: /中文手记\.md/ }).click();
+  await expect(page.getByRole("article")).toContainText("中文手记");
+});
+
+test("keeps an interrupted source update retryable after CI sends the same manifest", async ({
+  page,
+}) => {
+  const workspace = await createWorkspace(page, "浏览器共享来源更新");
+  const base = `/api/v1/workspaces/${workspace.id}`;
+  const endpoint = `${base}/deliveries`;
+  const origin = new URL(page.url()).origin;
+  const manifest = { deliveryId: "shared-docs", sourceName: "共享文档", version: "1" };
+  const payload = (version: string, markdown: string) => ({
+    manifest: { ...manifest, version },
+    files: [{ path: "手记.md", contentBase64: Buffer.from(markdown).toString("base64") }],
+  });
+  const prepared = await page.request.post(endpoint, {
+    headers: { origin },
+    data: payload("1", "# 原版\n"),
+  });
+  expect(prepared.status()).toBe(201);
+  const issued = await page.request.post(`${base}/delivery-tokens`, {
+    headers: { origin },
+    data: { name: "共享来源 CI", deliveryId: manifest.deliveryId },
+  });
+  expect(issued.status()).toBe(201);
+  const { token } = (await issued.json()) as { token: string };
+
+  await page.getByRole("tab", { name: "外部导入" }).click();
+  await page.reload();
+  const history = page.getByRole("region", { name: "导入记录" });
+  await history.getByRole("button", { name: "更新此来源" }).click();
+  const form = page.getByRole("form", { name: "导入文件" });
+  await form.getByRole("textbox", { name: "版本（可选）" }).fill("2");
+  const files = {
+    name: "手记.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 浏览器更新\n"),
+  };
+  await selectDeliveryFile(page, form, files);
+  const route = `**${endpoint}`;
+  const browserAttempt = payload("2", "# 浏览器更新\n");
+  await page.route(route, (request) => {
+    if (request.request().method() !== "POST") return request.continue();
+    expect(request.request().postDataJSON()).toEqual(browserAttempt);
+    return request.abort();
+  });
+  await form.getByRole("button", { name: "确认导入" }).click();
+  await expect(form.getByRole("alert")).toContainText("重试");
+  await page.unroute(route);
+
+  const ci = await page.request.post(endpoint, {
+    headers: { authorization: `Bearer ${token}` },
+    data: payload("2", "# CI 更新\n"),
+  });
+  expect(ci.status()).toBe(201);
+  const ciReceipt = (await ci.json()) as DeliveryReceipt;
+
+  await page.reload();
+  await expect(history).toContainText("共享文档 · 2");
+  await expect(form.getByRole("status")).toContainText("请重新选择同一批文件");
+  const retry = form.getByRole("button", { name: "重试导入" });
+  await expect(retry).toBeDisabled();
+  await selectDeliveryFile(page, form, files);
+  const [retried] = await Promise.all([
+    page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url().endsWith(endpoint),
+    ),
+    retry.click(),
+  ]);
+  expect(retried.request().postDataJSON()).toEqual(browserAttempt);
+  expect(retried.status()).toBe(201);
+  const browserReceipt = (await retried.json()) as DeliveryReceipt;
+  expect(browserReceipt.operationId).not.toBe(ciReceipt.operationId);
+  await expect(form.getByRole("status")).toContainText("更新 1");
+});
+
 test("uploads a ZIP and keeps its receipt and readable relative attachment", async ({ page }) => {
   const workspace = await createWorkspace(page, "浏览器投递清单");
-  const form = page.getByRole("form", { name: "投递文件" });
-  await form.getByRole("textbox", { name: "投递 ID" }).fill("browser-release");
-  await form.getByRole("textbox", { name: "来源名称" }).fill("浏览器交付");
+  await page.getByRole("tab", { name: "外部导入" }).click();
+  const form = page.getByRole("form", { name: "导入文件" });
   await selectDeliveryFile(page, form, {
-    name: "oversized.png",
-    mimeType: "image/png",
-    buffer: Buffer.alloc(12 * 1024 * 1024 + 1),
+    name: "oversized.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.alloc(4 * 1024 * 1024 + 1),
   });
-  await expect(form.getByRole("alert")).toContainText("投递文件超过大小限制");
-  await expect(form.getByRole("button", { name: "上传投递" })).toBeDisabled();
+  await expect(form.getByRole("alert")).toContainText("导入文件超过大小限制");
+  await expect(form.getByRole("button", { name: "确认导入" })).toBeDisabled();
   await selectDeliveryFile(page, form, {
     name: "delivery.zip",
     mimeType: "application/zip",
     buffer: Buffer.from(deliveryZip, "base64"),
   });
-  await form.getByRole("button", { name: "上传投递" }).click();
-  const history = page.getByRole("region", { name: "投递记录" });
-  await expect(history).toContainText("浏览器交付");
-  await expect(history).toContainText("browser-release");
+  await expect(form).toContainText("delivery.zip");
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (entry) => entry.request().method() === "POST" && entry.url().endsWith("/deliveries"),
+    ),
+    form.getByRole("button", { name: "确认导入" }).click(),
+  ]);
+  expect(response.status()).toBe(201);
+  const receipt = (await response.json()) as DeliveryReceipt;
+  expect(receipt.commitId).toMatch(/^[a-f\d]{40}$/u);
+  const history = page.getByRole("region", { name: "导入记录" });
+  await expect(history).toContainText("新增 2");
+  await expect(history).toContainText("guides/pixel.png");
   await page.reload();
-  await expect(history).toContainText("browser-release");
-
+  await history.getByRole("link", { name: "guides/start.md" }).click();
   const documents = (await (
     await page.request.get(`/api/v1/workspaces/${workspace.id}/documents`)
   ).json()) as DocumentSummary[];
-  const document = documents.find((item) => item.path.endsWith("/guides/start.md"));
-  if (!document) throw new Error("Delivered Markdown was not indexed");
-  await page.goto(`/workspaces/${workspace.id}/documents/${document.id}`);
+  expect(documents.map((item) => item.path)).toContain(
+    `deliveries/${receipt.deliveryId}/guides/start.md`,
+  );
   const image = page.getByRole("article").getByRole("img", { name: "像素" });
   await expect.poll(() => image.evaluate((value: HTMLImageElement) => value.naturalWidth)).toBe(1);
 });
@@ -169,6 +337,8 @@ test("keeps an unsaved draft when the reader declines to open the new note", asy
   await dialog.getByRole("button", { name: "创建文档" }).click();
   await expect(page.getByText("已新建「稍后阅读」。可在目录中打开。")).toBeVisible();
   await expect(page).toHaveURL(currentRoute);
+  await expect(page.getByRole("article")).toContainText("保留的本地草稿");
+  await page.keyboard.press("Alt+e");
   await expect(editor).toContainText("保留的本地草稿");
   const created = page.getByRole("row", { name: "稍后阅读" });
   await expect(created).toBeVisible();
@@ -176,6 +346,56 @@ test("keeps an unsaved draft when the reader declines to open the new note", asy
   await created.click();
   await expect(page.getByRole("heading", { name: "稍后阅读", level: 1 })).toBeVisible();
   await expect(editor).toHaveCount(0);
+});
+
+test("a read-only workspace member can open an import receipt without upload or token controls", async ({
+  page,
+  browser,
+}) => {
+  const workspace = await createWorkspace(page, "浏览器只读导入记录");
+  const endpoint = `/api/v1/workspaces/${workspace.id}`;
+  const origin = new URL(page.url()).origin;
+  const membership = await page.request.put(`${endpoint}/members/offline-reader`, {
+    headers: { origin },
+    data: { role: "read" },
+  });
+  expect(membership.ok()).toBe(true);
+  const delivery = await page.request.post(`${endpoint}/deliveries`, {
+    headers: { origin },
+    data: {
+      manifest: { deliveryId: "from-project", sourceName: "已授权来源" },
+      files: [
+        { path: "共享回执.md", contentBase64: Buffer.from("# 已授权文档\n").toString("base64") },
+      ],
+    },
+  });
+  expect(delivery.status()).toBe(201);
+  const viewer = await browser.newPage();
+  try {
+    await viewer.goto(new URL("/.auth/librarian/login", page.url()).href);
+    await viewer.getByLabel("用户名").fill("offline-reader");
+    await viewer.getByLabel("密码").fill("offline-reader-test-password");
+    const [login] = await Promise.all([
+      viewer.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().includes("/.auth/librarian/login"),
+      ),
+      viewer.getByRole("button", { name: "登录" }).click(),
+    ]);
+    expect(login.status()).toBe(303);
+    await viewer.goto(new URL(`/workspaces/${workspace.id}`, page.url()).href);
+    await viewer.getByRole("button", { name: "空间设置" }).click();
+    const history = viewer.getByRole("region", { name: "导入记录" });
+    await expect(history).toContainText("已授权来源");
+    await expect(viewer.getByRole("form", { name: "导入文件" })).toHaveCount(0);
+    await expect(viewer.getByRole("button", { name: "更新此来源" })).toHaveCount(0);
+    await expect(viewer.getByRole("region", { name: "项目自动导入" })).toHaveCount(0);
+    await history.getByRole("link", { name: "共享回执.md" }).click();
+    await expect(viewer.getByRole("article")).toContainText("已授权文档");
+  } finally {
+    await viewer.close();
+  }
 });
 
 test("a share snapshot reads the selected documents anonymously and revokes the same address", async ({
@@ -192,6 +412,7 @@ test("a share snapshot reads the selected documents anonymously and revokes the 
   await addDocument(page, workspace.id, "共享/终点.md", "# 终点\n");
   await addDocument(page, workspace.id, "共享/私稿.md", "# 私稿\n");
   await page.reload();
+  await page.getByRole("tab", { name: "备份与发布" }).click();
   const snapshot = page.getByRole("form", { name: "创建阅读地址" });
   for (const path of ["共享/起点.md", "共享/终点.md"]) {
     await snapshot.getByText(path, { exact: true }).click();
@@ -238,20 +459,51 @@ test("a share snapshot reads the selected documents anonymously and revokes the 
 });
 
 test("shows a delivery credential once and persists its revocation", async ({ page }) => {
-  await createWorkspace(page, "浏览器投递凭证");
-  const tokens = page.getByRole("region", { name: "投递凭证" });
+  const workspace = await createWorkspace(page, "浏览器投递凭证");
+  await page.getByRole("tab", { name: "外部导入" }).click();
+  const tokens = page.getByRole("region", { name: "项目自动导入" });
+  await expect(tokens.getByRole("textbox", { name: "凭证名称" })).toHaveCount(0);
+  await tokens.getByRole("button", { name: "项目自动导入", exact: true }).click();
   await tokens.getByRole("textbox", { name: "凭证名称" }).fill("文档 CI");
-  await tokens.getByRole("textbox", { name: "投递 ID" }).fill("workspace-docs");
+  const sourceId = "-workspace-docs";
+  await tokens.getByRole("textbox", { name: "来源 ID" }).fill(sourceId);
   await tokens.getByRole("button", { name: "签发凭证" }).click();
   const secret = tokens.getByRole("textbox", { name: "新签发的凭证" });
   await expect(secret).toBeVisible();
   await expect(secret).not.toHaveValue("");
+  const example = tokens.getByLabel("CLI 示例");
+  await expect(example).toContainText("LIBRARIAN_DELIVERY_TOKEN");
+  await expect(example).toContainText(`--delivery-id=${sourceId}`);
+  const credential = await secret.inputValue();
+  await expect(example).not.toContainText(credential);
+  const endpoint = `/api/v1/workspaces/${workspace.id}/deliveries`;
+  const ci = (version: string, markdown: string, deliveryId = sourceId) =>
+    page.request.post(endpoint, {
+      headers: { authorization: `Bearer ${credential}` },
+      data: {
+        manifest: { deliveryId, sourceName: "自动文档", version },
+        files: [{ path: "说明.md", contentBase64: Buffer.from(markdown).toString("base64") }],
+      },
+    });
+  const sent = await ci("1", "# 初次送入\n");
+  expect(sent.status()).toBe(201);
+  expect(await (await ci("1", "# 初次送入\n")).json()).toEqual(await sent.json());
+  const updated = await ci("2", "# 项目更新\n");
+  expect(updated.status()).toBe(201);
+  const updatedReceipt = (await updated.json()) as DeliveryReceipt;
+  expect(updatedReceipt.commitId).not.toBe(((await sent.json()) as DeliveryReceipt).commitId);
+  expect((await ci("2", "# 无权送入\n", "other-project")).status()).toBe(403);
+
   await page.reload();
+  await tokens.getByRole("button", { name: "项目自动导入", exact: true }).click();
   await expect(secret).toHaveCount(0);
   const token = tokens.getByRole("listitem").filter({ hasText: "文档 CI" });
+  await expect(token).toContainText(updatedReceipt.commitId);
   await token.getByRole("button", { name: "撤销凭证" }).click();
   await expect(token).toContainText("已撤销");
+  expect((await ci("3", "# 已撤销\n")).status()).toBe(401);
   await page.reload();
+  await tokens.getByRole("button", { name: "项目自动导入", exact: true }).click();
   await expect(token).toContainText("已撤销");
   await expect(secret).toHaveCount(0);
 });
@@ -278,6 +530,7 @@ test("a fixed reading address preserves delivered Markdown and its selected atta
   const delivered = documents.find((item) => item.path.endsWith("/guides/start.md"));
   if (!delivered) throw new Error("Missing delivered note");
   await page.reload();
+  await page.getByRole("tab", { name: "备份与发布" }).click();
   const form = page.getByRole("form", { name: "创建阅读地址" });
   await form.getByText(delivered.path, { exact: true }).click();
   await expect(form.getByRole("checkbox", { name: delivered.path })).toBeChecked();
@@ -295,17 +548,26 @@ test("a fixed reading address preserves delivered Markdown and its selected atta
   const href = await address.getAttribute("href");
   if (!href) throw new Error("Fixed address missing");
 
-  const upload = page.getByRole("form", { name: "投递文件" });
-  await upload.getByRole("textbox", { name: "投递 ID" }).fill("published");
-  await upload.getByRole("textbox", { name: "来源名称" }).fill("固定版本来源");
+  await page.getByRole("tab", { name: "外部导入" }).click();
+  const history = page.getByRole("region", { name: "导入记录" });
+  await history.getByRole("button", { name: "更新此来源" }).click();
+  const upload = page.getByRole("form", { name: "导入文件" });
+  await expect(upload.getByRole("textbox", { name: "来源名称" })).toHaveValue("固定版本来源");
   await upload.getByRole("textbox", { name: "版本（可选）" }).fill("2");
   await selectDeliveryFile(page, upload, {
     name: "start.md",
     mimeType: "text/markdown",
     buffer: Buffer.from("# 新交接清单\n"),
   });
-  await upload.getByRole("button", { name: "上传投递" }).click();
-  await expect(page.getByRole("region", { name: "投递记录" })).toContainText("published · 2");
+  await upload.getByRole("button", { name: "确认导入" }).click();
+  await expect(history).toContainText("固定版本来源 · 2");
+  const updated = (await (
+    await page.request.get(`${workspaceApi}/deliveries`)
+  ).json()) as DeliveryReceipt[];
+  expect(updated.map((record) => record.deliveryId)).toEqual(["published", "published"]);
+  expect(updated[0]?.changes.map((change) => change.path)).toContain(
+    "deliveries/published/start.md",
+  );
   const visitor = await browser.newPage();
   try {
     await visitor.goto(new URL(href, page.url()).href);

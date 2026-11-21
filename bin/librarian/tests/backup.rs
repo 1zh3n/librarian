@@ -117,7 +117,7 @@ impl Fixture {
         assert_eq!(status, StatusCode::OK, "{configured}");
         assert_eq!(
             configured["targets"],
-            json!([{"id":"safe","label":"Workspace Backup"}])
+            json!([{"id":"safe","label":"Workspace Backup","kind":"local","repositoryLabel":null,"branch":"workspace-backup"}])
         );
         assert_eq!(configured["targetId"], "safe");
         assert_eq!(configured["mode"], mode);
@@ -222,6 +222,7 @@ async fn backup_lists_only_the_workspace_binding_and_ignores_legacy_targets() {
     assert_eq!(status, StatusCode::OK, "{view}");
     assert_eq!(view["targets"], json!([]));
     assert_eq!(view["targetId"], Value::Null);
+    assert_eq!(view["targetNeedsSelection"], false);
     let (status, rejected) = request(
         &f.router,
         &f.member,
@@ -237,6 +238,7 @@ async fn backup_lists_only_the_workspace_binding_and_ignores_legacy_targets() {
     assert_eq!(status, StatusCode::OK, "{view}");
     assert_eq!(view["targets"], json!([]));
     assert_eq!(view["targetId"], Value::Null);
+    assert_eq!(view["targetNeedsSelection"], true);
     let (status, rejected) = f
         .call(
             "POST",
@@ -246,6 +248,46 @@ async fn backup_lists_only_the_workspace_binding_and_ignores_legacy_targets() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
     assert!(git(&f.remote, &["for-each-ref"]).is_empty());
+}
+
+#[tokio::test]
+async fn backup_summaries_expose_only_safe_fields_for_the_current_workspace() {
+    let f = Fixture::open().await;
+    let ssh = json!({
+        "identityFile": "/private/ssh-key",
+        "knownHostsFile": "/private/known-hosts"
+    });
+    fs::write(
+        f.data.join(".librarian/backup-targets.json"),
+        json!({"targets": [
+            {"id":"github","label":"GitHub","workspaceId":f.workspace,"repository":"ssh://git@GitHub.com/Example/Workspace.git","branch":"backup/main","ssh":ssh},
+            {"id":"other","label":"Internal Git","workspaceId":f.workspace,"repository":"ssh://git@github.com.example.test/team/private.git","branch":"safe","ssh":ssh},
+            {"id":"safe","label":"Workspace Backup","workspaceId":f.workspace,"repository":f.remote,"branch":"workspace-backup"},
+            {"id":"unrelated","label":"Other Workspace","workspaceId":"unrelated","repository":f.distractor,"branch":"private"}
+        ]}).to_string(),
+    )
+    .unwrap();
+    let (status, view) = f.call("GET", "/backup", Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["targetId"], Value::Null);
+    assert_eq!(view["targetNeedsSelection"], false);
+    assert_eq!(
+        view["targets"],
+        json!([
+            {"id":"github","label":"GitHub","kind":"github","repositoryLabel":"Example/Workspace","branch":"backup/main"},
+            {"id":"other","label":"Internal Git","kind":"git","repositoryLabel":null,"branch":"safe"},
+            {"id":"safe","label":"Workspace Backup","kind":"local","repositoryLabel":null,"branch":"workspace-backup"}
+        ])
+    );
+    let (status, denied) = request(
+        &f.router,
+        &f.member,
+        "GET",
+        &format!("/workspaces/{}/backup", f.workspace),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
 }
 
 #[tokio::test]

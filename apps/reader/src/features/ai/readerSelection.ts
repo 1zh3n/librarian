@@ -87,6 +87,28 @@ function boundary(
   }
 }
 
+function blockElements(analysis: MarkdownAnalysis) {
+  const nodes = new Map<string, HastElement>();
+  for (const child of analysis.tree.children) {
+    if (child.type === "element" && typeof child.properties.dataBlockId === "string") {
+      nodes.set(child.properties.dataBlockId, child);
+    }
+  }
+  return nodes;
+}
+
+export function readerCaretOffset(
+  root: HTMLElement,
+  point: { node: Node; offset: number },
+  source: string,
+  analysis: MarkdownAnalysis,
+) {
+  const hasBom = source.startsWith("\uFEFF");
+  const raw = hasBom ? source.slice(1) : source;
+  const offset = boundary(raw, blockElements(analysis), root, point.node, point.offset, false);
+  return offset === undefined ? undefined : offset + Number(hasBom);
+}
+
 export function readerSelection(
   root: HTMLElement,
   range: Range,
@@ -95,12 +117,7 @@ export function readerSelection(
 ): SourceRange | undefined {
   if (range.collapsed) return;
   if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return;
-  const nodes = new Map<string, HastElement>();
-  for (const child of analysis.tree.children) {
-    if (child.type === "element" && typeof child.properties.dataBlockId === "string") {
-      nodes.set(child.properties.dataBlockId, child);
-    }
-  }
+  const nodes = blockElements(analysis);
   const hasBom = source.startsWith("\uFEFF");
   const raw = hasBom ? source.slice(1) : source;
   const from = boundary(raw, nodes, root, range.startContainer, range.startOffset, true);

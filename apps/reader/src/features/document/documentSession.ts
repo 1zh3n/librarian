@@ -9,6 +9,7 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
   readCurrent,
   readOnly,
   ariaLabel,
+  hideMetadataInPreview = false,
 }: {
   initial: Snapshot;
   write: (write: MarkdownWrite) => Promise<Snapshot>;
@@ -16,11 +17,13 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
   readCurrent: () => Promise<Snapshot>;
   readOnly: boolean;
   ariaLabel: string;
+  hideMetadataInPreview?: boolean;
 }) {
   const editor = openEditor(initial.markdown, {
     revision: initial.revision,
     readOnly,
     ariaLabel,
+    hideMetadataInPreview,
     onBufferChange(markdown, composing) {
       if (composing) saves.cancelScheduledSave();
       else if (!readOnly) saves.change(markdown);

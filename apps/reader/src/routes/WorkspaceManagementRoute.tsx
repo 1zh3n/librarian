@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { getRouteApi, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { documentsQuery, workspacesQuery } from "../api/queries";
 import { DeliveryPanel } from "../features/delivery/DeliveryPanel";
 import { DeliveryTokens } from "../features/delivery/DeliveryTokens";
@@ -11,31 +11,14 @@ import { RenamePathForm } from "../features/workspace/RenamePathForm";
 import { WorkspaceEditor } from "../features/workspace/WorkspaceEditor";
 import { WorkspaceMembers } from "../features/workspace/WorkspaceMembers";
 import styles from "../features/workspace/Management.module.css";
+import { Tabs } from "../ui/Tabs";
 
 const route = getRouteApi("/workspaces/$workspaceId/manage");
 
-const space = { id: "space", title: "空间与成员" };
-const directory = { id: "directory", title: "目录" };
-const delivery = { id: "delivery", title: "投递" };
-const release = { id: "release", title: "备份、发布与分享" };
-const sharing = { id: "release", title: "分享" };
-
-function ManagementGroup({
-  group,
-  children,
-}: {
-  group: { id: string; title: string };
-  children: ReactNode;
-}) {
-  return (
-    <section aria-labelledby={group.id} className={styles.group}>
-      <h2 className={styles.groupTitle} id={group.id} tabIndex={-1}>
-        {group.title}
-      </h2>
-      {children}
-    </section>
-  );
-}
+const general = { id: "general", title: "常规" };
+const members = { id: "members", title: "成员" };
+const delivery = { id: "delivery", title: "外部导入" };
+const release = { id: "release", title: "备份与发布" };
 
 export function CreateWorkspaceRoute() {
   const navigate = useNavigate();
@@ -57,9 +40,22 @@ export function CreateWorkspaceRoute() {
 
 export function WorkspaceManagementRoute() {
   const { workspaceId } = route.useParams();
+  const navigate = useNavigate();
+  const hash = useRouterState({ select: (state) => state.location.hash });
   const list = useQuery(workspacesQuery);
   const documents = useQuery(documentsQuery(workspaceId));
   const workspace = list.data?.find((item) => item.id === workspaceId);
+  const renameHeading = useRef<HTMLHeadingElement>(null);
+  const canManage = workspace?.canManage ?? false;
+
+  useEffect(() => {
+    if (!canManage || hash !== "directory") return;
+    const frame = requestAnimationFrame(() => {
+      renameHeading.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [canManage, hash, workspaceId]);
+
   if (!workspace) {
     return (
       <div className={styles.page}>
@@ -73,72 +69,75 @@ export function WorkspaceManagementRoute() {
       </div>
     );
   }
-  const releaseGroup = workspace.canManage ? release : sharing;
-  const groups = [
-    ...(workspace.canManage ? [space, directory] : []),
+  const canRelease = workspace.canManage || workspace.canWrite;
+  const tabs = [
+    ...(workspace.canManage ? [general, members] : []),
     delivery,
-    ...(workspace.canManage || workspace.canWrite ? [releaseGroup] : []),
+    ...(canRelease ? [release] : []),
   ];
+  const requested = hash === "space" || hash === "directory" ? general.id : hash;
+  const selected =
+    tabs.find(({ id }) => id === requested)?.id ?? (workspace.canManage ? general.id : delivery.id);
   return (
     <div className={styles.page}>
       <h1>{workspace.name}</h1>
-      {groups.length > 1 && (
-        <nav aria-label="工作区管理" className={styles.navigation}>
-          {groups.map(({ id, title }) => (
-            <a key={id} href={`#${id}`}>
+      <Tabs
+        key={workspaceId}
+        selectedKey={selected}
+        onSelectionChange={(key) =>
+          void navigate({
+            to: "/workspaces/$workspaceId/manage",
+            params: { workspaceId },
+            hash: String(key),
+            hashScrollIntoView: false,
+            resetScroll: false,
+          })
+        }
+      >
+        <Tabs.List aria-label="空间设置" className={styles.tabList}>
+          {tabs.map(({ id, title }) => (
+            <Tabs.Tab key={id} id={id} className={styles.tab}>
               {title}
-            </a>
+            </Tabs.Tab>
           ))}
-        </nav>
-      )}
-      {workspace.canManage && (
-        <>
-          <ManagementGroup group={space}>
-            <section className={styles.section} aria-label="空间设置">
-              <h3>空间设置</h3>
-              <WorkspaceEditor key={workspaceId} current={workspace} />
-            </section>
-            <WorkspaceMembers key={workspaceId} workspace={workspaceId} />
-          </ManagementGroup>
-          <ManagementGroup group={directory}>
-            <section className={styles.section} aria-label="重命名路径">
-              <h3>重命名路径</h3>
-              <RenamePathForm key={workspaceId} workspace={workspaceId} />
-            </section>
-          </ManagementGroup>
-        </>
-      )}
-      <ManagementGroup group={delivery}>
-        <DeliveryPanel
-          key={`delivery-${workspaceId}`}
-          workspace={workspaceId}
-          writable={workspace.canWrite}
-        />
+        </Tabs.List>
         {workspace.canManage && (
-          <DeliveryTokens key={`token-${workspaceId}`} workspace={workspaceId} />
+          <Tabs.Panel id={general.id} shouldForceMount className={styles.group}>
+            <section className={styles.section} aria-label="空间设置">
+              <h2 id="space">空间设置</h2>
+              <WorkspaceEditor current={workspace} />
+            </section>
+            <section className={styles.section} aria-label="重命名路径">
+              <h2 id="directory" ref={renameHeading}>
+                重命名路径
+              </h2>
+              <RenamePathForm workspace={workspaceId} />
+            </section>
+          </Tabs.Panel>
         )}
-      </ManagementGroup>
-      {(workspace.canManage || workspace.canWrite) && (
-        <ManagementGroup group={releaseGroup}>
-          {workspace.canManage && (
-            <>
-              <BackupPanel key={`backup-${workspaceId}`} workspace={workspaceId} />
-              <PublicationPanel
-                key={`publication-${workspaceId}`}
-                workspace={workspaceId}
-                documents={documents.data ?? []}
-              />
-            </>
-          )}
-          {workspace.canWrite && (
-            <SnapshotPanel
-              key={`snapshot-${workspaceId}`}
-              workspace={workspaceId}
-              documents={documents.data ?? []}
-            />
-          )}
-        </ManagementGroup>
-      )}
+        {workspace.canManage && (
+          <Tabs.Panel id={members.id} shouldForceMount className={styles.group}>
+            <WorkspaceMembers workspace={workspaceId} />
+          </Tabs.Panel>
+        )}
+        <Tabs.Panel id={delivery.id} shouldForceMount className={styles.group}>
+          <DeliveryPanel workspace={workspaceId} writable={workspace.canWrite} />
+          {workspace.canManage && <DeliveryTokens workspace={workspaceId} />}
+        </Tabs.Panel>
+        {canRelease && (
+          <Tabs.Panel id={release.id} shouldForceMount className={styles.group}>
+            {workspace.canManage && (
+              <>
+                <BackupPanel workspace={workspaceId} />
+                <PublicationPanel workspace={workspaceId} documents={documents.data ?? []} />
+              </>
+            )}
+            {workspace.canWrite && (
+              <SnapshotPanel workspace={workspaceId} documents={documents.data ?? []} />
+            )}
+          </Tabs.Panel>
+        )}
+      </Tabs>
     </div>
   );
 }
