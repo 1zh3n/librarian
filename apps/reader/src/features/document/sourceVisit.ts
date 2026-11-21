@@ -23,19 +23,19 @@ export type SourceVisit = {
 
 type CitedSource = { path: string; revision: string; blockId?: string; from?: number };
 
-export function citationHash(source: CitedSource, sameDocument: boolean) {
-  if (source.path.endsWith(".outline.md")) return "reader-outline";
-  if (source.from === undefined && !source.blockId) return sameDocument ? "reader-source" : "";
+export function citationHash(source: CitedSource) {
   const params = new URLSearchParams({ revision: source.revision });
+  if (source.path.endsWith(".outline.md")) return `reader-outline?${params}`;
   if (source.from !== undefined) params.set("from", String(source.from));
   if (source.blockId) params.set("block", source.blockId);
   return `reader-source?${params}`;
 }
 
 export function parseCitationHash(locationHash: string) {
-  if (locationHash === "reader-outline") return { outline: true };
-  if (locationHash !== "reader-source" && !locationHash.startsWith("reader-source?")) return;
-  const params = new URLSearchParams(locationHash.split("?")[1]);
+  const [kind, query] = locationHash.split("?", 2);
+  if (kind !== "reader-source" && kind !== "reader-outline") return;
+  const params = new URLSearchParams(query);
+  if (kind === "reader-outline") return { outline: true, revision: params.get("revision") };
   const offset = params.get("from");
   return {
     outline: false,

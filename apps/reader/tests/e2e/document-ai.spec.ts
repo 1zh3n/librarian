@@ -147,7 +147,7 @@ test("document AI sends selection and displays only actual sources", async ({ pa
   await expect(sources.getByRole("link")).toHaveCount(1);
   await expect(sources.getByRole("link", { name: "北岸/观测.md" })).toHaveAttribute(
     "href",
-    `/workspaces/${workspace}/documents/${referenced.document.id}`,
+    `/workspaces/${workspace}/documents/${referenced.document.id}#reader-source?revision=${referenced.revision}`,
   );
   await expect(sources).not.toContainText("北岸/未读.md");
 });
