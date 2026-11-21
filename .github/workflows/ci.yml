@@ -197,6 +197,9 @@ jobs:
           export LIBRARIAN_READER_FIXTURE="${CARGO_TARGET_DIR:-$PWD/target}/debug/examples/reader_fixture"
           test -x "$LIBRARIAN_READER_FIXTURE"
           echo "LIBRARIAN_READER_FIXTURE=$LIBRARIAN_READER_FIXTURE" >> "$GITHUB_ENV"
+          managed_fixture="$(dirname "$LIBRARIAN_READER_FIXTURE")/reader_managed_fixture"
+          test -x "$managed_fixture"
+          echo "LIBRARIAN_MANAGED_READER_FIXTURE=$managed_fixture" >> "$GITHUB_ENV"
           node --test bin/librarian/tests/ai_runner_example.test.mjs
           npm ci --ignore-scripts --workspaces=false --prefix bin/librarian/runner
           node --test bin/librarian/runner/*.test.mjs

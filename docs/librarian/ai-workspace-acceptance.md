@@ -74,6 +74,7 @@ npm ci
 npm run build -w @librarian/reader
 cargo build --locked -p librarian --bin librarian --example reader_fixture --example reader_managed_fixture
 export LIBRARIAN_READER_FIXTURE="${CARGO_TARGET_DIR:-$PWD/target}/debug/examples/reader_fixture"
+export LIBRARIAN_MANAGED_READER_FIXTURE="$(dirname "$LIBRARIAN_READER_FIXTURE")/reader_managed_fixture"
 npm ci --ignore-scripts --workspaces=false --prefix bin/librarian/runner
 npm run test:e2e:product -w @librarian/reader -- --workers=2
 npm run test:e2e -w @librarian/reader

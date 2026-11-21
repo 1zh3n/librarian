@@ -89,23 +89,26 @@ export async function startManagedReader() {
   try {
     const p = await provider({ after: (fn) => cleanup.push(fn) }, upstream.respond);
     const target = resolve(root, process.env.CARGO_TARGET_DIR ?? "target");
-    execFileSync(
-      "cargo",
-      [
-        "build",
-        "--quiet",
-        "--locked",
-        "-p",
-        "librarian",
-        "--example",
-        "reader_managed_fixture",
-        "--bin",
-        "librarian",
-      ],
-      { cwd: root, timeout: 180_000 },
-    );
+    const prebuilt = process.env.LIBRARIAN_MANAGED_READER_FIXTURE;
+    if (!prebuilt) {
+      execFileSync(
+        "cargo",
+        [
+          "build",
+          "--quiet",
+          "--locked",
+          "-p",
+          "librarian",
+          "--example",
+          "reader_managed_fixture",
+          "--bin",
+          "librarian",
+        ],
+        { cwd: root, timeout: 180_000 },
+      );
+    }
     const server = processFor(
-      join(target, "debug/examples/reader_managed_fixture"),
+      prebuilt ?? join(target, "debug/examples/reader_managed_fixture"),
       [data, new URL(p.messagesUrl).port],
       process.env,
     );
