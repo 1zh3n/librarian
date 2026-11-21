@@ -1,5 +1,6 @@
 mod accounts;
 mod ai;
+pub mod ai_materials;
 mod ai_runner;
 mod auth;
 mod backup;

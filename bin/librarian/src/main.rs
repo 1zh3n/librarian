@@ -1,3 +1,5 @@
+mod ai_materials;
+
 use std::{
     io::{self, BufRead, Read},
     net::SocketAddr,
@@ -19,6 +21,8 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(hide = true)]
+    MaterialParser { format: String },
     /// Set up the first local administrator with a password received on stdin.
     Init {
         #[arg(long, default_value = "admin")]
@@ -26,9 +30,16 @@ enum Command {
     },
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
+fn main() -> std::io::Result<()> {
     let args = Args::parse();
+    if let Some(Command::MaterialParser { format }) = args.command {
+        return ai_materials::worker(&format);
+    }
+    serve(args)
+}
+
+#[tokio::main]
+async fn serve(args: Args) -> io::Result<()> {
     if let Some(Command::Init { username }) = args.command {
         let root = args.data_root.ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "init requires --data-root")
