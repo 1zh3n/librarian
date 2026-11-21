@@ -12,6 +12,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "../ui/Button";
 import { ActionMenu } from "../ui/Menu";
 import { Tooltip } from "../ui/Tooltip";
+import { NotificationPortal } from "../ui/NotificationStack";
 import { ReaderDock } from "../ui/ReaderDock/ReaderDock";
 import { api, ApiError } from "../api/client";
 import type { DevicePreferences, DocumentSnapshot, DocumentSummary } from "../api/client";
@@ -741,19 +742,21 @@ export function WorkspaceShell() {
         )}
         {directoryActions.dialogs}
         {directoryActions.deletedDialog}
-        {directoryActions.notice}
-        {settingsError && (
-          <p role="alert" className={styles.notice}>
-            布局未保存，请重试。
-          </p>
-        )}
-        {creationNotice && <output className={styles.notice}>{creationNotice}</output>}
-        {logoutError && (
-          <p role="alert" className={styles.notice}>
-            无法完成退出登录，请重试。
-          </p>
-        )}
-        {focus.announce && <output className={styles.notice}>专注阅读 · Esc 退出</output>}
+        <NotificationPortal>
+          {directoryActions.notice}
+          {settingsError && (
+            <p role="alert" className={styles.notice}>
+              布局未保存，请重试。
+            </p>
+          )}
+          {creationNotice && <output className={styles.notice}>{creationNotice}</output>}
+          {logoutError && (
+            <p role="alert" className={styles.notice}>
+              无法完成退出登录，请重试。
+            </p>
+          )}
+          {focus.announce && <output className={styles.notice}>专注阅读 · Esc 退出</output>}
+        </NotificationPortal>
         {search && authenticated && (
           <Suspense>
             <CommandPalette

@@ -3,6 +3,7 @@ import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { Feedback } from "../../ui/Feedback";
 import { TextAreaField } from "../../ui/Forms";
+import { NotificationPortal } from "../../ui/NotificationStack";
 import type { EditorSession } from "../../editor/codemirror/adapter";
 import type { MarkdownSnapshot, SaveController } from "./saveController";
 import styles from "./DocumentPage.module.css";
@@ -81,9 +82,11 @@ export function SaveNotice({
 
   if (status === "saved")
     return (
-      <Feedback className={styles.saved} tone="success">
-        已保存
-      </Feedback>
+      <NotificationPortal>
+        <Feedback className={styles.saved} tone="success">
+          已保存
+        </Feedback>
+      </NotificationPortal>
     );
   if (status !== "conflict" && status !== "error") return null;
   const subject = kind === "body" ? "正文" : "提纲";
@@ -92,20 +95,22 @@ export function SaveNotice({
       ? `${subject}保存失败。未保存的内容仍在编辑器中。`
       : `${subject}尚未保存。网络恢复后会重试。`;
     return (
-      <Feedback className={styles.saveError} tone="error">
-        <span>{description}</span>
-        <div className={styles.saveActions}>
-          <Button
-            className={styles.actionButton}
-            onPress={() => !editor.isComposing() && void saves.flush()}
-          >
-            重试
-          </Button>
-          <Button className={styles.actionButton} onPress={download}>
-            下载草稿
-          </Button>
-        </div>
-      </Feedback>
+      <NotificationPortal>
+        <Feedback className={styles.saveError} tone="error">
+          <span>{description}</span>
+          <div className={styles.saveActions}>
+            <Button
+              className={styles.actionButton}
+              onPress={() => !editor.isComposing() && void saves.flush()}
+            >
+              重试
+            </Button>
+            <Button className={styles.actionButton} onPress={download}>
+              下载草稿
+            </Button>
+          </div>
+        </Feedback>
+      </NotificationPortal>
     );
   }
 
@@ -116,53 +121,55 @@ export function SaveNotice({
       : `服务器上的${subject}已更新。本地修改尚未保存，请选择如何处理。`;
   return (
     <>
-      <Feedback className={styles.saveError} tone="error">
-        <span>{description}</span>
-        {conflict?.state === "loading" && (
-          <span className={styles.saveHint}>正在读取服务器版本…</span>
-        )}
-        {conflict?.state === "unavailable" && (
-          <span className={styles.saveHint}>
-            可以先下载草稿，再重试读取。
-            <Button className={styles.actionButton} onPress={() => void saves.retryRemote()}>
-              重试读取
+      <NotificationPortal>
+        <Feedback className={styles.saveError} tone="error">
+          <span>{description}</span>
+          {conflict?.state === "loading" && (
+            <span className={styles.saveHint}>正在读取服务器版本…</span>
+          )}
+          {conflict?.state === "unavailable" && (
+            <span className={styles.saveHint}>
+              可以先下载草稿，再重试读取。
+              <Button className={styles.actionButton} onPress={() => void saves.retryRemote()}>
+                重试读取
+              </Button>
+            </span>
+          )}
+          <div className={styles.saveActions}>
+            <Button
+              variant="primary"
+              className={styles.actionButton}
+              isDisabled={!remote}
+              onPress={openMerge}
+            >
+              合并…
             </Button>
-          </span>
-        )}
-        <div className={styles.saveActions}>
-          <Button
-            variant="primary"
-            className={styles.actionButton}
-            isDisabled={!remote}
-            onPress={openMerge}
-          >
-            合并…
-          </Button>
-          <Button
-            className={styles.actionButton}
-            isDisabled={!remote}
-            onPress={() => {
-              setActionError(undefined);
-              setDialog("reload");
-            }}
-          >
-            重新加载远端
-          </Button>
-          <Button
-            className={styles.actionButton}
-            isDisabled={!remote}
-            onPress={() => {
-              setActionError(undefined);
-              setDialog("overwrite");
-            }}
-          >
-            保留本地覆盖
-          </Button>
-          <Button className={styles.actionButton} onPress={download}>
-            下载草稿
-          </Button>
-        </div>
-      </Feedback>
+            <Button
+              className={styles.actionButton}
+              isDisabled={!remote}
+              onPress={() => {
+                setActionError(undefined);
+                setDialog("reload");
+              }}
+            >
+              重新加载远端
+            </Button>
+            <Button
+              className={styles.actionButton}
+              isDisabled={!remote}
+              onPress={() => {
+                setActionError(undefined);
+                setDialog("overwrite");
+              }}
+            >
+              保留本地覆盖
+            </Button>
+            <Button className={styles.actionButton} onPress={download}>
+              下载草稿
+            </Button>
+          </div>
+        </Feedback>
+      </NotificationPortal>
 
       {dialog === "reload" && remote && (
         <Dialog title="重新加载远端正文" onClose={() => setDialog(undefined)} classes={styles}>

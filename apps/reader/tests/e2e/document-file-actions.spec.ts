@@ -53,6 +53,66 @@ test("manages the targeted document from the directory while another stays open"
   await expect(page).toHaveURL(address);
 });
 
+test("save errors and directory notices share one visible stack", async ({ page }, info) => {
+  const { current, target, note, headers } = await setup(page);
+  const folder = await page.request.post(`/api/v1/workspaces/${target.id}/folders`, {
+    headers,
+    data: { path: "归档" },
+  });
+  expect(folder.status()).toBe(200);
+  await page
+    .getByRole("article")
+    .getByText("雨停后", { exact: false })
+    .first()
+    .click({ position: { x: 8, y: 16 } });
+  const body = page.locator('[contenteditable="true"][aria-label="Markdown 正文"]');
+  await body.press("Control+End");
+  await page.route(`**/api/v1/documents/${current.document.id}`, (route) =>
+    route.request().method() === "PUT" ? route.abort("failed") : route.continue(),
+  );
+  await page.keyboard.insertText("未保存");
+  const saving = page.getByRole("alert").filter({ hasText: "保存失败" });
+  await expect(saving).toBeVisible();
+
+  const row = page.getByRole("row", { name: /访谈/ });
+  await row.press("Shift+F10");
+  await page.getByRole("menuitem", { name: "复制到…" }).click();
+  const dialog = page.getByRole("dialog", { name: "复制到", exact: true });
+  await dialog.getByRole("button", { name: /目标空间/ }).click();
+  await page.getByRole("option", { name: target.name, exact: true }).click();
+  await dialog.getByRole("button", { name: /目标目录/ }).click();
+  await page.getByRole("option", { name: "归档", exact: true }).click();
+  await dialog.getByRole("button", { name: "复制到此处" }).click();
+  await expect(dialog).toBeHidden();
+
+  const stack = page.getByRole("region", { name: "通知" });
+  await expect(stack).toBeVisible();
+  const copied = stack.getByRole("status").filter({ hasText: /已复制到/ });
+  await expect(saving).toBeVisible();
+  await expect(copied).toBeVisible();
+  const [saveBox, copyBox] = await Promise.all([saving.boundingBox(), copied.boundingBox()]);
+  expect(saveBox && copyBox).toBeTruthy();
+  expect(
+    saveBox!.y + saveBox!.height <= copyBox!.y || copyBox!.y + copyBox!.height <= saveBox!.y,
+  ).toBe(true);
+  await page.screenshot({ path: info.outputPath("notification-stack-1440.png") });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  const bounds = await stack.boundingBox();
+  expect(bounds?.x ?? 0).toBeGreaterThanOrEqual(0);
+  expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const retry = saving.getByRole("button", { name: "重试" });
+  await retry.scrollIntoViewIfNeeded();
+  await expect(retry).toBeInViewport();
+  await expect(copied).toBeVisible();
+  await page.screenshot({ path: info.outputPath("notification-stack-390-200.png") });
+  expect(note.document.id).not.toBe(current.document.id);
+});
+
 test("opens an old member link at the document's currently authorized location", async ({
   page,
 }) => {

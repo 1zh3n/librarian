@@ -149,14 +149,9 @@
 
 .actionNotice,
 .notice {
-  position: fixed;
-  inset-block-end: 1rem;
-  inset-inline-start: 50%;
-  z-index: 1;
-  max-width: calc(100% - 2rem);
+  width: 100%;
   margin: 0;
   padding: 0.375rem 0.75rem;
-  translate: -50% 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   color: var(--ink);
@@ -166,7 +161,6 @@
 
 .actionNotice {
   display: flex;
-  width: max-content;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;

@@ -1269,22 +1269,20 @@ function DocumentWorkspace({
           </Button>
         </fieldset>
       )}
-      <div className={styles.saveNotices}>
+      <SaveNotice
+        saves={body.saves}
+        editor={body.editor}
+        kind="body"
+        onResolved={continueAfterSaveConflict}
+      />
+      {outlineSession && (
         <SaveNotice
-          saves={body.saves}
-          editor={body.editor}
-          kind="body"
-          onResolved={continueAfterSaveConflict}
+          saves={outlineSession.saves}
+          editor={outlineSession.editor}
+          kind="outline"
+          onResolved={() => outlineSession.editor.focus()}
         />
-        {outlineSession && (
-          <SaveNotice
-            saves={outlineSession.saves}
-            editor={outlineSession.editor}
-            kind="outline"
-            onResolved={() => outlineSession.editor.focus()}
-          />
-        )}
-      </div>
+      )}
     </div>
   );
 }

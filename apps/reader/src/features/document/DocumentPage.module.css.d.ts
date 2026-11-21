@@ -26,7 +26,6 @@ declare const styles: {
   readonly metadataField: string;
   readonly tags: string;
   readonly menu: string;
-  readonly saveNotices: string;
   readonly semanticControls: string;
   readonly saved: string;
   readonly saveError: string;
