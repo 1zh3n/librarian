@@ -6,9 +6,6 @@ declare const styles: {
   readonly field: string;
   readonly fields: string;
   readonly input: string;
-  readonly select: string;
-  readonly menu: string;
-  readonly option: string;
   readonly primary: string;
   readonly secondary: string;
   readonly taskList: string;
@@ -16,7 +13,6 @@ declare const styles: {
   readonly scopeFilter: string;
   readonly checklist: string;
   readonly checkbox: string;
-  readonly checkboxMark: string;
   readonly status: string;
   readonly empty: string;
   readonly records: string;

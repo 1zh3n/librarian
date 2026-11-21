@@ -1,11 +1,13 @@
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Form, Field, Select } from "../../ui/Forms";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Workspace, WorkspaceSettings } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form } from "../../ui/primitives";
 import { Disclosure } from "../../ui/Disclosure";
-import { Choice, Field, formatLocalDate } from "./ManagementFields";
+import { formatLocalDate } from "./ManagementFields";
 import styles from "./Management.module.css";
 
 const origins = [
@@ -37,6 +39,9 @@ export function WorkspaceEditor({
   );
   const [expires, setExpires] = useState(formatLocalDate(current?.expiresAt));
   const [expiryError, setExpiryError] = useState(false);
+  const expiryField = useRef<HTMLInputElement>(null);
+  const expiryDescription = useId();
+  const [advanced, setAdvanced] = useState(false);
   const temporary = origin === "delivery" && retention === "temporary";
 
   const save = useMutation({
@@ -57,7 +62,7 @@ export function WorkspaceEditor({
 
   const retentionFields = origin === "delivery" && (
     <>
-      <Choice
+      <Select
         label="保留方式"
         value={retention}
         entries={retentions}
@@ -71,7 +76,12 @@ export function WorkspaceEditor({
           label="到期时间"
           type="datetime-local"
           value={expires}
-          onChange={setExpires}
+          ref={expiryField}
+          {...(expiryError && { invalid: true, "aria-describedby": expiryDescription })}
+          onChange={(value) => {
+            setExpires(value);
+            setExpiryError(false);
+          }}
           required
         />
       )}
@@ -87,7 +97,9 @@ export function WorkspaceEditor({
         if (!name.trim() || save.isPending) return;
         const expiration = temporary ? Math.floor(new Date(expires).getTime() / 1_000) : null;
         if (expiration !== null && !(expiration > Date.now() / 1_000)) {
+          setAdvanced(true);
           setExpiryError(true);
+          requestAnimationFrame(() => expiryField.current?.focus());
           return;
         }
         setExpiryError(false);
@@ -107,40 +119,39 @@ export function WorkspaceEditor({
       {current ? (
         retentionFields && <div className={styles.fields}>{retentionFields}</div>
       ) : (
-        <Disclosure>
-          <Disclosure.Heading>
-            <Disclosure.Trigger>
-              高级选项
-              <Disclosure.Indicator />
-            </Disclosure.Trigger>
-          </Disclosure.Heading>
-          <Disclosure.Content>
-            <Disclosure.Body>
-              <p className={styles.status}>
-                普通空间也能接收手动上传和项目自动导入。需要让接收的文档随空间到期清理时，可选择「外部文档接收」。
-              </p>
-              <div className={styles.fields}>
-                <Choice label="空间用途" value={origin} entries={origins} onChange={setOrigin} />
-                {retentionFields}
-              </div>
-            </Disclosure.Body>
-          </Disclosure.Content>
+        <Disclosure title="高级选项" expanded={advanced} onChange={setAdvanced}>
+          <p className={styles.status}>
+            普通空间也能接收手动上传和项目自动导入。需要让接收的文档随空间到期清理时，可选择「外部文档接收」。
+          </p>
+          <div className={styles.fields}>
+            <Select label="空间用途" value={origin} entries={origins} onChange={setOrigin} />
+            {retentionFields}
+          </div>
         </Disclosure>
       )}
-      {expiryError && (
-        <p role="alert" className={styles.status}>
+      {temporary && expiryError && (
+        <Feedback id={expiryDescription} tone="error" className={styles.status}>
           到期时间必须晚于现在。
-        </p>
+        </Feedback>
       )}
       {save.isError && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           {save.error instanceof ApiError && save.error.status === 409
             ? "空间设置发生冲突，请检查后重试。"
             : "无法保存空间设置。"}
-        </p>
+        </Feedback>
       )}
-      {save.isSuccess && current && <output className={styles.status}>空间设置已保存</output>}
-      <Button className={styles.primary} type="submit" isDisabled={save.isPending || !name.trim()}>
+      {save.isSuccess && current && (
+        <Feedback tone="success" className={styles.status}>
+          空间设置已保存
+        </Feedback>
+      )}
+      <Button
+        className={styles.primary}
+        type="submit"
+        loading={save.isPending}
+        isDisabled={!name.trim()}
+      >
         {save.isPending ? "正在保存…" : current ? "保存空间设置" : "创建空间"}
       </Button>
     </Form>

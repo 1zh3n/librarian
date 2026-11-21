@@ -26,3 +26,15 @@ for (const { file, before, after } of declarations) {
   if (!source.includes(before)) throw new Error(`React Aria declaration changed: ${file}`);
   writeFileSync(url, source.replace(before, after));
 }
+
+// HeroUI 3.2.7's generated ListBox declaration reaches every component through
+// the barrel. Point its three type references at their defining public modules.
+const listBox = new URL(
+  "./dist/components/list-box/index.d.ts",
+  import.meta.resolve("@heroui/react/package.json"),
+);
+const source = readFileSync(listBox, "utf8");
+const scoped = source
+  .replaceAll('import("..").ListBoxItem', 'import("../list-box-item").ListBoxItem')
+  .replaceAll('import("..").ListBoxSection', 'import("../list-box-section").ListBoxSection');
+if (source !== scoped) writeFileSync(listBox, scoped);

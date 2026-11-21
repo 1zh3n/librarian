@@ -14,6 +14,10 @@
   --muted-code: light-dark(#e9e8e4, #2e3034);
   --overlay: light-dark(#1c212643, #0009);
   --radius: 5px;
+  --control-height: 2.5rem;
+  --control-padding: 0.375rem 0.625rem;
+  --control-invalid: light-dark(#913b30, #ffb3a9);
+  --control-success: var(--accent);
   --ui-size: 0.875rem;
   --reading-size: 1.125rem;
   --reading-title-size: clamp(1.85rem, 4vw, 3.25rem);
@@ -50,6 +54,7 @@
   --border: light-dark(#969696, #777);
   --border-strong: light-dark(#444, #bbb);
   --accent: var(--ink);
+  --control-invalid: var(--ink);
   --muted-accent: var(--ink-secondary);
   --muted-code: var(--surface-muted);
   --overlay: light-dark(#cbcbcb, #292929);
@@ -92,4 +97,10 @@ a {
 [data-focus-visible] {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --control-height: max(2.5rem, 44px);
+  }
 }

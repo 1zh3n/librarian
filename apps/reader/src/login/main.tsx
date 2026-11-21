@@ -1,6 +1,8 @@
+import { Button } from "../ui/Button";
+import { Feedback } from "../ui/Feedback";
+import { Form, Field } from "../ui/Forms";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Button, Form, Input, Label, TextField } from "../ui/primitives";
 import "../styles/tokens.css";
 import "../ui/theme.css";
 import styles from "./Login.module.css";
@@ -22,7 +24,7 @@ function Login({ status, username }: { status: string | undefined; username: str
   const errorDescription = incorrect ? { "aria-describedby": "login-error" } : {};
   const [visible, setVisible] = useState(false);
   const [pending, setPending] = useState(false);
-  const alert = useRef<HTMLParagraphElement>(null);
+  const alert = useRef<HTMLDivElement>(null);
   const password = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (incorrect) password.current?.focus();
@@ -37,33 +39,41 @@ function Login({ status, username }: { status: string | undefined; username: str
           登录 Librarian
         </h1>
         {error && (
-          <p id="login-error" className={styles.error} role="alert" tabIndex={-1} ref={alert}>
+          <Feedback
+            tone="error"
+            id="login-error"
+            className={styles.error}
+            tabIndex={-1}
+            ref={alert}
+          >
             {error}
-          </p>
+          </Feedback>
         )}
         <Form className={styles.form} method="post" onSubmit={() => setPending(true)}>
-          <TextField
+          <Field
+            label="用户名"
             name="username"
             autoComplete="username"
             defaultValue={username}
             {...errorDescription}
-            isRequired
+            required
             className={styles.field}
-          >
-            <Label>用户名</Label>
-            <Input className={styles.input} autoCapitalize="none" spellCheck={false} />
-          </TextField>
-          <TextField
+            inputClassName={styles.input}
+            autoCapitalize="none"
+            spellCheck={false}
+          />
+          <Field
             name="password"
             autoComplete="current-password"
             {...errorDescription}
             type={visible ? "text" : "password"}
-            isRequired
+            required
             className={styles.field}
-          >
-            <Label>密码</Label>
-            <div className={styles.password}>
-              <Input ref={password} className={styles.input} />
+            label="密码"
+            ref={password}
+            inputClassName={styles.input}
+            actionClassName={styles.password}
+            action={
               <Button
                 type="button"
                 className={styles.reveal}
@@ -71,14 +81,14 @@ function Login({ status, username }: { status: string | undefined; username: str
               >
                 {visible ? "隐藏密码" : "显示密码"}
               </Button>
-            </div>
-          </TextField>
+            }
+          />
           <Button
             className={styles.submit}
             type="submit"
             variant="primary"
             fullWidth
-            isDisabled={pending}
+            loading={pending}
           >
             {pending ? "正在登录…" : "登录"}
           </Button>

@@ -1,10 +1,11 @@
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Form, Field, Select } from "../../ui/Forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { WorkspaceMember } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form } from "../../ui/primitives";
-import { Choice, Field } from "./ManagementFields";
 import styles from "./Management.module.css";
 
 const roles = [
@@ -42,11 +43,11 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
     <section aria-label="空间成员" className={styles.section}>
       <h3>空间成员</h3>
       {members.isError && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法读取成员。
-        </p>
+        </Feedback>
       )}
-      {members.isPending && <output className={styles.status}>正在加载成员…</output>}
+      {members.isPending && <Feedback className={styles.status}>正在加载成员…</Feedback>}
       {members.data && (
         <>
           <Form
@@ -61,12 +62,15 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
           >
             <div className={styles.fields}>
               <Field label="成员用户名" value={username} onChange={setUsername} required />
-              <Choice label="权限" value={role} entries={roles} onChange={setRole} />
+              <Select label="权限" value={role} entries={roles} onChange={setRole} />
             </div>
             <Button
               type="submit"
               className={styles.primary}
-              isDisabled={!username.trim() || mutation.isPending}
+              loading={mutation.isPending && mutation.variables.next !== null}
+              isDisabled={
+                !username.trim() || (mutation.isPending && mutation.variables.next === null)
+              }
             >
               {mutation.isPending && mutation.variables.next !== null
                 ? "正在保存成员…"
@@ -74,14 +78,14 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
             </Button>
           </Form>
           {mutation.isError && (
-            <p role="alert" className={styles.status}>
+            <Feedback tone="error" className={styles.status}>
               {memberError}
-            </p>
+            </Feedback>
           )}
           {mutation.isSuccess && (
-            <output className={styles.status}>
+            <Feedback tone="success" className={styles.status}>
               {mutation.variables.next === null ? "已移除成员" : "成员权限已保存"}
-            </output>
+            </Feedback>
           )}
           {members.data.length === 0 && <p className={styles.empty}>暂无成员。</p>}
           {members.data.length > 0 && (

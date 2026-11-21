@@ -1,10 +1,11 @@
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Form, Field } from "../../ui/Forms";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import { operationId } from "../../api/operationId";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form } from "../../ui/primitives";
-import { Field } from "./ManagementFields";
 import styles from "./Management.module.css";
 
 export function RenamePathForm({ workspace }: { workspace: string }) {
@@ -48,15 +49,24 @@ export function RenamePathForm({ workspace }: { workspace: string }) {
         <Field label="原路径" value={from} onChange={setFrom} required />
         <Field label="新路径" value={to} onChange={setTo} required />
       </div>
-      {rename.isSuccess && <output className={styles.status}>文件或目录已更新</output>}
+      {rename.isSuccess && (
+        <Feedback tone="success" className={styles.status}>
+          文件或目录已更新
+        </Feedback>
+      )}
       {rename.isError && (
-        <p className={styles.status} role="alert">
+        <Feedback tone="error" className={styles.status}>
           {rename.error instanceof ApiError && rename.error.status === 409
             ? "目标路径已存在，或原路径已更改。"
             : "无法更新，请检查空间内的原路径和目标路径。"}
-        </p>
+        </Feedback>
       )}
-      <Button className={styles.primary} type="submit" isDisabled={!ready || rename.isPending}>
+      <Button
+        className={styles.primary}
+        type="submit"
+        loading={rename.isPending}
+        isDisabled={!ready}
+      >
         {rename.isPending ? "正在更新…" : "保存路径"}
       </Button>
     </Form>

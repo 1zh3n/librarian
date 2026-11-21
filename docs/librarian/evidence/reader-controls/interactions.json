@@ -1,0 +1,64 @@
+{
+  "environment": {
+    "browser": "Chromium 145.0.7632.6",
+    "backend": "reader_fixture",
+    "locale": "zh-CN",
+    "desktopViewport": [
+      1440,
+      900
+    ],
+    "touchEmulation": true
+  },
+  "login": {
+    "retainedUsername": true,
+    "passwordCleared": true,
+    "focus": "密码",
+    "errorDescription": "用户名或密码不正确，请重试。"
+  },
+  "account": {
+    "draft": "fixture-admin",
+    "error": "该用户名已经存在。"
+  },
+  "loading": {
+    "focusedDuringSave": true,
+    "repeatedEnterRequests": 1,
+    "confirmation": "账号已创建"
+  },
+  "tooltip": {
+    "keyboardDescription": "空间设置",
+    "escapeRestoredFocus": true
+  },
+  "space": {
+    "keyboard": "Enter → End → Esc",
+    "highlight": "外部文档接收",
+    "restoredFocus": true,
+    "draft": "临时资料",
+    "selection": "普通空间"
+  },
+  "touch": [
+    {
+      "width": 320,
+      "textScale": 1,
+      "triggerHeight": 44,
+      "scrollWidth": 320
+    },
+    {
+      "width": 360,
+      "textScale": 1,
+      "triggerHeight": 44,
+      "scrollWidth": 360
+    },
+    {
+      "width": 390,
+      "textScale": 2,
+      "triggerHeight": 80,
+      "scrollWidth": 390
+    }
+  ],
+  "grayscale": {
+    "background": "rgb(0, 0, 0)",
+    "foreground": "rgb(255, 255, 255)",
+    "border": "rgb(187, 187, 187)",
+    "reducedMotion": true
+  }
+}

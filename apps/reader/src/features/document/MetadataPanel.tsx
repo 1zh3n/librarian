@@ -1,5 +1,7 @@
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Form, Field } from "../../ui/Forms";
 import { useState } from "react";
-import { Button, Form, Input, Label, TextField } from "../../ui/primitives";
 import type { EditorSession } from "../../editor/codemirror/adapter";
 import { metadataEdits, readMetadata } from "./metadata";
 import styles from "./DocumentPage.module.css";
@@ -55,18 +57,24 @@ export function MetadataPanel({
         }
       }}
     >
-      <TextField name="title" defaultValue={initial.title} className={styles.metadataField}>
-        <Label>标题</Label>
-        <Input />
-      </TextField>
-      <TextField name="series" defaultValue={initial.series} className={styles.metadataField}>
-        <Label>系列</Label>
-        <Input />
-      </TextField>
-      <TextField name="status" defaultValue={initial.status} className={styles.metadataField}>
-        <Label>状态</Label>
-        <Input />
-      </TextField>
+      <Field
+        label="标题"
+        name="title"
+        defaultValue={initial.title}
+        className={styles.metadataField}
+      />
+      <Field
+        label="系列"
+        name="series"
+        defaultValue={initial.series}
+        className={styles.metadataField}
+      />
+      <Field
+        label="状态"
+        name="status"
+        defaultValue={initial.status}
+        className={styles.metadataField}
+      />
       {initial.tags.length > 0 && (
         <ul aria-label="现有标签" className={styles.tags}>
           {initial.tags.map((tag, i) => (
@@ -74,11 +82,8 @@ export function MetadataPanel({
           ))}
         </ul>
       )}
-      <TextField name="addTag" className={styles.metadataField}>
-        <Label>添加标签</Label>
-        <Input />
-      </TextField>
-      {failure && <p role="alert">{failure}</p>}
+      <Field label="添加标签" name="addTag" className={styles.metadataField} />
+      {failure && <Feedback tone="error">{failure}</Feedback>}
       <Button type="submit" className={styles.actionButton}>
         保存属性
       </Button>

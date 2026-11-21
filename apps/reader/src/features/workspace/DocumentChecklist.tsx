@@ -1,6 +1,7 @@
+import { Feedback } from "../../ui/Feedback";
+import { Field, Checkbox } from "../../ui/Forms";
 import { useState } from "react";
 import type { DocumentSummary } from "../../api/client";
-import { Checkbox, Input, Label, TextField } from "../../ui/primitives";
 import styles from "./Management.module.css";
 
 export function DocumentChecklist({
@@ -25,17 +26,18 @@ export function DocumentChecklist({
       <legend>文档范围</legend>
       {searchable && (
         <div className={styles.scopeFilter}>
-          <TextField value={query} onChange={setQuery} className={styles.field}>
-            <Label>筛选文档</Label>
-            <Input
-              className={styles.input}
-              placeholder="输入标题或路径"
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.preventDefault();
-              }}
-            />
-          </TextField>
-          <output>已选 {count} 篇</output>
+          <Field
+            label="筛选文档"
+            value={query}
+            onChange={setQuery}
+            className={styles.field}
+            inputClassName={styles.input}
+            placeholder="输入标题或路径"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.preventDefault();
+            }}
+          />
+          <Feedback>已选 {count} 篇</Feedback>
         </div>
       )}
       {!matches.length && <p className={styles.status}>没有匹配的文档</p>}
@@ -44,12 +46,11 @@ export function DocumentChecklist({
           <Checkbox
             key={id}
             className={styles.checkbox}
-            isSelected={selected.includes(id)}
+            checked={selected.includes(id)}
             onChange={(checked) =>
               onChange(checked ? [...selected, id] : selected.filter((item) => item !== id))
             }
           >
-            <span className={styles.checkboxMark} aria-hidden="true" />
             <span>{path}</span>
           </Checkbox>
         ))}
