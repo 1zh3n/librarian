@@ -447,3 +447,137 @@ async fn deleting_conversation_immediately_clears_originals_and_segments() {
     assert!(!dir.join(format!("{id}.raw")).exists());
     assert!(!dir.join(format!("{id}.json")).exists());
 }
+
+#[tokio::test]
+async fn rejects_more_than_25_mib_without_extending_any_expiry() {
+    let f = Site::open().await;
+    let base = f.conversation().await;
+    let mut bytes = vec![b' '; 9 * 1024 * 1024];
+    bytes[..4].copy_from_slice(b"note");
+    let mut ids = Vec::new();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        let m = f.upload(&base, name, "text/plain", bytes.clone()).await;
+        let id = m["id"].as_str().unwrap();
+        f.ready(&base, id).await;
+        ids.push(id.to_owned());
+    }
+    let before = f.get(&base).await;
+    let result = f
+        .request(
+            &f.token,
+            "POST",
+            &base.replace("/materials", "/turns"),
+            "application/json",
+            json!({"mode":"chat","prompt":"compare","clientTurnId":"batch","materialIds":ids})
+                .to_string()
+                .into_bytes(),
+        )
+        .await;
+    assert_eq!(result.0, 422);
+    assert_eq!(f.get(&base).await, before);
+}
+
+#[test]
+fn distinguishes_encrypted_and_image_only_pdf() {
+    use lopdf::{Document, EncryptionState, EncryptionVersion, Object, Permissions, StringFormat};
+    let src = include_bytes!("fixtures/ai-materials/budget.pdf");
+    let mut blank = src.to_vec();
+    for i in 0..blank.len() - 5 {
+        if &blank[i..i + 5] == b"Tj ET" {
+            blank[i..i + 2].copy_from_slice(b"  ");
+        }
+    }
+    assert_eq!(parse("pdf", &blank)["errorCode"], "no_text");
+    let mut doc = Document::load_mem(src).unwrap();
+    doc.trailer.set(
+        "ID",
+        Object::Array(vec![
+            Object::String(vec![1; 16], StringFormat::Literal),
+            Object::String(vec![2; 16], StringFormat::Literal),
+        ]),
+    );
+    let encryption = EncryptionVersion::V2 {
+        document: &doc,
+        owner_password: "synthetic-owner",
+        user_password: "synthetic-reader",
+        key_length: 128,
+        permissions: Permissions::all(),
+    };
+    doc.encrypt(&EncryptionState::try_from(encryption).unwrap())
+        .unwrap();
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    assert_eq!(parse("pdf", &bytes)["errorCode"], "encrypted_pdf");
+}
+
+#[tokio::test]
+async fn recovers_interrupted_job_and_rechecks_workspace_membership_on_every_read() {
+    let mut f = Site::open().await;
+    let base = f.conversation().await;
+    let m = f
+        .upload(
+            &base,
+            "private.md",
+            "text/markdown",
+            b"unique private excerpt".to_vec(),
+        )
+        .await;
+    let id = m["id"].as_str().unwrap();
+    f.ready(&base, id).await;
+    let path = format!("{base}/{id}/segments");
+    let sid = f.get(&path).await["items"][0]["segmentId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let dir = f.root.path().join(".librarian");
+    fs::remove_file(dir.join(format!("ai-materials/{id}.json"))).unwrap();
+    rusqlite::Connection::open(dir.join("metadata.sqlite3"))
+        .unwrap()
+        .execute("UPDATE ai_materials SET status='working' WHERE id=?", [id])
+        .unwrap();
+    assert_eq!(
+        f.request(&f.token, "GET", &path, "application/json", vec![])
+            .await
+            .0,
+        409
+    );
+    f.reopen();
+    f.ready(&base, id).await;
+    assert_eq!(
+        f.get(&format!("{path}/{sid}")).await["text"],
+        "unique private excerpt"
+    );
+    let config = f.root.path().join("spaces.json");
+    let mut spaces: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    spaces["notes"]["members"]
+        .as_object_mut()
+        .unwrap()
+        .remove("owner");
+    fs::write(config, spaces.to_string()).unwrap();
+    f.reopen();
+    for resource in [&base, &path, &format!("{path}/{sid}")] {
+        assert_eq!(
+            f.request(&f.token, "GET", resource, "application/json", vec![])
+                .await
+                .0,
+            404
+        );
+    }
+}
+
+#[test]
+fn handles_bom_text_and_local_ooxml_main_parts() {
+    let utf16=|value:&str| [vec![0xff,0xfe],value.encode_utf16().flat_map(u16::to_le_bytes).collect()].concat();
+    assert_eq!(parse("txt",&utf16("甲\r\n\r\n乙"))["segments"][1]["text"],"乙");
+    let mut zip=ZipWriter::new(Cursor::new(Vec::new()));
+    let opts=SimpleFileOptions::default();
+    for (name,content) in [
+        ("[Content_Types].xml",r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/parts/main.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#),
+        ("_rels/.rels",r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="parts/main.xml"/></Relationships>"#),
+        ("parts/main.xml",r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>本地部件</w:t></w:r></w:p></w:body></w:document>"#),
+    ] {
+        zip.start_file(name,opts).unwrap();
+        zip.write_all(&utf16(content)).unwrap();
+    }
+    assert_eq!(parse("docx",&zip.finish().unwrap().into_inner())["segments"][0]["text"],"本地部件");
+}

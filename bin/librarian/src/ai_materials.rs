@@ -1,7 +1,8 @@
 //! Local parser child. All source data arrives on stdin. No relationships,
 //! hyperlinks, embedded objects or PDF actions are opened or executed.
 use std::{
-    collections::HashSet,
+    borrow::Cow,
+    collections::{HashMap, HashSet},
     io::{self, Cursor, Read},
     path::Component,
 };
@@ -82,7 +83,7 @@ fn extract(kind: &str, bytes: &[u8]) -> Parsed<Vec<Segment>> {
         }
         "docx" if zip => docx(bytes, &mut out)?,
         "txt" | "md" if !zip && !pdf => {
-            let text = std::str::from_utf8(bytes).map_err(|_| "type_mismatch")?;
+            let text = decode(bytes).ok_or("type_mismatch")?;
             if text
                 .chars()
                 .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n' | '\u{c}'))
@@ -122,8 +123,7 @@ fn docx(bytes: &[u8], out: &mut Extract) -> Parsed<()> {
     }
     let mut total = 0;
     let mut seen = HashSet::new();
-    let mut document = Vec::new();
-    let mut types = Vec::new();
+    let mut parts: HashMap<String, Vec<u8>> = HashMap::new();
     for i in 0..zip.len() {
         let entry = zip.by_index(i).map_err(|_| "invalid_file")?;
         let name = entry.name().to_owned();
@@ -144,10 +144,10 @@ fn docx(bytes: &[u8], out: &mut Extract) -> Parsed<()> {
             return Err("expansion_limit");
         }
         let mut reader = entry.take(remaining + 1);
-        let count = match name.as_str() {
-            "word/document.xml" => io::copy(&mut reader, &mut document),
-            "[Content_Types].xml" => io::copy(&mut reader, &mut types),
-            _ => io::copy(&mut reader, &mut io::sink()),
+        let count = if name.ends_with(".xml") || name == "_rels/.rels" {
+            io::copy(&mut reader, parts.entry(name).or_default())
+        } else {
+            io::copy(&mut reader, &mut io::sink())
         }
         .map_err(|_| "invalid_file")?;
         if count > remaining {
@@ -155,13 +155,40 @@ fn docx(bytes: &[u8], out: &mut Extract) -> Parsed<()> {
         }
         total += count as usize;
     }
-    let types = xml(&types)?;
-    if !types.descendants().any(|n| n.has_tag_name(("http://schemas.openxmlformats.org/package/2006/content-types", "Override"))
-        && n.attribute("PartName") == Some("/word/document.xml")
-        && n.attribute("ContentType") == Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"))
+    let part = |name: &str| {
+        parts
+            .get(name)
+            .and_then(|bytes| decode(bytes))
+            .ok_or("invalid_file")
+    };
+    let relationships = part("_rels/.rels")?;
+    let rels = xml(&relationships)?;
+    let target = rels.descendants().find(|node| {
+        node.has_tag_name(("http://schemas.openxmlformats.org/package/2006/relationships", "Relationship"))
+            && matches!(node.attribute("Type"),
+                Some("http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+                | "http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument"))
+    }).ok_or("type_mismatch")?;
+    if target
+        .attribute("TargetMode")
+        .is_some_and(|mode| mode != "Internal")
     {
+        return Err("invalid_file");
+    }
+    let name = target
+        .attribute("Target")
+        .ok_or("invalid_file")?
+        .trim_start_matches('/');
+    let declared = format!("/{name}");
+    let types = part("[Content_Types].xml")?;
+    if !xml(&types)?.descendants().any(|node| {
+        node.has_tag_name(("http://schemas.openxmlformats.org/package/2006/content-types", "Override"))
+        && node.attribute("PartName") == Some(declared.as_str())
+        && node.attribute("ContentType") == Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")
+    }) {
         return Err("type_mismatch");
     }
+    let document = part(name)?;
     let doc = xml(&document)?;
     let ns = doc
         .root_element()
@@ -199,8 +226,24 @@ fn docx(bytes: &[u8], out: &mut Extract) -> Parsed<()> {
     Ok(())
 }
 
-fn xml(bytes: &[u8]) -> Parsed<roxmltree::Document<'_>> {
-    let text = std::str::from_utf8(bytes).map_err(|_| "invalid_file")?;
+fn decode(bytes: &[u8]) -> Option<Cow<'_, str>> {
+    let (tail, units) = if let Some(tail) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        (tail, u16::from_le_bytes as fn([u8; 2]) -> u16)
+    } else if let Some(tail) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        (tail, u16::from_be_bytes as fn([u8; 2]) -> u16)
+    } else {
+        return std::str::from_utf8(bytes).ok().map(Cow::Borrowed);
+    };
+    if tail.len() % 2 != 0 {
+        return None;
+    }
+    char::decode_utf16(tail.chunks_exact(2).map(|pair| units([pair[0], pair[1]])))
+        .collect::<Result<String, _>>()
+        .ok()
+        .map(Cow::Owned)
+}
+
+fn xml(text: &str) -> Parsed<roxmltree::Document<'_>> {
     roxmltree::Document::parse_with_options(
         text,
         roxmltree::ParsingOptions {
