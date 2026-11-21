@@ -2179,13 +2179,29 @@ export interface components {
     AiManagedResult: {
       answer: string;
       sourceIds?: string[];
-      edits?: components["schemas"]["AiManagedEdit"][];
-      reorganization?: components["schemas"]["AiReorganizationRequest"];
-      targetWorkspaceId?: string;
-      action?:
-        | components["schemas"]["AiTransferAction"]
-        | components["schemas"]["AiWorkspaceManagementAction"];
-    } & (unknown & unknown);
+    } & (
+      | {
+          edits?: components["schemas"]["AiManagedEdit"][];
+          reorganization?: components["schemas"]["AiReorganizationRequest"];
+          targetWorkspaceId?: never;
+          action?: never;
+        }
+      | {
+          targetWorkspaceId: string;
+          edits: components["schemas"]["AiManagedEdit"][];
+          action?: never;
+          reorganization?: never;
+        }
+      | {
+          action:
+            | components["schemas"]["AiTransferAction"]
+            | components["schemas"]["AiWorkspaceManagementAction"];
+          /** @constant */
+          edits?: never[];
+          targetWorkspaceId?: never;
+          reorganization?: never;
+        }
+    );
     DocumentMemberLink: {
       /** @description Stable member document ID. */
       documentId: string;

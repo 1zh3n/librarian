@@ -8900,80 +8900,68 @@
             "items": {
               "type": "string"
             }
-          },
-          "edits": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AiManagedEdit"
-            }
-          },
-          "reorganization": {
-            "$ref": "#/components/schemas/AiReorganizationRequest"
-          },
-          "targetWorkspaceId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "action": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/AiTransferAction"
-              },
-              {
-                "$ref": "#/components/schemas/AiWorkspaceManagementAction"
-              }
-            ]
           }
         },
-        "allOf": [
+        "oneOf": [
           {
-            "if": {
-              "required": [
-                "action"
-              ]
-            },
-            "then": {
-              "properties": {
-                "edits": {
-                  "maxItems": 0
+            "type": "object",
+            "properties": {
+              "edits": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AiManagedEdit"
                 }
               },
-              "not": {
-                "anyOf": [
-                  {
-                    "required": [
-                      "targetWorkspaceId"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "reorganization"
-                    ]
-                  }
-                ]
-              }
+              "reorganization": {
+                "$ref": "#/components/schemas/AiReorganizationRequest"
+              },
+              "targetWorkspaceId": false,
+              "action": false
             }
           },
           {
-            "if": {
-              "required": [
-                "targetWorkspaceId"
-              ]
-            },
-            "then": {
-              "required": [
-                "edits"
-              ],
-              "properties": {
-                "edits": {
-                  "minItems": 1
-                }
+            "type": "object",
+            "required": [
+              "targetWorkspaceId",
+              "edits"
+            ],
+            "properties": {
+              "targetWorkspaceId": {
+                "type": "string",
+                "minLength": 1
               },
-              "not": {
-                "required": [
-                  "reorganization"
+              "edits": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AiManagedEdit"
+                },
+                "minItems": 1
+              },
+              "action": false,
+              "reorganization": false
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AiTransferAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AiWorkspaceManagementAction"
+                  }
                 ]
-              }
+              },
+              "edits": {
+                "const": []
+              },
+              "targetWorkspaceId": false,
+              "reorganization": false
             }
           }
         ]

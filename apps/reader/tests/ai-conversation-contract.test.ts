@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
 import { Validator } from "@cfworker/json-schema";
-import { expect, test } from "vitest";
+import { expect, expectTypeOf, test } from "vitest";
+import type { components as ApiComponents } from "../src/api/schema.gen";
 import type { Schema } from "@cfworker/json-schema";
 
 const { components } = JSON.parse(
@@ -70,6 +71,26 @@ test("managed results accept one management or transfer action with the correspo
   expect(
     accepts("AiManagedResult", { answer: "ok", targetWorkspaceId: "w", action: valid[0] }),
   ).toBe(false);
+});
+
+test("a targeted write requires edits and cannot accompany a workspace action", () => {
+  type Result = ApiComponents["schemas"]["AiManagedResult"];
+  const edit = { path: "new.md", baseRevision: null, markdown: "# New" };
+  const write = { answer: "written", targetWorkspaceId: "w", edits: [edit] };
+  const action = { kind: "create_workspace", name: "New" } as const;
+  const mixed = { ...write, action };
+  const actionWithEdits = { answer: "ok", action, edits: [edit] };
+  expectTypeOf(actionWithEdits).not.toExtend<Result>();
+  expectTypeOf(write).toExtend<Result>();
+  expectTypeOf(mixed).not.toExtend<Result>();
+  expect(accepts("AiManagedResult", write)).toBe(true);
+  for (const invalid of [
+    mixed,
+    actionWithEdits,
+    { ...write, edits: [] },
+    { answer: "ok", targetWorkspaceId: "w" },
+  ])
+    expect(accepts("AiManagedResult", invalid)).toBe(false);
 });
 
 test("a recipient can distinguish managed membership changes from transfers in receipts", () => {
