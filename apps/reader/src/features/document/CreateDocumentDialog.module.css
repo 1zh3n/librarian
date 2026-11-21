@@ -33,6 +33,7 @@
 }
 
 .form {
+  overflow-wrap: anywhere;
   gap: 0.875rem;
 }
 

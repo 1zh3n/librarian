@@ -1,8 +1,13 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import type { DocumentSnapshot } from "../../src/api/client";
+import type { DocumentSnapshot, Workspace } from "../../src/api/client";
 import type { components } from "../../src/api/schema.gen";
-import { closeDocumentTool, createNote, openDocumentTool } from "./productFixture";
+import {
+  closeDocumentTool,
+  createNote,
+  openDocumentTool,
+  openFieldWorkspace,
+} from "./productFixture";
 
 type Claim = components["schemas"]["AiClaim"];
 type RunnerResult = components["schemas"]["AiRunnerResult"];
@@ -255,6 +260,94 @@ for (const width of [1440, 390]) {
   });
 }
 
+test("an existing AI citation opens the renamed document and Back restores the selected passage", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFieldWorkspace(page);
+  const created = await page.request.post("/api/v1/workspaces", {
+    headers: { origin: new URL(page.url()).origin },
+    data: { name: "改名后的引用" },
+  });
+  expect(created.status()).toBe(201);
+  const workspace = (await created.json()) as Workspace;
+  const passage = "比较两岸的水尺读数。";
+  const origin = await addNote(page, workspace.id, "核对记录.md", `# 核对记录\n\n${passage}\n`);
+  const cited = await addNote(page, workspace.id, "旧观测.md", "北岸的水位为三米。\r\n");
+  const documents = `/workspaces/${workspace.id}/documents`;
+  const originUrl = `${documents}/${origin.document.id}`;
+  await page.goto(originUrl);
+  await page
+    .getByRole("article")
+    .getByText(passage, { exact: true })
+    .evaluate((element) => {
+      const range = new Range();
+      range.selectNodeContents(element);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+  await openDocumentTool(page, "AI");
+  const task = await send(page, "用观测记录核对所选段落");
+  expect(task.input.context).toEqual([
+    expect.objectContaining({
+      documentId: origin.document.id,
+      revision: origin.revision,
+      from: origin.markdown.indexOf(passage),
+      to: origin.markdown.indexOf(passage) + passage.length,
+    }),
+  ]);
+  const { source } = await readSource(page, task, cited.document.id);
+  await complete(page, task, { answer: "北岸读数已核对。", sourceIds: [source.id] });
+  const link = page
+    .getByRole("list", { name: "引用来源" })
+    .getByRole("link", { name: cited.document.path });
+  await expect(link).toBeVisible();
+  const originalHref = await link.getAttribute("href");
+  expect(originalHref).toBe(
+    `${documents}/${cited.document.id}#reader-source?revision=${cited.revision}`,
+  );
+  if (!originalHref) throw new Error("Missing citation href");
+
+  // Rename in a second Reader tab while the original answer and its link stay open.
+  const editor = await page.context().newPage();
+  try {
+    await editor.goto(`${documents}/${cited.document.id}`);
+    await editor.getByRole("button", { name: "文档更多" }).click();
+    await editor.getByRole("menuitem", { name: "重命名…" }).click();
+    const dialog = editor.getByRole("dialog", { name: "重命名文档" });
+    await dialog.getByLabel("文件名").fill("北岸复测");
+    await dialog.getByRole("button", { name: "保存文件名" }).click();
+    await expect(editor.getByRole("banner")).toContainText("北岸复测.md");
+  } finally {
+    await editor.close();
+  }
+
+  await expect(link).toHaveAttribute("href", originalHref);
+  await link.click();
+  await expect(page).toHaveURL(originalHref);
+  await expect(page.getByRole("article")).toContainText("北岸的水位为三米。");
+  await expect(
+    page.getByRole("main").getByRole("heading", { name: "北岸复测", exact: true }),
+  ).toBeVisible();
+  const current = await page.request.get(`/api/v1/documents/${source.documentId}`);
+  expect(current.ok()).toBe(true);
+  expect(await current.json()).toMatchObject({
+    document: { id: cited.document.id, path: "北岸复测.md", workspaceId: workspace.id },
+    markdown: cited.markdown,
+    revision: source.revision,
+  });
+
+  await page.goBack();
+  await expect(page).toHaveURL(originUrl);
+  await expect(link).toBeFocused();
+  const followup = await send(page, "继续核对刚才选中的内容");
+  expect(followup.input.context).toEqual(task.input.context);
+  const selected = await readSource(page, followup, origin.document.id);
+  expect(selected.markdown).toBe(passage);
+  await complete(page, followup, { answer: "原段落核对完毕。", sourceIds: [selected.source.id] });
+});
+
 test("follows a citation to a passage in the current document and returns with Back", async ({
   page,
 }) => {
@@ -351,7 +444,10 @@ test("a read-only member returns from an unavailable source to the original answ
 test("keeps the live editor selection as AI context after focus exits", async ({ page }) => {
   const markdown = "正文前缀。片段甲乙。结束。\n";
   const { document } = await createNote(page, "AiEditorSelection.md", markdown);
-  await page.getByRole("article").getByText("正文前缀。片段甲乙。结束。").click();
+  await page
+    .getByRole("article")
+    .getByText("正文前缀。片段甲乙。结束。")
+    .click({ position: { x: 8, y: 16 } });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+Home");
   const from = markdown.indexOf("片段甲乙");
@@ -389,7 +485,10 @@ test("AI commits preserve the active local draft and expose diff and undo", asyn
     if (route.request().method() === "PUT") await held;
     await route.continue();
   });
-  await page.getByRole("article").getByText("共同原件").click();
+  await page
+    .getByRole("article")
+    .getByText("共同原件")
+    .click({ position: { x: 8, y: 16 } });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+End");
   await page.keyboard.insertText("本地草稿");
@@ -554,6 +653,59 @@ test("AI destructive change awaits confirmation and shows the deleted file diff"
   await page.getByRole("button", { name: "查看改动" }).click();
   await page.getByRole("button", { name: "AiDelete.md" }).click();
   await expect(page.getByLabel("版本差异")).toContainText("-请确认后删除这行。");
+});
+
+test("restores the exact pre-AI Markdown through document version history", async ({ page }) => {
+  const original = "\uFEFF# 水位\r\n\r\n原始观测值  \r\n";
+  await openFieldWorkspace(page);
+  const created = await page.request.post("/api/v1/workspaces", {
+    headers: { origin: new URL(page.url()).origin },
+    data: { name: "AI 版本恢复" },
+  });
+  expect(created.status()).toBe(201);
+  const workspace = (await created.json()) as Workspace;
+  const document = await addNote(page, workspace.id, "AiHistory.md", original);
+  const apiUrl = `/api/v1/documents/${document.document.id}`;
+  await page.goto(`/workspaces/${workspace.id}/documents/${document.document.id}`);
+  const history = async () =>
+    (await (
+      await page.request.get(`${apiUrl}/revisions`)
+    ).json()) as components["schemas"]["DocumentHistory"];
+  await openDocumentTool(page, "AI");
+  const task = await send(page, "记录新的水位", true);
+  const { source } = await readSource(page, task, document.document.id);
+  await complete(page, task, {
+    answer: "已更新水位",
+    sourceIds: [source.id],
+    edits: [
+      {
+        path: document.document.path,
+        baseRevision: document.revision,
+        markdown: original.replace("原始观测值", "复核观测值"),
+      },
+    ],
+  });
+  await expect(page.getByRole("article")).toContainText("复核观测值");
+  const saved = (await history()).revisions;
+  expect(saved).toHaveLength(2);
+  const [aiVersion, initial] = saved;
+  const operation = await page.request.get(`/api/v1/ai/operations/${task.operationId}`);
+  expect(await operation.json()).toMatchObject({ commitId: aiVersion!.commitId });
+  const aiCommit = aiVersion!.commitId;
+  if (!initial) throw new Error("Missing pre-AI version");
+  await openDocumentTool(page, "版本");
+  const panel = page.getByRole("region", { name: "版本历史" });
+  await panel.getByRole("button").filter({ hasText: initial.message }).click();
+  await panel.getByRole("button", { name: "恢复这一版" }).click();
+  await expect(page.getByRole("article")).toContainText("原始观测值");
+  const restored = (await (await page.request.get(apiUrl)).json()) as DocumentSnapshot;
+  expect(restored.document.id).toBe(document.document.id);
+  expect(restored.markdown).toBe(original);
+  expect(restored.revision).toBe(document.revision);
+  const revisions = (await history()).revisions;
+  expect(revisions.map((entry) => entry.commitId).slice(1)).toEqual([aiCommit, initial.commitId]);
+  expect(revisions[0]?.message).toBe("Restore document version");
+  expect(new Set(revisions.map((entry) => entry.commitId)).size).toBe(3);
 });
 
 test("an AI commit refreshes the clean reader, and undo is available after reload", async ({

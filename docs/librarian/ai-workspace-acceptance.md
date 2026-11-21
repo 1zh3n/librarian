@@ -22,6 +22,12 @@ AI 功能在 `spike/librarian-ai-workspace` 保存到 `b6ada3b3`。集成分支 
 
 自动化复测可从产品仓库执行。先构建 Reader 和原生 fixture，再运行 Playwright 产品套件。引用往返在 `apps/reader/tests/e2e/document-ai.spec.ts` 中覆盖桌面和手机宽度。设置的角色、错误和轮换场景使用受控目录响应。受管执行器集成用真实 Node Harness 和本地 HTTPS Messages 替身，使工具回合、流式文本和失败回执可重复。
 
+## Reader 改名与编辑器合并验证
+
+集成提交 `c6911ef6` 保留了初次接入的 Reader 与 AI 历史。合入 Reader `81d26b63` 后，在独立 HTTPS 服务中重跑了设置保存回读、三轮真实问答、引用返回和继续追问。返回前后，原段落距视口顶部均为 458.21875 CSS px，对话滚动位置均为 129 CSS px。新用例还在另一浏览器标签页给已引用的文档改名，从原回答用改名前的引用打开了新文件名下的相同文档，并在后退后复用了原选区。[选区、会话和版本回执](evidence/ai-workspace/reader-81d-receipts.json)
+
+真实 DeepSeek 读取一份带 BOM、CRLF 和行末空格的 Markdown，改写水位并生成 Git 提交。从 Reader 的「版本」选中写入前的版本并恢复，历史中同时保留原始、AI 写入和恢复三次提交。随后在「文档更多 → 重命名」改名，再用原 ID 和原 revision 的链接重新打开。读回的新文件名、文档 ID 和原始 Markdown 的 SHA-256 均已核对。[改名后从原链接打开](evidence/ai-workspace/restore-rename-reader.png)
+
 ## 网页设置与模型目录
 
 管理员从文档打开顶栏设置，在 AI 标签输入 DeepSeek 凭据。浏览器提交同源发现请求，真实供应商返回两个模型。换到下一个控件，目录返回后按 Escape，焦点回到原设置按钮。四个视口的页面横向溢出均为 0 CSS px。

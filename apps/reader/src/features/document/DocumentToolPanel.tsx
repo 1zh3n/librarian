@@ -1,3 +1,4 @@
+import { Icon } from "../../ui/Icon";
 import { useEffect, useState } from "react";
 import { useReaderLayout } from "../reading/readingFocus";
 import type { DevicePreferences } from "../../api/client";
@@ -133,7 +134,7 @@ export function DocumentToolPanel({
         onWidthChange={(toolsWidth) => savePreferences({ toolsWidth })}
       />
       <Button className={styles.closePane} aria-label="收起文档辅助区" onPress={onClose}>
-        <span className={styles.icon} data-icon="panel-right-close" aria-hidden="true" />
+        <Icon name="panel-right-close" />
       </Button>
       <div hidden={!tabbed}>
         <Tabs
@@ -150,7 +151,7 @@ export function DocumentToolPanel({
             label,
             content: (
               <>
-                <span className={styles.icon} data-icon={icon} aria-hidden="true" />
+                <Icon className={styles.tabIcon} name={icon} />
                 {label}
               </>
             ),

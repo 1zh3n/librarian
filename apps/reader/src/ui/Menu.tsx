@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { Dropdown } from "@heroui/react/dropdown";
 import type { ReactElement, ReactNode } from "react";
 
@@ -33,7 +34,12 @@ function renderAction(action: MenuAction) {
       isDisabled={action.disabled ?? false}
       onAction={action.run}
     >
-      {action.content ?? action.label}
+      {({ isSelected }) => (
+        <>
+          {action.content ?? action.label}
+          {isSelected && <Icon name="check" />}
+        </>
+      )}
     </Dropdown.Item>
   );
 }

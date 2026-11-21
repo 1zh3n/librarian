@@ -1,0 +1,63 @@
+{
+  "selectionTrip": {
+    "conversation": "ceba12f4-3261-47f6-ad8f-2649c7a0d81a",
+    "operations": [
+      "6dfdd5c5-9b88-4ed0-80c9-2d4a8a7623a3",
+      "a3e594b9-8a77-4a51-8148-dd0728be89b9",
+      "596ce821-eb19-47c9-9180-858d04197255"
+    ],
+    "context": {
+      "documentId": "doc_9d52f17dad3e440ebbbe8854fcc2b6e6",
+      "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c",
+      "from": 637,
+      "to": 659
+    },
+    "sourceRevision": "98654f445945a04788e61e7d0a9d25646fa96f449d15bfa638e01e7fd4909058",
+    "readingTop": [
+      458.21875,
+      458.21875,
+      458.21875
+    ],
+    "transcriptTop": [
+      129,
+      129
+    ],
+    "restoredFocus": true,
+    "restoredDraft": true
+  },
+  "versionRename": {
+    "model": {
+      "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+      "modelId": "deepseek-v4-pro",
+      "thinking": {
+        "mode": "effort",
+        "level": "high"
+      }
+    },
+    "documentId": "doc_87fbd7926f5d4fd8a2ff416a6ae0e434",
+    "pathBefore": "验收/版本前-d6cbe492.md",
+    "pathAfter": "验收/版本后-d6cbe492.md",
+    "originalCitation": "/workspaces/ws_b53203d18789403cae1dae2e5f325fbf/documents/doc_87fbd7926f5d4fd8a2ff416a6ae0e434#reader-source?revision=17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a",
+    "operationId": "c777131d-d84e-4ad6-a0d8-eeb15d8a7e6e",
+    "initialCommit": "1a2f7caed735a88617d377159a4b034ed344bb09",
+    "aiCommit": "88837a62e23638cc9f607c1f224ac1a0ab919768",
+    "restoreCommit": "95ace4cc0c9aa52859fc79f73b01b14a89fdaf31",
+    "markdownSha256": {
+      "before": "17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a",
+      "afterAI": "0c57b12471afd207be7e3afe095a83c7ddf9d76bb074d8d60448d95a9c386fc4",
+      "afterRestore": "17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a"
+    }
+  },
+  "reopenedModel": {
+    "connection": "DeepSeek 验收",
+    "model": "deepseek-flash",
+    "effort": "low",
+    "viewports": [
+      1440,
+      390,
+      360,
+      320
+    ]
+  },
+  "readerCommit": "81d26b63e98534d32ea7e04650879b6a2dae802e"
+}

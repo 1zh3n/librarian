@@ -1,5 +1,11 @@
-import { markdown } from "@codemirror/lang-markdown";
-import { defaultKeymap, history, historyKeymap, invertedEffects } from "@codemirror/commands";
+import { deleteMarkupBackward, markdown } from "@codemirror/lang-markdown";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  invertedEffects,
+  isolateHistory,
+} from "@codemirror/commands";
 import {
   Compartment,
   EditorState,
@@ -9,7 +15,7 @@ import {
   Transaction,
 } from "@codemirror/state";
 import type { ChangeSet } from "@codemirror/state";
-import { EditorView, highlightActiveLine, keymap } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
 import {
   applyTextEdits,
@@ -25,6 +31,7 @@ import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
 import { hideFrontMatterControl, livePreview } from "./livePreview";
+import { markdownEnter } from "./markdownEnter";
 import { frontMatterRange } from "./syntax";
 
 const replaceSource = StateEffect.define<SourceDocument>();
@@ -36,10 +43,6 @@ const editorFocus = EditorView.theme({
     paddingBlockEnd: "var(--document-editor-endspace, 4px)",
   },
   ".cm-content:focus-visible": { outline: "none" },
-  "&.cm-focused .cm-activeLine": {
-    backgroundColor: "transparent",
-    boxShadow: "inset 2px 0 var(--accent, currentColor)",
-  },
 });
 
 function projectSource(source: SourceDocument, changes: ChangeSet): SourceDocument {
@@ -145,6 +148,7 @@ export interface EditorSession {
   isComposing(): boolean;
   acknowledge(markdown: string, revision: string | null): void;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
+  appendBlankLine(): void;
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
   trackAnchor(anchor: ScrollAnchor | undefined): void;
@@ -183,14 +187,18 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       sourceHistory,
       reconcileLineEndings,
       undoHistory.of(history()),
-      markdown({ extensions: GFM, completeHTMLTags: false }),
+      markdown({ extensions: GFM, completeHTMLTags: false, addKeymap: false }),
       composing,
       compositionEvents,
       preview.of(livePreview),
       hideFrontMatterControl.of(options.hideMetadataInPreview ?? false),
       editorFocus,
-      highlightActiveLine(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([
+        { key: "Enter", run: markdownEnter },
+        { key: "Backspace", run: deleteMarkupBackward },
+        ...defaultKeymap,
+        ...historyKeymap,
+      ]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(options.readOnly ?? false),
       EditorView.editable.of(!options.readOnly),
@@ -296,6 +304,20 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       confirmedSource = markdown;
       revision = savedRevision;
     },
+    appendBlankLine() {
+      if (state.readOnly || state.field(composing)) return;
+      const current = state.field(sourceField).value;
+      const ending = /(\r\n|[\r\n])[^\r\n]*$/u.exec(current)?.[1] ?? "\n";
+      dispatch(
+        state.update({
+          changes: { from: state.doc.length, insert: "\n" },
+          selection: { anchor: state.doc.length + 1 },
+          effects: replaceSource.of(readSource(current + ending)),
+          annotations: isolateHistory.of("full"),
+          scrollIntoView: true,
+        }),
+      );
+    },
     applyChanges(edits) {
       applyEdits(edits, false);
     },
@@ -361,11 +383,17 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 0 }),
       });
       const targetDoc = mounted.state.doc;
+      const target = tracked?.anchor.blockId === anchor.blockId ? tracked : undefined;
       for (let i = 0; i < 3; i++) {
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        if (view !== mounted || mounted.state.doc !== targetDoc) return false;
+        if (view !== mounted || (target && tracked !== target)) return false;
+        // Typing during layout maps the tracked offset through the edit.
+        const position = mounted.state.doc === targetDoc ? at : target?.position;
+        if (position === undefined) return false;
         const inset =
-          mounted.documentTop + mounted.lineBlockAt(at).top - viewport.getBoundingClientRect().top;
+          mounted.documentTop +
+          mounted.lineBlockAt(position).top -
+          viewport.getBoundingClientRect().top;
         viewport.scrollTop += inset - anchor.insetPx;
       }
       return true;

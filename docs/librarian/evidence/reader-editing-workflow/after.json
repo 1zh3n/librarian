@@ -1,0 +1,292 @@
+{
+  "stage": "after",
+  "baseURL": "http://127.0.0.1:4286",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "theme": "light",
+  "build": "276e3ed1f5c04c9fe3caf6150c6c8469aadeaf81766a37e7812f22d71c3a87fa",
+  "chromium": "145.0.7632.6",
+  "a": {
+    "id": "doc_4be58b969452450fb4f10a68d9af6a0b",
+    "path": "走访/渡口走访手记.md",
+    "revision": "78b28996d249b700eb87f7e537ce7e43d2e2633c2241d160c2c757cd1644bee9",
+    "sha256": "78b28996d249b700eb87f7e537ce7e43d2e2633c2241d160c2c757cd1644bee9"
+  },
+  "b": {
+    "id": "doc_5bb30ae9c26c440c989f869419bc85c9",
+    "path": "资料/访谈速记.md",
+    "revision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971",
+    "sha256": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971"
+  },
+  "before": {
+    "url": "/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/documents/doc_4be58b969452450fb4f10a68d9af6a0b",
+    "scrollTop": 650,
+    "headingY": 240
+  },
+  "menu": [
+    "新建文档…",
+    "搜索文档…",
+    "重命名…"
+  ],
+  "conflict": {
+    "status": 409,
+    "path": "/api/v1/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/rename",
+    "submitted": {
+      "from": "资料/访谈速记.md",
+      "to": "资料/录音索引.md",
+      "operationId": "7aaab184-0f24-48cc-8b80-39337906ce7f"
+    },
+    "response": {
+      "code": "path_exists",
+      "message": "The destination path already exists"
+    }
+  },
+  "dialog": "- dialog \"重命名文档\":\n  - heading \"重命名文档\" [level=2]\n  - text: 资料/访谈速记.md 文件名*\n  - textbox \"文件名*\": 录音索引\n  - alert: 该目录已有同名文件，请更换文件名。\n  - button \"取消\"\n  - button \"保存文件名\"",
+  "rename": {
+    "status": 200,
+    "path": "/api/v1/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/rename",
+    "submitted": {
+      "from": "资料/访谈速记.md",
+      "to": "资料/清晨访谈.md",
+      "operationId": "cf7fec83-368a-4570-8856-4397e3337aee"
+    },
+    "response": {
+      "operationId": "cf7fec83-368a-4570-8856-4397e3337aee",
+      "workspaceId": "ws_322d4840b9a64cfd8429efb03e8b17eb",
+      "commitId": "69febe5006589c38748942fa6fc4cc97ac1c92d4",
+      "changes": [
+        {
+          "path": "资料/清晨访谈.md",
+          "beforeRevision": null,
+          "revision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971"
+        },
+        {
+          "path": "资料/清晨访谈.outline.md",
+          "beforeRevision": null,
+          "revision": "5fff2ab74722aadd07aba3acf9cb4313388a400acd091ea3686a7e158000fdc8"
+        },
+        {
+          "path": "资料/访谈速记.md",
+          "beforeRevision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971",
+          "revision": null
+        },
+        {
+          "path": "资料/访谈速记.outline.md",
+          "beforeRevision": "5fff2ab74722aadd07aba3acf9cb4313388a400acd091ea3686a7e158000fdc8",
+          "revision": null
+        }
+      ]
+    }
+  },
+  "focusAfterRename": [
+    {
+      "tag": "DIV",
+      "role": "row",
+      "focused": true,
+      "outline": "rgb(36, 79, 133) solid 2px",
+      "w": 219,
+      "h": 38
+    }
+  ],
+  "focusAfterRenameGroup": {
+    "name": "目录内容",
+    "focused": false,
+    "outline": "rgb(37, 38, 41) none 0px"
+  },
+  "after": {
+    "url": "/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/documents/doc_4be58b969452450fb4f10a68d9af6a0b",
+    "scrollTop": 650,
+    "headingY": 240
+  },
+  "afterB": {
+    "id": "doc_5bb30ae9c26c440c989f869419bc85c9",
+    "path": "资料/清晨访谈.md",
+    "title": "船工访谈",
+    "revision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971",
+    "sha256": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971"
+  },
+  "outlinePreserved": true,
+  "afterA": {
+    "id": "doc_4be58b969452450fb4f10a68d9af6a0b",
+    "path": "走访/渡口走访手记.md",
+    "title": "渡口走访手记",
+    "revision": "78b28996d249b700eb87f7e537ce7e43d2e2633c2241d160c2c757cd1644bee9",
+    "sha256": "78b28996d249b700eb87f7e537ce7e43d2e2633c2241d160c2c757cd1644bee9"
+  },
+  "icons": [
+    {
+      "name": "settings",
+      "decorative": "true",
+      "visibleSvg": true,
+      "width": 16,
+      "pointerEvents": "none"
+    },
+    {
+      "name": "chevron-down",
+      "decorative": "true",
+      "visibleSvg": true,
+      "width": 14,
+      "pointerEvents": "none"
+    },
+    {
+      "name": "file-text",
+      "decorative": "true",
+      "visibleSvg": true,
+      "width": 14,
+      "pointerEvents": "none"
+    },
+    {
+      "name": "history",
+      "decorative": "true",
+      "visibleSvg": true,
+      "width": 13,
+      "pointerEvents": "none"
+    },
+    {
+      "name": "panel-right-close",
+      "decorative": "true",
+      "visibleSvg": true,
+      "width": 16,
+      "pointerEvents": "none"
+    }
+  ],
+  "focusAfterCancel": [
+    {
+      "tag": "DIV",
+      "role": "row",
+      "focused": true,
+      "outline": "rgb(36, 79, 133) solid 2px",
+      "w": 219,
+      "h": 38
+    }
+  ],
+  "focusAfterCancelGroup": {
+    "name": "目录内容",
+    "focused": false,
+    "outline": "rgb(37, 38, 41) none 0px"
+  },
+  "afterCancel": {
+    "url": "/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/documents/doc_4be58b969452450fb4f10a68d9af6a0b",
+    "scrollTop": 650,
+    "headingY": 240
+  },
+  "writing": {
+    "text": "补记：明早回访时带上旧航线图。",
+    "focused": true,
+    "activeLineShadow": "none",
+    "serverStillAtOriginal": true,
+    "saved": {
+      "id": "doc_4be58b969452450fb4f10a68d9af6a0b",
+      "path": "走访/渡口走访手记.md",
+      "title": "渡口走访手记",
+      "revision": "aee77759987e783b8f320dd9d054c2a5ed761e24637d4d486fadca4424950fbf",
+      "sha256": "aee77759987e783b8f320dd9d054c2a5ed761e24637d4d486fadca4424950fbf"
+    },
+    "putStatus": 200,
+    "expectedSha256": "aee77759987e783b8f320dd9d054c2a5ed761e24637d4d486fadca4424950fbf"
+  },
+  "renameWhileEditing": {
+    "status": 200,
+    "path": "/api/v1/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/rename",
+    "submitted": {
+      "from": "资料/清晨访谈.md",
+      "to": "资料/清晨访谈定稿.md",
+      "operationId": "cc80c40d-7fe6-4670-acca-679636dc6570"
+    },
+    "response": {
+      "operationId": "cc80c40d-7fe6-4670-acca-679636dc6570",
+      "workspaceId": "ws_322d4840b9a64cfd8429efb03e8b17eb",
+      "commitId": "e684ae8bf543e02e9983509da11a13750da8b701",
+      "changes": [
+        {
+          "path": "资料/清晨访谈.md",
+          "beforeRevision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971",
+          "revision": null
+        },
+        {
+          "path": "资料/清晨访谈.outline.md",
+          "beforeRevision": "5fff2ab74722aadd07aba3acf9cb4313388a400acd091ea3686a7e158000fdc8",
+          "revision": null
+        },
+        {
+          "path": "资料/清晨访谈定稿.md",
+          "beforeRevision": null,
+          "revision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971"
+        },
+        {
+          "path": "资料/清晨访谈定稿.outline.md",
+          "beforeRevision": null,
+          "revision": "5fff2ab74722aadd07aba3acf9cb4313388a400acd091ea3686a7e158000fdc8"
+        }
+      ]
+    }
+  },
+  "afterInputRename": {
+    "url": "/workspaces/ws_322d4840b9a64cfd8429efb03e8b17eb/documents/doc_4be58b969452450fb4f10a68d9af6a0b",
+    "scrollTop": 650,
+    "headingY": 240
+  },
+  "finalB": {
+    "id": "doc_5bb30ae9c26c440c989f869419bc85c9",
+    "path": "资料/清晨访谈定稿.md",
+    "title": "船工访谈",
+    "revision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971",
+    "sha256": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971"
+  },
+  "reloadVerified": true,
+  "touch": {
+    "viewport": [
+      390,
+      844
+    ],
+    "dialog": {
+      "x": 16,
+      "y": 295.203125,
+      "width": 358,
+      "height": 253.59375
+    },
+    "original": "清晨访谈定稿",
+    "typed": "清晨访谈校对",
+    "cancelled": true
+  },
+  "focusBeforeFix": {
+    "fixtureSHA256": "a78d387eecdcb662e3ac9210843d167dba7e31fbff599e50a335d32a034dbab9",
+    "focusAfterRename": [
+      {
+        "tag": "DIV",
+        "role": "row",
+        "focused": true,
+        "outline": "rgb(36, 79, 133) solid 2px",
+        "w": 219,
+        "h": 38
+      },
+      {
+        "tag": "DIV",
+        "role": "group",
+        "focused": false,
+        "outline": "rgb(36, 79, 133) solid 2px",
+        "w": 235,
+        "h": 791
+      }
+    ]
+  },
+  "provenance": {
+    "baselineCommit": "999a4531",
+    "fixtureSHA256": "276e3ed1f5c04c9fe3caf6150c6c8469aadeaf81766a37e7812f22d71c3a87fa",
+    "readerShellManifestSHA256": "04a65c134ae9c76358cd3dd4f446e8ef1a18b4ab4acac68f7ddc2fda830df67f",
+    "readerSrcSHA256": "cc235a7140e7e7de9d5c934eccfb7f7b322c1cae877c60e7e5d761cce563f2dc"
+  },
+  "productTests": {
+    "passed": 36,
+    "failed": 0,
+    "files": {
+      "document-edit-boundary.spec.ts": 2,
+      "document-edit.spec.ts": 25,
+      "document-icons.spec.ts": 4,
+      "document-markdown-enter.spec.ts": 1,
+      "document-rename.spec.ts": 4
+    }
+  }
+}

@@ -112,8 +112,7 @@ function formatLine(ranges: Range<Decoration>[], state: EditorState, node: Synta
   }
   if (
     name === "ListMark" &&
-    node.parent &&
-    !selectionTouches(state, node.parent.from, node.parent.to)
+    !selectionTouches(state, state.doc.lineAt(from).from, state.doc.lineAt(from).to)
   ) {
     const marker = state.sliceDoc(from, to);
     const widget = new MarkerWidget(/^[-+*]$/.test(marker) ? "•" : marker);
@@ -121,8 +120,7 @@ function formatLine(ranges: Range<Decoration>[], state: EditorState, node: Synta
   }
   if (
     name === "TaskMarker" &&
-    node.parent &&
-    !selectionTouches(state, node.parent.from, node.parent.to)
+    !selectionTouches(state, state.doc.lineAt(from).from, state.doc.lineAt(from).to)
   ) {
     const checked = /[xX]/.test(state.sliceDoc(from, to));
     const widget = new MarkerWidget(checked ? "☑" : "☐", checked ? "checked" : "unchecked");

@@ -1,0 +1,30 @@
+{
+  "engine": "Chromium 145.0.7632.6",
+  "port": 4284,
+  "desktop": {
+    "button": {
+      "width": 36,
+      "height": 36
+    },
+    "glyph": {
+      "width": 16,
+      "height": 16
+    },
+    "stroke": "rgb(90, 91, 97)",
+    "ariaHidden": "true",
+    "centerHitsButton": true
+  },
+  "touch": {
+    "button": {
+      "width": 44,
+      "height": 44
+    },
+    "glyph": {
+      "width": 16,
+      "height": 16
+    },
+    "stroke": "rgb(186, 186, 192)",
+    "ariaHidden": "true",
+    "centerHitsButton": true
+  }
+}

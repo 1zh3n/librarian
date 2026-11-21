@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { Checkbox as HeroCheckbox } from "@heroui/react/checkbox";
 import { Form as HeroForm } from "@heroui/react/form";
 import { Input } from "@heroui/react/input";
@@ -190,7 +191,7 @@ export function Select<Value extends string>({
       <Label>{label}</Label>
       <HeroSelect.Trigger className="reader-select">
         <HeroSelect.Value />
-        <HeroSelect.Indicator />
+        <Icon name="chevron-down" />
       </HeroSelect.Trigger>
       <HeroSelect.Popover className="reader-select-menu">
         <ListBox>
@@ -232,7 +233,9 @@ export function Checkbox({
     >
       <HeroCheckbox.Content className="reader-check-label">
         <HeroCheckbox.Control className="reader-check">
-          <HeroCheckbox.Indicator />
+          <HeroCheckbox.Indicator>
+            {({ isSelected }) => isSelected && <Icon name="check" />}
+          </HeroCheckbox.Indicator>
         </HeroCheckbox.Control>
         <Label>{children}</Label>
       </HeroCheckbox.Content>

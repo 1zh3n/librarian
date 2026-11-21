@@ -20,10 +20,14 @@ test("edits in place without a canvas outline and resumes reading when focus lea
     "---\ntitle: 就地编辑\n---\n\n在这里继续写。\n",
   );
   const article = page.getByRole("article");
-  await article.getByText("在这里继续写。").click();
+  await article.getByText("在这里继续写。").click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   await expect(body).toBeFocused();
   await expect(page.locator(".cm-editor.cm-focused")).toHaveCSS("outline-style", "none");
+  await expect(body.locator(".cm-line").filter({ hasText: "在这里继续写。" })).toHaveCSS(
+    "box-shadow",
+    "none",
+  );
   await expect(body.getByRole("button", { name: "Front Matter" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "返回阅读" })).toHaveCount(0);
   await body.press("End");
@@ -62,85 +66,101 @@ for (const [name, original] of [
   ["empty", ""],
   ["metadata", "---\ntitle: 只有属性\n---\n"],
 ] as const) {
-  test(`clicking the lower paper resumes writing at the exact end (${name})`, async ({ page }) => {
-    const { apiUrl, document } = await createNote(page, `Paper-${name}.md`, original);
+  test(`blank paper appends one undoable newline per click in reading and editing (${name})`, async ({
+    page,
+  }) => {
+    const { apiUrl } = await createNote(page, `Paper-${name}.md`, original);
     const point = await page.getByRole("article").evaluate((article) => {
       const column = article.getBoundingClientRect();
       const viewport = article.closest("main")!.getBoundingClientRect();
-      return { x: column.left + column.width / 2, y: viewport.bottom - 24 };
+      return {
+        x: column.left + column.width / 2,
+        edge: viewport.left + 4,
+        y: viewport.bottom - 24,
+      };
     });
     const body = editor(page, "Markdown 正文");
+    const newline = original.includes("\r\n") ? "\r\n" : "\n";
+    const saved = () => expect.poll(async () => (await readNote(page, apiUrl)).markdown);
     await page.mouse.click(point.x, point.y);
     await expect(body).toBeFocused();
-    expect((await readNote(page, apiUrl)).revision).toBe(document.revision);
+    await saved().toBe(original + newline);
     await page.keyboard.insertText("初");
-    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "初");
     await body.press("Control+Home");
-    await page.mouse.click(point.x, point.y);
+    await page.mouse.click(point.edge, point.y);
     await expect(body).toBeFocused();
+    await saved().toBe(original + newline + "初" + newline);
     await page.keyboard.insertText("续");
-    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "初续");
-    await body.press("Control+z");
-    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "初");
-    await body.press("Control+z");
-    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original);
+    await saved().toBe(original + newline + "初" + newline + "续");
+    for (const prior of [
+      original + newline + "初" + newline,
+      original + newline + "初",
+      original + newline,
+      original,
+    ]) {
+      await body.press("Control+z");
+      await saved().toBe(prior);
+    }
+    await body.press("Control+Shift+z");
+    await saved().toBe(original + newline);
   });
 }
 
-test("the side margins follow the clicked visual line and a paragraph gap uses its nearest edge", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const stanza = "沿岸逐点记录水位。".repeat(18);
-  const original = "前言。\n\n" + stanza + "\n\n小结。";
-  const { apiUrl } = await createNote(page, "Paper-gutters.md", original);
-  const paragraph = page.getByRole("article").getByText(stanza);
-  const points = await paragraph.evaluate((element) => {
-    const text = element.firstChild!;
-    const range = document.createRange();
-    range.selectNodeContents(text);
-    const line = range.getClientRects()[1]!;
-    const column = element.closest("article")!.getBoundingClientRect();
-    const y = line.top + line.height / 2;
-    // Determine the actual wrap points independently of the browser's click/caret hit testing.
-    let start = -1;
-    let end = -1;
-    for (let i = 0; i < text.textContent!.length; i++) {
-      range.setStart(text, i);
-      range.setEnd(text, i + 1);
-      if (Math.abs(range.getBoundingClientRect().top - line.top) < 1) {
-        if (start < 0) start = i;
-        end = i + 1;
+for (const area of [
+  "left",
+  "right",
+  "gap",
+  "after text",
+  "main left",
+  "main right",
+  "above title",
+  "outside column",
+]) {
+  test(`blank paper near the first paragraph appends at the visible end (${area})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const original = Array.from({ length: 50 }, (_, i) => `沿岸第${i + 1}站。`).join("\n\n");
+    const { apiUrl } = await createNote(page, `Paper-${area}.md`, original);
+    const paragraph = page.getByRole("article").getByText("沿岸第1站。", { exact: true });
+    const body = editor(page, "Markdown 正文");
+    await paragraph.scrollIntoViewIfNeeded();
+    const { x, y } = await paragraph.evaluate((el, area) => {
+      const box = el.getBoundingClientRect();
+      const column = el.closest("article")!.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const text = range.getBoundingClientRect();
+      const y = text.top + text.height / 2;
+      const main = el.closest("main")!;
+      const viewport = main.getBoundingClientRect();
+      if (area === "main left") return { x: viewport.left + 4, y };
+      if (area === "main right") return { x: viewport.left + main.clientWidth - 4, y };
+      if (area === "outside column") return { x: column.left - 48, y };
+      if (area === "above title") {
+        const heading = main.querySelector("h1")!;
+        range.selectNodeContents(heading);
+        const text = range.getBoundingClientRect();
+        const x = text.left + 8;
+        const y = Math.min(text.top, heading.getBoundingClientRect().top) - 6;
+        if (heading.contains(document.elementFromPoint(x, y)))
+          throw new Error("Expected blank space above the title");
+        return { x, y };
       }
-    }
-    return [
-      { x: column.left - 12, y, at: start },
-      { x: column.right + 12, y, at: end },
-      {
-        x: column.left + 8,
-        y: element.getBoundingClientRect().bottom + 3,
-        at: text.textContent!.length,
-      },
-    ];
-  });
-  const body = editor(page, "Markdown 正文");
-  for (const point of points) {
-    expect(point.at).toBeGreaterThan(0);
-    await page.mouse.click(point.x, point.y);
+      if (area === "left") return { x: column.left - 12, y };
+      if (area === "right") return { x: column.right + 12, y };
+      if (area === "gap") return { x: box.left + 8, y: box.bottom + 3 };
+      return { x: text.right + 10, y };
+    }, area);
+    await page.mouse.click(x, y);
     await expect(body).toBeFocused();
     await page.keyboard.insertText("光");
-    const at = original.indexOf(stanza) + point.at;
-    await expect
-      .poll(async () => (await readNote(page, apiUrl)).markdown)
-      .toBe(original.slice(0, at) + "光" + original.slice(at));
-    await body.press("Control+z");
-    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original);
-    await body.press("Escape");
-    await expect(paragraph).toBeVisible();
-  }
-});
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "\n光");
+    await expect(body.getByText("光", { exact: true })).toBeInViewport();
+  });
+}
 
-test("paper whitespace leaves modified clicks, text selection and surrounding margins in reading", async ({
+test("document controls, modified clicks and native text selection keep the reader intact", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -158,7 +178,10 @@ test("paper whitespace leaves modified clicks, text selection and surrounding ma
       bottom: element.closest("main")!.getBoundingClientRect().bottom - 32,
     };
   });
-  await page.mouse.click(left - 48, bottom);
+  await page.getByRole("button", { name: "文档更多" }).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(body).toHaveCount(0);
   await page.mouse.click(left, bottom, { button: "right" });
   await page.keyboard.press("Escape");
   await page.keyboard.down("Alt");
@@ -175,7 +198,7 @@ test("paper whitespace leaves modified clicks, text selection and surrounding ma
 test("finishes an active IME composition before leaving the editor on blur", async ({ page }) => {
   await createNote(page, "CompositionBlur.md", "继续记录。\n");
   const article = page.getByRole("article");
-  await article.getByText("继续记录。").click();
+  await article.getByText("继续记录。").click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   await expect(body).toBeFocused();
   await body.evaluate((element) =>
@@ -210,7 +233,10 @@ test("save response keeps edits typed while waiting", async ({ page }) => {
     }
     await route.fulfill({ response });
   });
-  await page.getByRole("article").getByText("初稿").click();
+  await page
+    .getByRole("article")
+    .getByText("初稿")
+    .click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   try {
     await body.press("Control+End");
@@ -257,7 +283,10 @@ test("outline and body use independent revisions and sessions", async ({ page })
 
 test("source mode reuses the selection and undo history", async ({ page }) => {
   const { apiUrl } = await createNote(page, "SourceMode.md", "---\ntitle: 同一会话\n---\n\n初稿\n");
-  await page.getByRole("article").getByText("初稿").click();
+  await page
+    .getByRole("article")
+    .getByText("初稿")
+    .click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   await body.press("Control+End");
   await page.keyboard.insertText("可撤销");
@@ -274,7 +303,10 @@ test("source mode reuses the selection and undo history", async ({ page }) => {
 
 test("connectivity loss retains the draft and reconnect saves it", async ({ page, context }) => {
   const { apiUrl } = await createNote(page, "OfflineDraft.md", "离线前的正文");
-  await page.getByRole("article").getByText("离线前的正文").click();
+  await page
+    .getByRole("article")
+    .getByText("离线前的正文")
+    .click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   await body.press("Control+End");
   await context.setOffline(true);
@@ -291,7 +323,10 @@ test("connectivity loss retains the draft and reconnect saves it", async ({ page
 
 test("a stale save keeps the local buffer and the remote file", async ({ page }) => {
   const { apiUrl, document, origin } = await createNote(page, "StaleBody.md", "共同原件");
-  await page.getByRole("article").getByText("共同原件").click();
+  await page
+    .getByRole("article")
+    .getByText("共同原件")
+    .click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   await body.press("Control+End");
   const remote = await page.request.put(apiUrl, {
@@ -320,7 +355,10 @@ test("adding a tag through the document uses a byte-preserving save", async ({ p
 
 test("a failed workspace refetch leaves the live draft mounted", async ({ page }) => {
   const { apiUrl } = await createNote(page, "RefetchDraft.md", "本地编辑");
-  await page.getByRole("article").getByText("本地编辑").click();
+  await page
+    .getByRole("article")
+    .getByText("本地编辑")
+    .click({ position: { x: 8, y: 16 } });
   const body = editor(page, "Markdown 正文");
   await body.press("Control+End");
   await page.route(`**${apiUrl}`, (route) =>
@@ -342,4 +380,81 @@ test("a failed workspace refetch leaves the live draft mounted", async ({ page }
   await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
   await request;
   await expect(body).toContainText("本地编辑继续保留");
+});
+
+test("full source distinguishes a character from blank space on the same line", async ({
+  page,
+}) => {
+  const initial = "甲乙丙丁\r\n\r\n文末。";
+  const { apiUrl } = await createNote(page, "SourcePaper.md", initial);
+  await page.getByRole("article").press("Alt+Shift+e");
+  const body = editor(page, "Markdown 正文");
+  const line = body.getByText("甲乙丙丁", { exact: true });
+  const { at, after, y } = await line.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rect = range.getBoundingClientRect();
+    range.setStart(el.firstChild!, 2);
+    range.collapse(true);
+    return {
+      at: range.getBoundingClientRect().x + 1,
+      after: rect.right + 12,
+      y: rect.top + rect.height / 2,
+    };
+  });
+  await page.mouse.click(at, y);
+  await page.keyboard.insertText("中");
+  const edited = initial.replace("乙", "乙中");
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(edited);
+  await page.mouse.click(after + 40, y);
+  await expect(body).toBeFocused();
+  await page.keyboard.insertText("尾");
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(edited + "\r\n尾");
+});
+
+test("blank paper in a read-only note keeps the original revision", async ({ page }) => {
+  const { apiUrl, origin, document } = await createNote(
+    page,
+    "ReadonlyPaper.md",
+    "只读的文字。",
+    "另一空间",
+  );
+  await page.context().clearCookies();
+  const login = await page.request.post("/.auth/librarian/login", {
+    headers: { origin },
+    form: { username: "offline-reader", password: "offline-reader-test-password" },
+    maxRedirects: 0,
+  });
+  expect(login.status()).toBe(303);
+  await page.reload();
+  const article = page.getByRole("article");
+  const paragraph = article.getByText("只读的文字。");
+  await paragraph.click({ position: { x: 8, y: 16 } });
+  await paragraph.click();
+  await expect(article).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Markdown 正文" })).toHaveCount(0);
+  expect((await readNote(page, apiUrl)).revision).toBe(document.revision);
+});
+
+test("the title and companion column keep their own pointer interactions", async ({ page }) => {
+  await page.setViewportSize({ width: 1512, height: 900 });
+  const { apiUrl, document: original } = await createNote(
+    page,
+    "页面点击范围.md",
+    "由正文纸面接收输入。",
+  );
+  const heading = page
+    .getByRole("main")
+    .getByRole("heading", { name: "页面点击范围", exact: true });
+  await heading.click({ position: { x: 10, y: 20 } });
+  const body = editor(page, "Markdown 正文");
+  await expect(body).toHaveCount(0);
+  await openDocumentTool(page, "引用");
+  const pane = page.getByRole("region", { name: "文档辅助区" });
+  await pane.getByRole("heading", { name: "引用本篇" }).click();
+  const box = (await pane.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height + 20);
+  await expect(body).toHaveCount(0);
+  await expect(page.getByRole("article")).toBeVisible();
+  expect((await readNote(page, apiUrl)).revision).toBe(original.revision);
 });

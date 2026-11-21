@@ -1,3 +1,4 @@
+import { Icon } from "../Icon";
 import { useMemo, useState } from "react";
 import { Collection, Group, Tree, TreeItem, TreeItemContent } from "react-aria-components";
 import { Button } from "../Button";
@@ -11,6 +12,7 @@ type Entry = {
   id: string;
   name: string;
   folder: string;
+  filename?: string;
   children?: Entry[];
 };
 
@@ -19,7 +21,7 @@ function entries(documents: readonly DocumentSummary[]) {
   const folders = new Map<string, Entry[]>();
   for (const document of documents) {
     const parts = document.path.split("/");
-    parts.pop();
+    const filename = parts.pop() ?? document.path;
     let current = tree;
     let path = "";
     for (const part of parts) {
@@ -32,7 +34,7 @@ function entries(documents: readonly DocumentSummary[]) {
       }
       current = children;
     }
-    current.push({ id: document.id, name: document.title, folder: parts.join("/") });
+    current.push({ id: document.id, name: document.title, filename, folder: parts.join("/") });
   }
   return { tree, folders };
 }
@@ -57,7 +59,7 @@ function MoreButton({
           if (event.target instanceof HTMLElement) openMenu(event.target, folder);
         }}
       >
-        <span aria-hidden="true" className={styles.moreIcon} />
+        <Icon name="ellipsis" className={styles.moreIcon} />
       </Button>
     </Tooltip>
   );
@@ -95,6 +97,8 @@ function EntryRow({
       className={styles.row}
       {...(!entry.children && { onAction: () => open(entry.id) })}
       data-context-folder={entry.folder}
+      data-context-document={entry.children ? undefined : entry.id}
+      aria-description={entry.filename}
     >
       <TreeItemContent>
         {({ level, isExpanded, isSelected }) => (
@@ -105,16 +109,23 @@ function EntryRow({
           >
             {entry.children ? (
               <Button slot="chevron" className={styles.disclosure}>
-                <span aria-hidden="true">{isExpanded ? "▾" : "▸"}</span>
+                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} />
               </Button>
             ) : (
               <span className={styles.leaf} aria-hidden="true">
-                •
+                <Icon name="file-text" />
               </span>
             )}
-            <span title={entry.name} className={styles.label}>
-              {entry.name}
-            </span>
+            <div className={styles.labels}>
+              <span title={entry.name} className={styles.label}>
+                {entry.name}
+              </span>
+              {entry.filename && entry.filename !== entry.name + ".md" && (
+                <small className={styles.label} title={entry.filename}>
+                  {entry.filename}
+                </small>
+              )}
+            </div>
             {openMenu && (
               <MoreButton name={`${entry.name}更多`} folder={entry.folder} openMenu={openMenu} />
             )}

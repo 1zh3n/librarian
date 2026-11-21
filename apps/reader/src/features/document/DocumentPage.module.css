@@ -48,37 +48,6 @@
   color: var(--ink-secondary);
 }
 
-.icon {
-  display: inline-block;
-  flex: 0 0 auto;
-  inline-size: 1em;
-  block-size: 1em;
-  mask: var(--icon) no-repeat center / contain;
-  background: currentColor;
-}
-
-.icon[data-icon="align-left"] {
-  --icon: url("lucide-static/icons/align-left.svg");
-}
-.icon[data-icon="sparkles"] {
-  --icon: url("lucide-static/icons/sparkles.svg");
-}
-.icon[data-icon="history"] {
-  --icon: url("lucide-static/icons/history.svg");
-}
-.icon[data-icon="link"] {
-  --icon: url("lucide-static/icons/link.svg");
-}
-.icon[data-icon="panel-right"] {
-  --icon: url("lucide-static/icons/panel-right.svg");
-}
-.icon[data-icon="panel-right-close"] {
-  --icon: url("lucide-static/icons/panel-right-close.svg");
-}
-.icon[data-icon="ellipsis"] {
-  --icon: url("lucide-static/icons/ellipsis.svg");
-}
-
 .actionButton {
   min-height: 36px;
   padding-inline: 0.625rem;
@@ -197,7 +166,7 @@
 }
 
 @container (max-width: 272px) {
-  .toolTab .icon {
+  .toolTab .tabIcon {
     display: none;
   }
 }

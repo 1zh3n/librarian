@@ -1,3 +1,4 @@
+import { Icon } from "../../ui/Icon";
 import { Feedback } from "../../ui/Feedback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
@@ -18,7 +19,7 @@ import { relativeDocumentPath } from "../../markdown/relativePath";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
 import { AiPanel } from "../ai/AiPanel";
 import { ContextUnavailable } from "../ai/aiContext";
-import { readerSelection } from "../ai/readerSelection";
+import { readerCaretOffset, readerSelection } from "../ai/readerSelection";
 import { contextSelection } from "../reading/contextSelection";
 import { isEditingTarget, useReaderLayout } from "../reading/readingFocus";
 import {
@@ -32,7 +33,7 @@ import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
 import { DocumentContents, headingAtReadingPosition } from "./DocumentContents";
 import { DocumentReferencesPanel } from "./DocumentReferencesPanel";
-import { readingPositionAtClick } from "./readingPositionAtClick";
+import { textCaretAtClick } from "./readingPositionAtClick";
 import { placeInlineTool } from "./inlineTool";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
@@ -110,8 +111,15 @@ function DocumentWorkspace({
   writable: boolean;
 }) {
   const { id: documentId, title } = snapshot.document;
-  const { focus, preferences, createdDocument, clearCreatedDocument, navigationCancelled } =
-    useReaderLayout();
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const {
+    focus,
+    preferences,
+    createdDocument,
+    clearCreatedDocument,
+    navigationCancelled,
+    renameDocument,
+  } = useReaderLayout();
   const navigate = useNavigate();
   const documents = useQuery(documentsQuery(workspace)).data;
   const path = snapshot.document.path;
@@ -597,17 +605,22 @@ function DocumentWorkspace({
     );
   }
 
+  const appendOnMount = useRef(false);
   const enterEditor = useCallback(
-    (next: "preview" | "source", position?: number) => {
+    (next: "preview" | "source", position?: number | "append") => {
       if (!writable || restoringVersion || body.editor.isComposing()) return;
       if (mode === "read") {
         savedSelection.current = undefined;
         savedEditorSelection.current = undefined;
         const viewport = canvas.current?.closest("main");
-        const anchor = viewport ? captureReaderAnchor(viewport, analysis.blocks) : undefined;
+        appendOnMount.current = position === "append";
+        const anchor =
+          viewport && position !== "append"
+            ? captureReaderAnchor(viewport, analysis.blocks)
+            : undefined;
         body.editor.trackAnchor(anchor);
         pendingAnchor.current = anchor ? { anchor, sameRevision: true } : undefined;
-        if (position !== undefined && reading.source === body.editor.source()) {
+        if (typeof position === "number" && reading.source === body.editor.source()) {
           body.editor.select({ anchor: position, head: position });
         }
       }
@@ -701,7 +714,13 @@ function DocumentWorkspace({
 
   const mountBody = useCallback(
     (parent: HTMLDivElement | null) => {
-      if (parent) return body.editor.mount(parent);
+      if (!parent) return;
+      const unmount = body.editor.mount(parent);
+      if (appendOnMount.current) {
+        appendOnMount.current = false;
+        body.editor.appendBlankLine();
+      }
+      return unmount;
     },
     [body],
   );
@@ -814,10 +833,13 @@ function DocumentWorkspace({
   ]);
 
   useEffect(() => {
-    const surface = canvas.current?.querySelector<HTMLElement>(`.${styles.paper}`);
+    const column = canvas.current;
+    const grid = column?.parentElement;
+    const page = grid?.closest<HTMLElement>(`.${styles.page}`);
+    const surface = column?.querySelector<HTMLElement>(`.${styles.paper}`);
     const article = surface?.querySelector("article");
-    if (mode !== "read" || !writable || !surface || !article) return;
-    function click(event: MouseEvent) {
+    if (!writable || restoringVersion || !page || !surface) return;
+    const click = (event: MouseEvent) => {
       const target = event.target;
       if (
         !(target instanceof Element) ||
@@ -827,18 +849,44 @@ function DocumentWorkspace({
         event.ctrlKey ||
         event.altKey ||
         event.shiftKey ||
-        target.closest("a, button, input, textarea, select") ||
+        target.closest("a, button, input, textarea, select, img, [contenteditable='false']") ||
         !window.getSelection()?.isCollapsed
       )
         return;
-      if (article) {
-        const offset = readingPositionAtClick(article, target, event, reading.source, analysis);
-        enterEditor("preview", offset);
+      if (!surface.contains(target)) {
+        // Only the document background is writable outside the body.
+        if (
+          target !== page &&
+          target !== grid &&
+          target !== column &&
+          target !== toolbar.current &&
+          !target.matches(`.${styles.title}`)
+        )
+          return;
+        const pane = toolPane.current;
+        if (
+          pane &&
+          !pane.hidden &&
+          getComputedStyle(pane).getPropertyValue("--inline-tool").trim() === "0" &&
+          event.clientX >= pane.getBoundingClientRect().left
+        )
+          return;
       }
-    }
-    surface.addEventListener("click", click);
-    return () => surface.removeEventListener("click", click);
-  }, [analysis, enterEditor, mode, reading.source, writable]);
+      const caret = textCaretAtClick(page, event);
+      if (caret && !surface.contains(caret.node)) return;
+      if (article) {
+        const position = caret
+          ? readerCaretOffset(article, caret, reading.source, analysis)
+          : "append";
+        enterEditor("preview", position);
+      } else if (!caret && !body.editor.isComposing()) {
+        body.editor.appendBlankLine();
+        body.editor.focus();
+      }
+    };
+    page.addEventListener("click", click);
+    return () => page.removeEventListener("click", click);
+  }, [analysis, body, enterEditor, mode, reading.source, restoringVersion, writable]);
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -914,7 +962,7 @@ function DocumentWorkspace({
             onPress={() => setTool(rememberedTab)}
             className={styles.iconButton}
           >
-            <span className={styles.icon} data-icon="panel-right" aria-hidden="true" />
+            <Icon name="panel-right" />
           </Button>
         )}
         {(writable || semantic.length > 0 || analysis.headings.length > 0) && (
@@ -923,11 +971,12 @@ function DocumentWorkspace({
             popoverClassName={styles.menu}
             trigger={
               <Button
+                ref={moreButton}
                 aria-label="文档更多"
                 className={styles.iconButton}
                 isDisabled={restoringVersion}
               >
-                <span className={styles.icon} data-icon="ellipsis" aria-hidden="true" />
+                <Icon name="ellipsis" />
               </Button>
             }
             items={[
@@ -942,6 +991,18 @@ function DocumentWorkspace({
                       run: () => enterEditor(mode === "source" ? "preview" : "source"),
                     },
                     { id: "metadata", label: "文档属性", run: () => setTool("metadata") },
+                  ]
+                : []),
+              ...(renameDocument
+                ? [
+                    {
+                      id: "rename",
+                      label: "重命名…",
+                      run: () => {
+                        if (moreButton.current)
+                          renameDocument(snapshot.document, moreButton.current);
+                      },
+                    },
                   ]
                 : []),
               ...(writable && !outlineEnabled && (!showOutline || missingCitedOutline)

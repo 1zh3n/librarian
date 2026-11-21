@@ -112,7 +112,10 @@ test("declining to leave a draft for the new workspace form stays in the source 
     if (route.request().method() === "PUT") await route.fulfill({ status: 503 });
     else await route.continue();
   });
-  await page.getByRole("article").getByText("未离开的正文。").click();
+  await page
+    .getByRole("article")
+    .getByText("未离开的正文。")
+    .click({ position: { x: 8, y: 16 } });
   await page.getByRole("textbox", { name: "Markdown 正文" }).press("End");
   await page.keyboard.insertText("保留草稿");
   const picker = page.getByRole("button", { name: /田野笔记/ });

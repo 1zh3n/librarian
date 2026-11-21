@@ -5,7 +5,7 @@ declare const styles: {
   readonly citationNotice: string;
   readonly iconButton: string;
   readonly closePane: string;
-  readonly icon: string;
+  readonly tabIcon: string;
   readonly actionButton: string;
   readonly documentGrid: string;
   readonly toolPane: string;

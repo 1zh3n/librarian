@@ -20,36 +20,15 @@
 }
 
 .mark {
-  position: relative;
+  display: grid;
+  place-items: center;
+  font-size: 1.625rem;
   inline-size: 3rem;
   block-size: 3rem;
   margin-block-end: 1.3rem;
   border-radius: 0.9rem;
   color: light-dark(#fff, #182637);
   background: var(--accent);
-}
-
-.mark::before,
-.mark::after {
-  position: absolute;
-  inline-size: 0.75rem;
-  block-size: 1.05rem;
-  border: 1.5px solid currentColor;
-  content: "";
-}
-
-.mark::before {
-  inset-block-start: 0.9rem;
-  inset-inline-start: 0.74rem;
-  border-radius: 0.18rem 0.32rem 0.08rem 0.18rem;
-  transform: skewY(9deg);
-}
-
-.mark::after {
-  inset-block-start: 0.9rem;
-  inset-inline-end: 0.74rem;
-  border-radius: 0.32rem 0.18rem 0.18rem 0.08rem;
-  transform: skewY(-9deg);
 }
 
 .heading {

@@ -23,7 +23,10 @@ test("reads a saved diff and restores it as a new Git commit", async ({ page }) 
   await expect(panel.getByRole("button", { name: /Create HistoryRoundTrip.md/ })).toBeVisible();
   await expect(panel.getByText("当前修改等待归档")).toHaveCount(0);
 
-  await page.getByRole("article").getByText("初始稿").click();
+  await page
+    .getByRole("article")
+    .getByText("初始稿")
+    .click({ position: { x: 8, y: 16 } });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+End");
   await page.keyboard.insertText("编辑的新版本");
