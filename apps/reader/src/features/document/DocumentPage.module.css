@@ -490,9 +490,9 @@
   inset-block-end: 1rem;
   z-index: 1;
   display: grid;
+  width: min(25rem, calc(100vw - 2rem));
   justify-items: end;
   gap: 0.5rem;
-  max-width: min(25rem, calc(100vw - 2rem));
 }
 
 .semanticControls {
@@ -533,14 +533,129 @@
 
 .saveError {
   display: flex;
+  width: 100%;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
   border-color: var(--border-strong);
+  text-align: start;
 }
 
-.saveError span {
+.saveError > span {
   flex-basis: 100%;
+}
+
+.saveActions {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.saveActions button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.saveHint {
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.dialogText {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--ui-size);
+  line-height: 1.6;
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.dangerButton {
+  border-color: var(--control-invalid);
+  color: var(--control-invalid);
+}
+
+.overlay {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: min(10vh, 5rem) 1rem 1rem;
+  background: var(--overlay);
+}
+
+.modal {
+  width: min(100%, 44rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dialog {
+  display: grid;
+  gap: 0.875rem;
+  padding: 1rem;
+  outline: 0;
+}
+
+.mergeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.mergeSide {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.mergeSide h3 {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.mergePreview {
+  max-height: 9rem;
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mergeInput {
+  min-height: 12rem;
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+}
+
+@media (max-width: 36rem) {
+  .mergeGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mergePreview {
+    max-height: 6rem;
+  }
 }
 
 @keyframes hideSaved {

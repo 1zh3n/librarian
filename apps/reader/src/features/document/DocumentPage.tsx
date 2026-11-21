@@ -711,6 +711,16 @@ function DocumentWorkspace({
     [analysis, body, mode, reading, restoringVersion, writable],
   );
 
+  const continueAfterSaveConflict = useCallback(() => {
+    const source = body.editor.source();
+    setReading((previous) =>
+      source === previous.source
+        ? previous
+        : { source, analysis: reanalyzeMarkdown(source, documentId, previous) },
+    );
+    enterEditor("preview");
+  }, [body, documentId, enterEditor]);
+
   useEffect(() => {
     if (createdDocument !== documentId || !writable || modeRef.current !== "read") return;
     enterEditor("preview", 0);
@@ -1260,9 +1270,19 @@ function DocumentWorkspace({
         </fieldset>
       )}
       <div className={styles.saveNotices}>
-        <SaveNotice saves={body.saves} editor={body.editor} kind="body" />
+        <SaveNotice
+          saves={body.saves}
+          editor={body.editor}
+          kind="body"
+          onResolved={continueAfterSaveConflict}
+        />
         {outlineSession && (
-          <SaveNotice saves={outlineSession.saves} editor={outlineSession.editor} kind="outline" />
+          <SaveNotice
+            saves={outlineSession.saves}
+            editor={outlineSession.editor}
+            kind="outline"
+            onResolved={() => outlineSession.editor.focus()}
+          />
         )}
       </div>
     </div>

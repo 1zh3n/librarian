@@ -11,6 +11,30 @@ async function readNote(page: Page, path: string) {
   return (await (await page.request.get(path)).json()) as DocumentSnapshot;
 }
 
+async function createStaleDraft(
+  page: Page,
+  path: string,
+  remoteMarkdown: string,
+  localSuffix: string,
+) {
+  const { apiUrl, document, origin } = await createNote(page, path, "共同原件");
+  await page
+    .getByRole("article")
+    .getByText("共同原件")
+    .click({ position: { x: 8, y: 16 } });
+  const body = editor(page, "Markdown 正文");
+  await body.press("Control+End");
+  const remote = await page.request.put(apiUrl, {
+    headers: { origin },
+    data: { markdown: remoteMarkdown, baseRevision: document.revision },
+  });
+  expect(remote.ok()).toBe(true);
+  await page.keyboard.insertText(localSuffix);
+  await expect(page.getByRole("alert")).toContainText("服务器上的正文已更新");
+  await expect(page.getByRole("button", { name: "合并…" })).toBeVisible();
+  return { apiUrl, body };
+}
+
 test("edits in place without a canvas outline and resumes reading when focus leaves", async ({
   page,
 }) => {
@@ -413,6 +437,42 @@ test("outline and body use independent revisions and sessions", async ({ page })
   });
 });
 
+test("outline conflicts recover through the same merge path", async ({ page }) => {
+  const { apiUrl, origin } = await createNote(
+    page,
+    "OutlineConflict.md",
+    "# 记录\n\n正文保持原样。\n",
+  );
+  await page.getByRole("button", { name: "文档更多" }).click();
+  await page.getByRole("menuitem", { name: "添加提纲" }).click();
+  const outline = editor(page, "Markdown 提纲");
+  await expect(outline).toBeFocused();
+  await page.keyboard.insertText("初始提纲");
+  const persisted = async () =>
+    (await (await page.request.get(`${apiUrl}/outline`)).json()) as OutlineSnapshot;
+  await expect.poll(async () => (await persisted()).markdown).toBe("初始提纲");
+  const base = await persisted();
+  const remote = await page.request.put(`${apiUrl}/outline`, {
+    headers: { origin },
+    data: { markdown: "远端提纲", baseRevision: base.revision },
+  });
+  expect(remote.ok()).toBe(true);
+  await outline.press("Control+End");
+  await page.keyboard.insertText("本地续写");
+  await expect(page.getByRole("alert")).toContainText("服务器上的提纲已更新");
+  await page.getByRole("button", { name: "合并…" }).click();
+  const dialog = page.getByRole("dialog", { name: "合并提纲冲突" });
+  await expect(dialog.getByLabel("服务器版本")).toContainText("远端提纲");
+  await expect(dialog.getByLabel("本地草稿")).toContainText("初始提纲本地续写");
+  await dialog.getByLabel("合并结果").fill("合并提纲");
+  await dialog.getByRole("button", { name: "保存合并结果" }).click();
+  await expect.poll(async () => (await persisted()).markdown).toBe("合并提纲");
+  await expect(page.getByText("已保存")).toBeVisible();
+  await outline.press("Control+End");
+  await page.keyboard.insertText("继续");
+  await expect.poll(async () => (await persisted()).markdown).toBe("合并提纲继续");
+});
+
 test("source mode reuses the selection and undo history", async ({ page }) => {
   const { apiUrl } = await createNote(page, "SourceMode.md", "---\ntitle: 同一会话\n---\n\n初稿\n");
   await page
@@ -453,23 +513,137 @@ test("connectivity loss retains the draft and reconnect saves it", async ({ page
   await expect(page.getByText("已保存")).toBeVisible();
 });
 
-test("a stale save keeps the local buffer and the remote file", async ({ page }) => {
-  const { apiUrl, document, origin } = await createNote(page, "StaleBody.md", "共同原件");
-  await page
-    .getByRole("article")
-    .getByText("共同原件")
-    .click({ position: { x: 8, y: 16 } });
-  const body = editor(page, "Markdown 正文");
-  await body.press("Control+End");
-  const remote = await page.request.put(apiUrl, {
-    headers: { origin },
-    data: { markdown: "远程版本", baseRevision: document.revision },
-  });
-  expect(remote.ok()).toBe(true);
-  await page.keyboard.insertText("本地草稿");
-  await expect(page.getByRole("alert")).toContainText("服务器上的正文已更新");
+test("a stale save keeps the local buffer and the remote file", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { apiUrl, body } = await createStaleDraft(page, "StaleBody.md", "远程版本", "本地草稿");
   await expect(body).toContainText("共同原件本地草稿");
   expect((await readNote(page, apiUrl)).markdown).toBe("远程版本");
+  await page.screenshot({ path: testInfo.outputPath("save-conflict-1440.png") });
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载草稿" }).click();
+  expect((await download).suggestedFilename()).toBe("正文-本地草稿.md");
+});
+
+test("reloading a stale body replaces the draft and keeps saving on the remote revision", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { apiUrl, body } = await createStaleDraft(
+    page,
+    "ReloadStaleBody.md",
+    "远程版本",
+    "本地草稿",
+  );
+  await page.getByRole("button", { name: "重新加载远端" }).click();
+  const dialog = page.getByRole("dialog", { name: "重新加载远端正文" });
+  await expect(dialog).toContainText("本地修改将被服务器版本替换");
+  await page.screenshot({ path: testInfo.outputPath("save-conflict-reload-confirm-1440.png") });
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(page.getByRole("article")).toContainText("共同原件本地草稿");
+  await expect(page.getByRole("button", { name: "重新加载远端" })).toBeVisible();
+
+  await page.getByRole("button", { name: "重新加载远端" }).click();
+  await page
+    .getByRole("dialog", { name: "重新加载远端正文" })
+    .getByRole("button", { name: "重新加载" })
+    .click();
+  await expect(body).toContainText("远程版本");
+  await expect(body).not.toContainText("本地草稿");
+  await expect(page.getByText("已保存")).toBeVisible();
+  await body.press("Control+End");
+  await page.keyboard.insertText("，重载后");
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe("远程版本，重载后");
+});
+
+test("keeping the local draft overwrites the remote body and continues saving", async ({
+  page,
+}) => {
+  const { apiUrl, body } = await createStaleDraft(
+    page,
+    "OverwriteStaleBody.md",
+    "远程版本",
+    "本地草稿",
+  );
+  await page.getByRole("button", { name: "保留本地覆盖" }).click();
+  const dialog = page.getByRole("dialog", { name: "保留本地覆盖" });
+  await expect(dialog).toContainText("服务器上的当前正文将被本地草稿覆盖");
+  await dialog.getByRole("button", { name: "覆盖远端" }).click();
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe("共同原件本地草稿");
+  await expect(page.getByText("已保存")).toBeVisible();
+  await body.press("Control+End");
+  await page.keyboard.insertText("继续");
+  await expect
+    .poll(async () => (await readNote(page, apiUrl)).markdown)
+    .toBe("共同原件本地草稿继续");
+});
+
+test("merging a stale body keeps both versions editable and then saves normally", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { apiUrl, body } = await createStaleDraft(
+    page,
+    "MergeStaleBody.md",
+    "远程版本",
+    "本地草稿",
+  );
+  await page.getByRole("button", { name: "合并…" }).click();
+  const dialog = page.getByRole("dialog", { name: "合并正文冲突" });
+  await expect(dialog.getByLabel("服务器版本")).toContainText("远程版本");
+  await expect(dialog.getByLabel("本地草稿")).toContainText("共同原件本地草稿");
+  await page.screenshot({ path: testInfo.outputPath("save-conflict-merge-1440.png") });
+  const result = dialog.getByLabel("合并结果");
+  await expect(result).toHaveValue("共同原件本地草稿");
+  await result.fill("共同原件与远程版本");
+  await dialog.getByRole("button", { name: "保存合并结果" }).click();
+  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe("共同原件与远程版本");
+  await expect(page.getByText("已保存")).toBeVisible();
+  await body.press("Control+End");
+  await page.keyboard.insertText("继续");
+  await expect
+    .poll(async () => (await readNote(page, apiUrl)).markdown)
+    .toBe("共同原件与远程版本继续");
+});
+
+test("save conflict actions remain reachable at 320px with doubled text", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await createStaleDraft(page, "NarrowStaleBody.md", "远程版本", "本地草稿");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("save-conflict-390.png") });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.screenshot({ path: testInfo.outputPath("save-conflict-320.png") });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  for (const name of ["合并…", "重新加载远端", "保留本地覆盖", "下载草稿"]) {
+    await expect(page.getByRole("button", { name })).toBeVisible();
+  }
+  await page.screenshot({ path: testInfo.outputPath("save-conflict-320-200.png") });
+  const fit = await page.getByRole("alert").evaluate((alert) => {
+    const bounds = alert.getBoundingClientRect();
+    return {
+      left: bounds.left,
+      right: bounds.right,
+      width: bounds.width,
+      viewport: window.innerWidth,
+      scrollWidth: alert.scrollWidth,
+      clientWidth: alert.clientWidth,
+    };
+  });
+  expect(fit.left).toBeGreaterThanOrEqual(0);
+  expect(fit.right).toBeLessThanOrEqual(fit.viewport);
+  expect(fit.scrollWidth).toBeLessThanOrEqual(fit.clientWidth);
+
+  await page.getByRole("button", { name: "合并…" }).click();
+  const dialog = page.getByRole("dialog", { name: "合并正文冲突" });
+  await expect(dialog.getByLabel("合并结果")).toBeVisible();
+  const bounds = await dialog.boundingBox();
+  expect(bounds?.x ?? 0).toBeGreaterThanOrEqual(0);
+  expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(320);
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(page.getByRole("button", { name: "合并…" })).toBeFocused();
 });
 
 test("adding a tag through the document uses a byte-preserving save", async ({ page }) => {

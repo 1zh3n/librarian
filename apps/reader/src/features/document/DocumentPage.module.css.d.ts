@@ -30,6 +30,18 @@ declare const styles: {
   readonly semanticControls: string;
   readonly saved: string;
   readonly saveError: string;
+  readonly saveActions: string;
+  readonly saveHint: string;
+  readonly dialogText: string;
+  readonly dialogActions: string;
+  readonly dangerButton: string;
+  readonly overlay: string;
+  readonly modal: string;
+  readonly dialog: string;
+  readonly mergeGrid: string;
+  readonly mergeSide: string;
+  readonly mergePreview: string;
+  readonly mergeInput: string;
   readonly message: string;
 };
 export default styles;
