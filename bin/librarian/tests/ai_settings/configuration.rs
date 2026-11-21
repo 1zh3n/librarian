@@ -238,3 +238,49 @@ async fn activating_an_online_runner_commits_one_replayable_default_without_a_pr
     assert_eq!(activate(admin, other).await.0, StatusCode::CONFLICT);
     assert_eq!(provider.requests.lock().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn saved_connection_probe_is_scoped_and_expires_without_switching_dispatch() {
+    let provider =
+        Provider::start(vec![Json(json!({"data":[{"id":"one"}]})).into_response()]).await;
+    let app = App::new(Some(&provider.addr));
+    let admin = app.login("admin").await;
+    let reader = app.login("reader").await;
+    let (_, discovery) = app.discover(&admin, ORIGIN, draft(&provider.base())).await;
+    let (_, saved)=settings(&app,&admin,"POST","/connections",json!({
+        "label":"诊断","provider":"deepseek","baseUrl":provider.base(),"discoveryId":discovery["discoveryId"],
+        "keyChange":{"kind":"replace","apiKey":KEY}
+    })).await;
+    let path = format!("/connections/{}/probe", saved["id"].as_str().unwrap());
+    let request = json!({"modelId":"one","thinking":{"mode":"provider_default"}});
+    assert_eq!(
+        settings(&app, &reader, "POST", &path, request.clone())
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, probe) = settings(&app, &admin, "POST", &path, request).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{probe}");
+    assert_eq!(probe["status"], "queued");
+    let id = probe["id"].as_str().unwrap();
+    let get = format!("/probes/{id}");
+    assert_eq!(
+        settings(&app, &reader, "GET", &get, Value::Null).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let db =
+        rusqlite::Connection::open(app._root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute(
+        "UPDATE ai_probes SET created_at=unixepoch()-121 WHERE id=?",
+        [id],
+    )
+    .unwrap();
+    let (status, expired) = settings(&app, &admin, "GET", &get, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(expired["status"], "failed");
+    assert_eq!(expired["errorCode"], "queue_timeout");
+    let (_, state) = settings(&app, &admin, "GET", "", Value::Null).await;
+    assert_eq!(state["dispatchMode"], "legacy");
+    assert_eq!(state["connections"][0]["enabled"], false);
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+}

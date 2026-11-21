@@ -7,6 +7,7 @@ declare const styles: {
   readonly question: string;
   readonly answer: string;
   readonly sources: string;
+  readonly composer: string;
   readonly form: string;
   readonly prompt: string;
   readonly actions: string;

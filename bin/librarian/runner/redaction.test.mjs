@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ca, identity, message, modelKey, provider, service, task } from "./fixtures.mjs";
+import { ca, identity, message, modelKey, provider, service, task, until } from "./fixtures.mjs";
 import { runOnce } from "./runner.mjs";
 
-function textStream(res, pieces) {
+async function textStream(res, pieces, beforeEnd) {
   res.writeHead(200, { "content-type": "text/event-stream" });
   const frame = (type, fields = {}) =>
     res.write(`data: ${JSON.stringify({ type, ...fields })}\n\n`);
@@ -11,6 +11,7 @@ function textStream(res, pieces) {
   frame("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
   for (const text of pieces)
     frame("content_block_delta", { index: 0, delta: { type: "text_delta", text } });
+  await beforeEnd?.();
   frame("content_block_stop", { index: 0 });
   frame("message_delta", { delta: { stop_reason: "end_turn" } });
   frame("message_stop");
@@ -86,4 +87,23 @@ test("edit summary cannot persist an echoed credential", async (t) => {
     false,
   );
   assert.ok(calls.some((c) => c.route.endsWith("/fail")));
+});
+
+test("a short batch is delivered during provider silence, replaying the exact event if the receipt is lost", async t => {
+  let s;
+  const p = await provider(t, (_,res,n) => n === 1 ? message(res,{text:"ready"})
+    : textStream(res, ["甲","乙"], () => until(() => s.calls.filter(c => c.body?.text === "乙").length === 2, 2000)));
+  let lost = false;
+  s = await service(t, {claim:task(),messagesUrl:p.messagesUrl,override: (c,res) => {
+    if (c.body?.text === "乙" && !lost) {
+      lost = true;
+      res.destroy();
+      return true;
+    }
+  }});
+  await runOnce({librarianUrl:s.librarianUrl,identity,ca,signal:AbortSignal.timeout(7000)});
+  const events = s.calls.filter(c => c.body?.kind === "text_delta").map(c => c.body);
+  assert.deepEqual(events.map(e => e.text), ["甲","乙","乙"]);
+  assert.deepEqual(events[1],events[2]);
+  assert.equal(s.calls.find(c => c.route.endsWith("/result"))?.body.answer,"甲乙");
 });

@@ -223,6 +223,7 @@ impl Metadata {
             return Err(rusqlite::Error::InvalidQuery);
         }
         super::ai_configuration::migrate(&transaction)?;
+        super::ai_probes::migrate(&transaction)?;
         super::ai_conversations::migrate(&transaction)?;
         super::ai_materials::migrate(&transaction)?;
         transaction.commit()?;

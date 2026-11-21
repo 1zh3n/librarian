@@ -20,7 +20,7 @@ function certificate() {
   writeFileSync(path, key, { mode: 0o600 });
   return execFileSync("openssl", [
   "req", "-x509", "-new", "-key", path, "-days", "1",
-  "-subj", "/CN=" + name, "-addext", "subjectAltName=DNS:" + name,
+  "-subj", "/CN=" + name, "-addext", "subjectAltName=IP:127.0.0.1,DNS:" + name,
 ], { encoding: "utf8", });
 }
 export const ca = certificate();
@@ -41,7 +41,7 @@ async function bodyOf(request) {
   return parts.length ? JSON.parse(Buffer.concat(parts)) : null;
 }
 
-export function message(response, { text = "", thought, signature, tool, args, beforeEnd }) {
+export function message(response, { text = "", thought, signature, tool, toolId = "call_fixture", args, beforeEnd }) {
   response.writeHead(200, { "content-type": "text/event-stream" });
   const event = (type, fields = {}) => response.write(
     `event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`,
@@ -55,7 +55,7 @@ export function message(response, { text = "", thought, signature, tool, args, b
     event("content_block_stop", { index: index++ });
   }
   event("content_block_start", { index, content_block: tool
-    ? { type: "tool_use", id: "call_fixture", name: tool, input: {} }
+    ? { type: "tool_use", id: toolId, name: tool, input: {} }
     : { type: "text", text: "" } });
   if (tool) {
     event("content_block_delta", { index, delta: { type: "input_json_delta", partial_json: JSON.stringify(args) } });
@@ -118,7 +118,7 @@ export async function service(t, { claim, messagesUrl, override }) {
       case "provider": return json({ messagesUrl, pinnedIp: "127.0.0.1", apiKey: modelKey }, 200, { "cache-control": "no-store" });
       case "events": case "result": case "fail": return json({});
       case "renew": return json({ expiresAt: Math.floor(Date.now() / 1000) + 120 });
-      case "documents": return json([{ id: "doc", title: "合成", path: "demo.md" }]);
+      case "documents": return json([{ id: "doc", title: "合成", path: "demo.md", outlineEnabled: false }]);
       case "sources": return json({ markdown: "参考", source: { id: "source-1", path: "demo.md", revision: "r1" } });
       default: return json({}, 404);
     }

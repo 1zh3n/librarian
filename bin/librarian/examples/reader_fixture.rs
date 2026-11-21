@@ -89,7 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(metadata.join("ai-test-loopback"), "127.0.0.1:9")?;
     }
     let app = librarian::Product::open(root.path(), port).map_err(io::Error::other)?;
-    if managed_materials { material_fixture::configure(root.path())?; }
+    if managed_materials {
+        material_fixture::configure(root.path())?;
+    }
     configure_release_targets(
         root.path(),
         release_targets.path(),

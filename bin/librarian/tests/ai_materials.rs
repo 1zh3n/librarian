@@ -377,7 +377,7 @@ async fn checks_authority_and_mime_before_accepting_file_body() {
 
 #[tokio::test]
 async fn binds_ready_selection_once_and_rolls_back_invalid_batches() {
-    let f = Site::open().await;
+    let f = Site::managed().await;
     let base = f.conversation().await;
     let turns = base.replace("/materials", "/turns");
     let first = f
@@ -450,7 +450,7 @@ async fn deleting_conversation_immediately_clears_originals_and_segments() {
 
 #[tokio::test]
 async fn rejects_more_than_25_mib_without_extending_any_expiry() {
-    let f = Site::open().await;
+    let f = Site::managed().await;
     let base = f.conversation().await;
     let mut bytes = vec![b' '; 9 * 1024 * 1024];
     bytes[..4].copy_from_slice(b"note");
@@ -512,15 +512,7 @@ fn distinguishes_encrypted_and_image_only_pdf() {
 
 #[tokio::test]
 async fn omits_expired_material_excerpt_from_next_request() {
-    // Emulate an already-completed turn in an upgraded installation. The next
-    // request still goes through real authentication, dispatch and claim history.
-    let mut f = Site::open().await;
-    let token = "synthetic-history-worker";
-    fs::write(
-        f.root.path().join(".librarian/runner-token.sha256"),
-        silverbullet_server_common::revision::sha256_hex(token.as_bytes()),
-    )
-    .unwrap();
+    let mut f = Site::managed().await;
     let base = f.conversation().await;
     let m = f
         .upload(
@@ -536,44 +528,40 @@ async fn omits_expired_material_excerpt_from_next_request() {
     let send = |n, ids: Value| {
         json!({"mode":"chat","prompt":format!("round {n}"),"clientTurnId":format!("test-{n}"),"materialIds":ids}).to_string().into_bytes()
     };
-    let claims = "/ai/runner/claims";
     for n in 1..=2 {
         let ids = if n == 1 { json!([id]) } else { json!([]) };
         let turn = f
             .request(&f.token, "POST", &turns, "application/json", send(n, ids))
             .await;
         assert_eq!(turn.0, 202, "{}", turn.1);
-        let claim = f
-            .request(token, "POST", claims, "application/json", b"{}".to_vec())
-            .await
-            .1;
+        let (status, claim) = f.runner("POST", "claims", json!({})).await;
+        assert_eq!(status, 200, "{claim}");
         let lease = claim["leaseId"].as_str().unwrap();
+        let mut sources = vec![];
         if n == 1 {
-            let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3"))
-                .unwrap();
-            db.execute(
-                "INSERT INTO ai_material_reads(operation_id,material_id) VALUES (?1,?2)",
-                [claim["operationId"].as_str().unwrap(), id],
-            )
-            .unwrap();
+            let (status, read) = f
+                .runner(
+                    "GET",
+                    &format!("claims/{lease}/materials/{id}/segments/s1"),
+                    Value::Null,
+                )
+                .await;
+            assert_eq!(status, 200, "{read}");
+            sources.push(read["source"]["id"].as_str().unwrap().to_owned());
         } else {
             assert_eq!(
                 claim["input"]["history"][0]["answer"],
                 "historical excerpt 1"
             );
         }
-        let (s, v) = f
-            .request(
-                token,
+        let (s, receipt) = f
+            .runner(
                 "PUT",
-                &format!("{claims}/{lease}/result"),
-                "application/json",
-                json!({"answer":format!("historical excerpt {n}"),"edits":[],"sourceIds":[]})
-                    .to_string()
-                    .into_bytes(),
+                &format!("claims/{lease}/result"),
+                json!({"answer":format!("historical excerpt {n}"),"edits":[],"sourceIds":sources}),
             )
             .await;
-        assert_eq!(s, 200, "{v}");
+        assert_eq!(s, 200, "{receipt}");
     }
     rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3"))
         .unwrap()
@@ -592,10 +580,8 @@ async fn omits_expired_material_excerpt_from_next_request() {
         .0,
         202
     );
-    let claim = f
-        .request(token, "POST", claims, "application/json", b"{}".to_vec())
-        .await
-        .1;
+    let (status, claim) = f.runner("POST", "claims", json!({})).await;
+    assert_eq!(status, 200, "{claim}");
     assert_eq!(claim["input"]["history"], json!([]));
     assert!(!claim.to_string().contains("historical excerpt"));
     let history = f.get(&turns).await;
@@ -607,6 +593,18 @@ async fn omits_expired_material_excerpt_from_next_request() {
 mod managed;
 
 impl Site {
+    async fn managed() -> Self {
+        let mut site = Self::open().await;
+        fs::write(
+            site.root.path().join(".librarian/ai-test-loopback"),
+            "127.0.0.1:9",
+        )
+        .unwrap();
+        managed::configure(site.root.path()).unwrap();
+        site.reopen();
+        site
+    }
+
     async fn runner(&self, method: &str, path: &str, body: Value) -> (u16, Value) {
         let res = self
             .app
@@ -634,14 +632,7 @@ impl Site {
 
 #[tokio::test]
 async fn cites_only_material_segments_actually_read() {
-    let mut f = Site::open().await;
-    fs::write(
-        f.root.path().join(".librarian/ai-test-loopback"),
-        "127.0.0.1:9",
-    )
-    .unwrap();
-    managed::configure(f.root.path()).unwrap();
-    f.reopen();
+    let f = Site::managed().await;
     let base = f.conversation().await;
     let mut ids = vec![];
     for (name, bytes) in [
@@ -783,14 +774,7 @@ async fn recovers_interrupted_job_and_rechecks_workspace_membership_on_every_rea
 
 #[tokio::test]
 async fn enforces_the_shared_document_and_material_lease_budget() {
-    let mut f = Site::open().await;
-    fs::write(
-        f.root.path().join(".librarian/ai-test-loopback"),
-        "127.0.0.1:9",
-    )
-    .unwrap();
-    managed::configure(f.root.path()).unwrap();
-    f.reopen();
+    let f = Site::managed().await;
     let doc = f
         .request(
             &f.token,
@@ -844,17 +828,81 @@ async fn enforces_the_shared_document_and_material_lease_budget() {
 
 #[test]
 fn handles_bom_text_and_local_ooxml_main_parts() {
-    let utf16=|value:&str| [vec![0xff,0xfe],value.encode_utf16().flat_map(u16::to_le_bytes).collect()].concat();
-    assert_eq!(parse("txt",&utf16("甲\r\n\r\n乙"))["segments"][1]["text"],"乙");
-    let mut zip=ZipWriter::new(Cursor::new(Vec::new()));
-    let opts=SimpleFileOptions::default();
-    for (name,content) in [
-        ("[Content_Types].xml",r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/parts/main.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#),
-        ("_rels/.rels",r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="parts/main.xml"/></Relationships>"#),
-        ("parts/main.xml",r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>本地部件</w:t></w:r></w:p></w:body></w:document>"#),
+    let utf16 = |value: &str| {
+        [
+            vec![0xff, 0xfe],
+            value.encode_utf16().flat_map(u16::to_le_bytes).collect(),
+        ]
+        .concat()
+    };
+    assert_eq!(
+        parse("txt", &utf16("甲\r\n\r\n乙"))["segments"][1]["text"],
+        "乙"
+    );
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default();
+    for (name, content) in [
+        (
+            "[Content_Types].xml",
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/parts/main.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="parts/main.xml"/></Relationships>"#,
+        ),
+        (
+            "parts/main.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>本地部件</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
     ] {
-        zip.start_file(name,opts).unwrap();
+        zip.start_file(name, opts).unwrap();
         zip.write_all(&utf16(content)).unwrap();
     }
-    assert_eq!(parse("docx",&zip.finish().unwrap().into_inner())["segments"][0]["text"],"本地部件");
+    assert_eq!(
+        parse("docx", &zip.finish().unwrap().into_inner())["segments"][0]["text"],
+        "本地部件"
+    );
+}
+
+#[tokio::test]
+async fn legacy_accepts_plain_turns_and_drafts_but_requires_managed_material_analysis() {
+    let f = Site::open().await;
+    let base = f.conversation().await;
+    let m = f
+        .upload(&base, "draft.txt", "text/plain", b"still private".to_vec())
+        .await;
+    let id = m["id"].as_str().unwrap();
+    f.ready(&base, id).await;
+    let turns = base.replace("/materials", "/turns");
+    let send = |ids: Value| {
+        json!({"mode":"chat","clientTurnId":"legacy-test","prompt":"compare","materialIds":ids})
+            .to_string()
+            .into_bytes()
+    };
+    let (status, error) = f
+        .request(
+            &f.token,
+            "POST",
+            &turns,
+            "application/json",
+            send(json!([id])),
+        )
+        .await;
+    assert_eq!(status, 409, "{error}");
+    assert_eq!(error["code"], "managed_activation_required");
+    assert_eq!(f.get(&base).await[0]["expiresAt"], m["expiresAt"]);
+    assert_eq!(
+        f.get(&format!("{base}/{id}/segments/s1")).await["text"],
+        "still private"
+    );
+    let (status, turn) = f
+        .request(
+            &f.token,
+            "POST",
+            &turns,
+            "application/json",
+            send(json!([])),
+        )
+        .await;
+    assert_eq!(status, 202, "{turn}");
 }

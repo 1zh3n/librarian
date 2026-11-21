@@ -716,9 +716,31 @@ async fn rename(
 ) -> Result<Json<MutationReceipt>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let input = body(input)?;
-    run(move || rename_locked(&service, &account, &workspace, input))
+    run(move || rename_locked(&service, &account, &workspace, input, None))
         .await
         .map(Json)
+}
+
+pub(super) fn conditional_rename(
+    service: &DocumentService,
+    account: &Account,
+    workspace: &str,
+    operation: &str,
+    from: &str,
+    to: &str,
+    expected: &[FileChange],
+) -> Result<MutationReceipt, ApiError> {
+    rename_locked(
+        service,
+        account,
+        workspace,
+        Rename {
+            operation_id: operation.to_owned(),
+            from: from.to_owned(),
+            to: to.to_owned(),
+        },
+        Some(expected),
+    )
 }
 
 fn rename_locked(
@@ -726,6 +748,7 @@ fn rename_locked(
     account: &Account,
     workspace: &str,
     input: Rename,
+    expected: Option<&[FileChange]>,
 ) -> Result<MutationReceipt, ApiError> {
     let _guard = service.metadata.workspace_guard()?;
     let (instance, actor) = require_manage(service, account, workspace)?;
@@ -742,16 +765,7 @@ fn rename_locked(
     if !canonical_operation {
         return Err(ApiError::invalid("Expected a canonical operation UUID"));
     }
-    validate_path(&input.from)?;
-    validate_path(&input.to)?;
-    if input.from == input.to
-        || path_suffix(&input.from, &input.to).is_some()
-        || path_suffix(&input.to, &input.from).is_some()
-    {
-        return Err(ApiError::invalid(
-            "Source and destination paths must not overlap",
-        ));
-    }
+    validate_move(&input.from, &input.to)?;
     let state = state(&instance)?;
     let engine = state
         .revisions
@@ -787,7 +801,16 @@ fn rename_locked(
             intent.finish(metadata, &receipt)?;
             return Ok(receipt);
         }
-        let (plan, edits) = plan_rename(state, &input.from, &input.to)?;
+        let (plan, edits) = plan_rename(state, &input.from, &input.to).map_err(|e| {
+            if expected.is_some() {
+                super::ai_reorganization::conflict_if_missing(e)
+            } else {
+                e
+            }
+        })?;
+        if expected.is_some_and(|changes| changes != plan.changes) {
+            return Err(ApiError::conflict(None));
+        }
         let intent = if let Some(intent) = existing {
             if intent.plan != plan {
                 return Err(ApiError::conflict(None));
@@ -821,6 +844,26 @@ fn rename_locked(
         }
         Ok(receipt)
     })
+}
+
+fn validate_move(from: &str, to: &str) -> Result<(), ApiError> {
+    validate_path(from)?;
+    validate_path(to)?;
+    if from == to || path_suffix(from, to).is_some() || path_suffix(to, from).is_some() {
+        return Err(ApiError::invalid(
+            "Source and destination paths must not overlap",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn preview_rename(
+    state: &ServerState,
+    from: &str,
+    to: &str,
+) -> Result<Vec<FileChange>, ApiError> {
+    validate_move(from, to)?;
+    Ok(plan_rename(state, from, to)?.0.changes)
 }
 
 fn path_suffix<'a>(prefix: &str, path: &'a str) -> Option<&'a str> {

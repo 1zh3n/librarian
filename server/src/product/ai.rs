@@ -84,8 +84,11 @@ pub(super) struct ContextRequest {
 #[serde(rename_all = "camelCase")]
 pub(super) struct SourceReference {
     pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub document_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub path: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_id: Option<String>,
@@ -93,6 +96,8 @@ pub(super) struct SourceReference {
     pub from: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<u32>,
+    #[serde(flatten)]
+    pub material: Option<super::ai_materials::Citation>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -109,6 +114,10 @@ pub(super) struct OperationView {
     pub confirmation: Option<Confirmation>,
     pub undo_commit_id: Option<String>,
     pub changes: Vec<mutations::FileChange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_result: Option<super::ai_reorganization::WriteResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<super::ai_configuration::ModelSelection>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -116,6 +125,8 @@ pub(super) struct OperationView {
 pub(super) struct Confirmation {
     pub id: String,
     pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<super::ai_reorganization::Plan>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -123,6 +134,10 @@ pub(super) struct Confirmation {
 pub(super) struct Lease {
     pub id: String,
     pub expires_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+    #[serde(default)]
+    pub provider_issued: bool,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -136,6 +151,14 @@ pub(super) struct AcceptedResult {
 #[derive(Deserialize, Serialize)]
 pub(super) struct Operation {
     pub view: OperationView,
+    #[serde(default, rename = "runnerProtocol")]
+    pub protocol: super::ai_managed::Protocol,
+    #[serde(default, rename = "connectionVersion")]
+    pub connection_version: Option<i64>,
+    #[serde(default, rename = "queuedAt")]
+    pub queued_at: i64,
+    #[serde(default)]
+    pub external: bool,
     owner: String,
     credential_version: Option<String>,
     pub input: Option<TaskInput>,
@@ -144,10 +167,53 @@ pub(super) struct Operation {
     pub accepted: Option<AcceptedResult>,
     pub result_fingerprint: Option<String>,
     undo_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    decided: Option<Confirmation>,
 }
 
 impl Operation {
     pub(super) fn prepare(
+        service: &DocumentService,
+        account: &Account,
+        input: TaskInput,
+    ) -> Result<Self, ApiError> {
+        let mut op = Self::new_operation(service, account, input)?;
+        let db = service.metadata.connection()?;
+        let (mode, enabled): (String, bool) = db.query_row(
+            "SELECT mode,enabled FROM ai_configuration WHERE singleton=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if !enabled {
+            return Err(super::ai_managed::disabled());
+        }
+        if mode == "managed" {
+            if !super::ai_configuration::runner_online(&db)? {
+                return Err(ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "runner_offline",
+                    "The managed runner is offline",
+                ));
+            }
+            let choice =
+                super::ai_configuration::resolve_selection(service, &db, account.username())?
+                    .0
+                    .ok_or_else(|| {
+                        ApiError::new(
+                            StatusCode::CONFLICT,
+                            "model_unavailable",
+                            "Choose a working AI connection",
+                        )
+                    })?;
+            let version = super::ai_configuration::check_selection(service, &db, &choice, true)?;
+            op.view.selection = Some(choice);
+            op.protocol = super::ai_managed::Protocol::Managed;
+            op.connection_version = Some(version);
+        }
+        Ok(op)
+    }
+
+    fn new_operation(
         service: &DocumentService,
         account: &Account,
         input: TaskInput,
@@ -180,6 +246,10 @@ impl Operation {
             }
         }
         Ok(Self {
+            protocol: super::ai_managed::Protocol::Legacy,
+            connection_version: None,
+            external: false,
+            queued_at: chrono::Utc::now().timestamp(),
             view: OperationView {
                 id: Uuid::new_v4().to_string(),
                 workspace_id: input.workspace_id.clone(),
@@ -192,6 +262,8 @@ impl Operation {
                 confirmation: None,
                 undo_commit_id: None,
                 changes: Vec::new(),
+                write_result: None,
+                selection: None,
             },
             owner: account.username().to_owned(),
             credential_version: actor.credential_version,
@@ -200,10 +272,107 @@ impl Operation {
             delivered: Vec::new(),
             accepted: None,
             result_fingerprint: None,
+            decided: None,
             undo_id: Uuid::new_v4().to_string(),
         })
     }
 
+    pub(super) fn new_edit(
+        service: &DocumentService,
+        account: &Account,
+        workspace: &str,
+        id: &str,
+    ) -> Result<Self, ApiError> {
+        if Uuid::parse_str(id).ok().is_none_or(|u| u.to_string() != id) {
+            return Err(ApiError::invalid("Expected a canonical operation UUID"));
+        }
+        let input = TaskInput {
+            workspace_id: workspace.into(),
+            document_id: None,
+            mode: Mode::Edit,
+            prompt: "Workspace edit".into(),
+            context: vec![],
+        };
+        let mut op = Self::new_operation(service, account, input)?;
+        op.input = None;
+        op.external = true;
+        op.view.id = id.to_owned();
+        op.view.status = OperationStatus::Running;
+        Ok(op)
+    }
+
+    pub(super) fn undo(
+        &mut self,
+        service: &DocumentService,
+        account: &Account,
+    ) -> Result<MutationReceipt, ApiError> {
+        self.ensure_owner(service, account, true)?;
+        let Some(commit) = self.view.commit_id.as_deref() else {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "undo_unavailable",
+                "There is no committed operation to undo",
+            ));
+        };
+        let moved = self
+            .decided
+            .as_ref()
+            .and_then(|c| c.plan.as_ref())
+            .and_then(|plan| {
+                super::ai_reorganization::undo_move(
+                    service,
+                    account,
+                    &self.view.workspace_id,
+                    &self.undo_id,
+                    plan,
+                )
+            });
+        let result = if let Some(receipt) = moved {
+            receipt?
+        } else {
+            let _guard = service.metadata.workspace_guard()?;
+            let (instance, actor) = service.scope(account, &self.view.workspace_id, true)?;
+            let state = state(&instance)?;
+            let engine = managed_engine(state)?;
+            engine.with_managed_write(|transaction| {
+                let mut edits = Vec::with_capacity(self.view.changes.len());
+                for change in &self.view.changes {
+                    let markdown = if let Some(before) = &change.before_revision {
+                        let bytes = read::file_at(engine.store(), &change.path, commit, true)
+                            .map_err(ApiError::internal)?
+                            .ok_or_else(ApiError::not_found)?;
+                        if sha256_hex(&bytes) != *before {
+                            return Err(ApiError::internal(
+                                "Undo source revision does not match its receipt",
+                            ));
+                        }
+                        Some(String::from_utf8(bytes).map_err(ApiError::internal)?)
+                    } else {
+                        None
+                    };
+                    edits.push(MutationEdit {
+                        path: change.path.clone(),
+                        base_revision: change.revision.clone(),
+                        markdown,
+                    });
+                }
+                MutationContext {
+                    metadata: &service.metadata,
+                    state,
+                    actor: &actor,
+                    workspace: &self.view.workspace_id,
+                    account: account.username(),
+                    operation: &self.undo_id,
+                }
+                .apply(transaction, edits)
+            })?
+        };
+        if self.view.undo_commit_id.as_deref() != Some(&result.commit_id) {
+            self.view.undo_commit_id = Some(result.commit_id.clone());
+            self.store(&service.metadata, true)?;
+        }
+        Ok(result)
+    }
     pub(super) fn get(db: &Metadata, id: &str) -> Result<Self, ApiError> {
         Self::find(db, "id", id)
     }
@@ -225,14 +394,19 @@ impl Operation {
         serde_json::from_str(&json).map_err(ApiError::internal)
     }
 
-    pub(super) fn claimable(db: &Metadata, now: i64) -> Result<Vec<Self>, ApiError> {
+    pub(super) fn claimable(
+        db: &Metadata,
+        now: i64,
+        protocol: super::ai_managed::Protocol,
+    ) -> Result<Vec<Self>, ApiError> {
         let connection = db.connection()?;
         let mut query = connection.prepare(
-            "SELECT entry FROM ai_operations WHERE status = 'queued'
-             OR (status = 'running' AND expires_at <= ?1) ORDER BY rowid LIMIT 32",
+            "SELECT entry FROM ai_operations WHERE (status = 'queued'
+             OR (status = 'running' AND expires_at <= ?1)) AND
+             COALESCE(json_extract(entry,'$.runnerProtocol'),'legacy')=?2 ORDER BY rowid LIMIT 32",
         )?;
         let entries = query
-            .query_map([now], |row| row.get::<_, String>(0))?
+            .query_map(params![now, protocol.name()], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         entries
             .iter()
@@ -290,7 +464,7 @@ impl Operation {
         Ok(account)
     }
 
-    fn ensure_owner(
+    pub(super) fn ensure_owner(
         &self,
         service: &DocumentService,
         account: &Account,
@@ -327,10 +501,19 @@ impl Operation {
         else {
             return Ok(false);
         };
-        self.view.commit_id = Some(receipt.commit_id);
-        self.view.changes = receipt.changes;
+        self.record_receipt(db, receipt)?;
         self.finish_accepted(db)?;
         Ok(true)
+    }
+
+    fn record_receipt(&mut self, db: &Metadata, receipt: MutationReceipt) -> Result<(), ApiError> {
+        if self.view.confirmation.is_none() && self.decided.is_none() {
+            self.view.write_result = Some(super::ai_reorganization::write_result(db, &receipt)?);
+        }
+        self.decided = self.view.confirmation.take();
+        self.view.commit_id = Some(receipt.commit_id);
+        self.view.changes = receipt.changes;
+        Ok(())
     }
 
     fn finish_accepted(&mut self, db: &Metadata) -> Result<(), ApiError> {
@@ -346,25 +529,47 @@ impl Operation {
         account: &Account,
     ) -> Result<(), ApiError> {
         let accepted = self.accepted.as_ref().expect("accepted AI result");
-        if !accepted.edits.is_empty() {
-            let result = apply_edits(
+        let plan = self
+            .view
+            .confirmation
+            .as_ref()
+            .and_then(|c| c.plan.as_ref());
+        let result = if let Some(plan) = plan {
+            super::ai_reorganization::execute(
+                service,
+                account,
+                &self.view.workspace_id,
+                &self.view.id,
+                plan,
+            )
+        } else if !accepted.edits.is_empty() {
+            apply_edits(
                 service,
                 account,
                 &self.view.workspace_id,
                 &self.view.id,
                 accepted.edits.clone(),
-            );
-            match result {
-                Ok(receipt) => {
-                    self.view.commit_id = Some(receipt.commit_id);
-                    self.view.changes = receipt.changes;
-                }
-                Err(error) if error.status() == StatusCode::CONFLICT => {
-                    self.settle(&service.metadata, OperationStatus::Conflict)?;
-                    return Err(error);
-                }
-                Err(error) => return Err(error),
+            )
+        } else {
+            return self.finish_accepted(&service.metadata);
+        };
+        match result {
+            Ok(receipt) => self.record_receipt(&service.metadata, receipt)?,
+            Err(error) if plan.is_some() => {
+                // Preserve the reviewed plan and allow an authorized retry after a rejected decision.
+                self.view.status = if error.status() == StatusCode::CONFLICT {
+                    OperationStatus::Conflict
+                } else {
+                    OperationStatus::NeedsConfirmation
+                };
+                self.store(&service.metadata, true)?;
+                return Err(error);
             }
+            Err(error) if error.status() == StatusCode::CONFLICT => {
+                self.settle(&service.metadata, OperationStatus::Conflict)?;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
         }
         self.finish_accepted(&service.metadata)
     }
@@ -377,6 +582,10 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .route("/ai/operations/{operation}/events", get(events))
         .route("/ai/operations/{operation}/diff", get(diff))
         .route("/ai/operations/{operation}/confirm", post(confirm))
+        .route(
+            "/ai/operations/{operation}/cancel",
+            post(cancel_confirmation),
+        )
         .route("/ai/operations/{operation}/undo", post(undo))
         .merge(super::ai_conversations::routes())
         .merge(super::ai_runner::routes())
@@ -398,6 +607,8 @@ async fn list(
     let Query(query) = query.map_err(|_| ApiError::invalid("A workspaceId is required"))?;
     run(move || {
         service.scope(&account, &query.workspace_id, false)?;
+        let _guard = service.metadata.ai_guard()?;
+        super::ai_managed::sweep(&service)?;
         if let Some(document) = &query.document_id {
             if service.metadata.document_path(document)?.0 != query.workspace_id {
                 return Err(ApiError::not_found());
@@ -438,6 +649,7 @@ async fn create(
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let input = body(input)?;
     run(move || {
+        let _guard = service.metadata.ai_guard()?;
         let op = Operation::prepare(&service, &account, input)?;
         op.store(&service.metadata, true)?;
         Ok((StatusCode::ACCEPTED, Json(op.view)))
@@ -452,8 +664,10 @@ async fn get_operation(
 ) -> Result<Json<OperationView>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, false)?;
     run(move || {
-        let op = Operation::get(&service.metadata, &id)?;
+        let _guard = service.metadata.ai_guard()?;
+        let mut op = Operation::get(&service.metadata, &id)?;
         op.ensure_owner(&service, &account, false)?;
+        super::ai_managed::reconcile(&service, &mut op)?;
         Ok(Json(op.view))
     })
     .await
@@ -477,12 +691,25 @@ async fn confirm(
         let _guard = service.metadata.ai_guard()?;
         let mut op = Operation::get(&service.metadata, &id)?;
         op.ensure_owner(&service, &account, true)?;
-        if op.view.status != OperationStatus::NeedsConfirmation
-            || !op
-                .view
-                .confirmation
+        if op.view.status == OperationStatus::Succeeded
+            && op
+                .decided
                 .as_ref()
-                .is_some_and(|proposal| proposal.id == request.confirmation_id)
+                .is_some_and(|c| c.id == request.confirmation_id)
+        {
+            return Ok(Json(op.view));
+        }
+        if !op.external {
+            super::ai_managed::check_operation(&service, &mut op)?;
+        }
+        if !matches!(
+            op.view.status,
+            OperationStatus::NeedsConfirmation | OperationStatus::Running
+        ) || !op
+            .view
+            .confirmation
+            .as_ref()
+            .is_some_and(|proposal| proposal.id == request.confirmation_id)
         {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
@@ -500,6 +727,48 @@ async fn confirm(
     .await
 }
 
+async fn cancel_confirmation(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<ConfirmInput>, JsonRejection>,
+) -> Result<Json<OperationView>, ApiError> {
+    let account = Account::authenticate(&service.spaces, &headers, true)?;
+    let request = body(request)?;
+    run(move || {
+        let _guard = service.metadata.ai_guard()?;
+        let mut op = Operation::get(&service.metadata, &id)?;
+        op.ensure_owner(&service, &account, false)?;
+        if op.view.status == OperationStatus::Canceled
+            && op
+                .decided
+                .as_ref()
+                .is_some_and(|c| c.id == request.confirmation_id)
+        {
+            return Ok(Json(op.view));
+        }
+        if !matches!(
+            op.view.status,
+            OperationStatus::NeedsConfirmation | OperationStatus::Conflict
+        ) || !op
+            .view
+            .confirmation
+            .as_ref()
+            .is_some_and(|c| c.id == request.confirmation_id)
+        {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "confirmation_invalid",
+                "The requested confirmation is no longer valid",
+            ));
+        }
+        op.decided = op.view.confirmation.take();
+        op.settle(&service.metadata, OperationStatus::Canceled)?;
+        Ok(Json(op.view))
+    })
+    .await
+}
+
 async fn undo(
     State(service): State<Arc<DocumentService>>,
     Path(id): Path<String>,
@@ -509,53 +778,7 @@ async fn undo(
     run(move || {
         let _guard = service.metadata.ai_guard()?;
         let mut op = Operation::get(&service.metadata, &id)?;
-        op.ensure_owner(&service, &account, true)?;
-        let Some(commit) = op.view.commit_id.as_deref() else {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                "undo_unavailable",
-                "There is no committed operation to undo",
-            ));
-        };
-        let (instance, actor) = service.scope(&account, &op.view.workspace_id, true)?;
-        let state = state(&instance)?;
-        let engine = managed_engine(state)?;
-        let result = engine.with_managed_write(|transaction| {
-            let mut edits = Vec::with_capacity(op.view.changes.len());
-            for change in &op.view.changes {
-                let markdown = if let Some(before) = &change.before_revision {
-                    let bytes = read::file_at(engine.store(), &change.path, commit, true)
-                        .map_err(ApiError::internal)?
-                        .ok_or_else(ApiError::not_found)?;
-                    if sha256_hex(&bytes) != *before {
-                        return Err(ApiError::internal(
-                            "Undo source revision does not match its receipt",
-                        ));
-                    }
-                    Some(String::from_utf8(bytes).map_err(ApiError::internal)?)
-                } else {
-                    None
-                };
-                edits.push(MutationEdit {
-                    path: change.path.clone(),
-                    base_revision: change.revision.clone(),
-                    markdown,
-                });
-            }
-            MutationContext {
-                metadata: &service.metadata,
-                state,
-                actor: &actor,
-                workspace: &op.view.workspace_id,
-                account: account.username(),
-                operation: &op.undo_id,
-            }
-            .apply(transaction, edits)
-        })?;
-        if op.view.undo_commit_id.as_deref() != Some(&result.commit_id) {
-            op.view.undo_commit_id = Some(result.commit_id.clone());
-            op.store(&service.metadata, true)?;
-        }
+        let result = op.undo(&service, &account)?;
         Ok(Json(result))
     })
     .await
@@ -583,8 +806,10 @@ async fn diff(
     let account = Account::authenticate(&service.spaces, &headers, false)?;
     let Query(query) = query.map_err(|_| ApiError::invalid("An affected path is required"))?;
     run(move || {
-        let op = Operation::get(&service.metadata, &id)?;
+        let _guard = service.metadata.ai_guard()?;
+        let mut op = Operation::get(&service.metadata, &id)?;
         op.ensure_owner(&service, &account, false)?;
+        super::ai_managed::reconcile(&service, &mut op)?;
         let commit_id = op.view.commit_id.ok_or_else(ApiError::not_found)?;
         if !op
             .view
@@ -613,7 +838,7 @@ async fn diff(
     .await
 }
 
-fn managed_engine(
+pub(super) fn managed_engine(
     state: &crate::state::ServerState,
 ) -> Result<&crate::revisions::RevisionEngine, ApiError> {
     state
@@ -636,6 +861,7 @@ fn apply_edits(
     operation: &str,
     edits: Vec<MutationEdit>,
 ) -> Result<MutationReceipt, ApiError> {
+    let _workspace_guard = service.metadata.workspace_guard()?;
     let (instance, actor) = service.scope(account, workspace, true)?;
     let state = state(&instance)?;
     managed_engine(state)?.with_managed_write(|transaction| {
@@ -664,8 +890,10 @@ async fn events(
         .unwrap_or_default()
         .max(0);
     run(move || {
-        let op = Operation::get(&service.metadata, &id)?;
+        let _guard=service.metadata.ai_guard()?;
+        let mut op = Operation::get(&service.metadata, &id)?;
         op.ensure_owner(&service, &account, false)?;
+        super::ai_managed::reconcile(&service,&mut op)?;
         let connection = service.metadata.connection()?;
         let mut query = connection.prepare(
             "SELECT seq, kind, payload FROM ai_events WHERE operation_id = ?1 AND seq > ?2 ORDER BY seq LIMIT 256",

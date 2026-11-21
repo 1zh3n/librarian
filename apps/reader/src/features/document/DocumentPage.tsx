@@ -1,13 +1,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useNavigate } from "@tanstack/react-router";
+import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button, Group, Menu, MenuItem, MenuTrigger, Popover } from "../../ui/primitives";
 import { Tabs } from "../../ui/Tabs";
 import { api, ApiError } from "../../api/client";
-import type { AiContext, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
+import type {
+  AiContext,
+  DevicePreferences,
+  DocumentSnapshot,
+  OutlineSnapshot,
+} from "../../api/client";
 import { documentQuery, documentsQuery, outlineQuery, workspaceKeys } from "../../api/queries";
-import { captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
+import { blockAtOffset, captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { reanalyzeMarkdown } from "../../markdown/reanalyze";
@@ -35,6 +40,8 @@ import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
 import type { OutlineSession } from "./OutlineCanvas";
 import type { MarkdownWrite } from "./saveController";
+import { parseCitationHash } from "./sourceVisit";
+import type { AiTranscriptVisit, SourceVisit } from "./sourceVisit";
 import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
@@ -52,11 +59,78 @@ function isDocumentTab(value: unknown): value is DocumentTab {
   return documentTabs.some(({ id }) => id === value);
 }
 
+type ToolChoice = {
+  entry: string | undefined;
+  normal?: {
+    layout: DevicePreferences["layout"];
+    selection: number;
+    tool: Tool | undefined;
+  };
+  focus?: { activation: number; tool: Tool | undefined };
+  lastTab?: DocumentTab;
+};
+
+function useDocumentTools(
+  outlineEnabled: boolean,
+  entry: string | undefined,
+  initial: DocumentTab | "paper" | "layout",
+) {
+  const { preferences, layoutSelection, focus } = useReaderLayout();
+  function initialChoice(): ToolChoice {
+    if (initial === "layout") return { entry };
+    const tool = initial === "paper" ? undefined : initial;
+    return {
+      entry,
+      normal: { layout: preferences.layout, selection: layoutSelection, tool },
+      ...(focus.activation !== undefined && { focus: { activation: focus.activation, tool } }),
+      ...(tool && { lastTab: tool }),
+    };
+  }
+  const [choice, setChoice] = useState(initialChoice);
+  if (choice.entry !== entry) setChoice(initialChoice());
+  const layoutDefault =
+    preferences.layout === "review"
+      ? "history"
+      : preferences.layout === "research"
+        ? "ai"
+        : preferences.layout === "writing" && outlineEnabled
+          ? "outline"
+          : undefined;
+  const normal = choice.normal;
+  const tool = focus.active
+    ? choice.focus?.activation === focus.activation
+      ? choice.focus?.tool
+      : undefined
+    : normal?.layout === preferences.layout && normal.selection === layoutSelection
+      ? normal.tool
+      : layoutDefault;
+  const lastTab = choice.lastTab === "outline" && !outlineEnabled ? undefined : choice.lastTab;
+  function chooseTool(next: Tool | undefined) {
+    const activation = focus.activation;
+    setChoice((previous) => ({
+      ...previous,
+      ...(activation === undefined
+        ? { normal: { layout: preferences.layout, selection: layoutSelection, tool: next } }
+        : { focus: { activation, tool: next } }),
+      ...(isDocumentTab(next) && { lastTab: next }),
+    }));
+  }
+  const rememberedTab: DocumentTab = lastTab ?? (outlineEnabled ? "outline" : "ai");
+  return { tool, chooseTool, rememberedTab };
+}
+
+type SourceNavigation = {
+  visit: SourceVisit | undefined;
+  onSourceVisit: (visit: SourceVisit) => void;
+};
+
 export function DocumentPage({
   workspace,
   document,
   writable,
-}: {
+  visit,
+  onSourceVisit,
+}: SourceNavigation & {
   workspace: string;
   document: string;
   writable: boolean;
@@ -74,27 +148,31 @@ export function DocumentPage({
     return <output className={styles.message}>正在打开文档…</output>;
   }
 
-  return <DocumentWorkspace workspace={workspace} snapshot={result.data} writable={writable} />;
+  return (
+    <DocumentWorkspace
+      workspace={workspace}
+      snapshot={result.data}
+      writable={writable}
+      visit={visit}
+      onSourceVisit={onSourceVisit}
+    />
+  );
 }
 
 function DocumentWorkspace({
   workspace,
   snapshot,
   writable,
-}: {
+  visit: returnVisit,
+  onSourceVisit,
+}: SourceNavigation & {
   workspace: string;
   snapshot: DocumentSnapshot;
   writable: boolean;
 }) {
   const { id: documentId, title } = snapshot.document;
-  const {
-    focus,
-    preferences,
-    layoutSelection,
-    createdDocument,
-    clearCreatedDocument,
-    navigationCancelled,
-  } = useReaderLayout();
+  const { focus, preferences, createdDocument, clearCreatedDocument, navigationCancelled } =
+    useReaderLayout();
   const navigate = useNavigate();
   const documents = useQuery(documentsQuery(workspace)).data;
   const path = snapshot.document.path;
@@ -165,65 +243,50 @@ function DocumentWorkspace({
     analysis: analyzeMarkdown(snapshot.markdown, documentId),
   }));
   const analysis = reading.analysis;
+  const location = useLocation();
+  const locationHash = location.hash;
+  const citation = useMemo(() => parseCitationHash(locationHash), [locationHash]);
   const [mode, setMode] = useState<Mode>("read");
   const modeRef = useRef<Mode>("read");
-  const [normalTool, setNormalTool] = useState<{
-    layout: typeof preferences.layout;
-    selection: number;
-    tool: Tool | undefined;
-  }>();
-  const [focusTool, setFocusTool] = useState<{ activation: number; tool: Tool | undefined }>();
   const [restoringVersion, setRestoringVersion] = useState(false);
   const [outlineRequested, setOutlineRequested] = useState(false);
   const [outlineSession, setOutlineSession] = useState<OutlineSession>();
   const outlineEnabled = outlineRequested || snapshot.document.outlineEnabled;
-  const defaultTool =
-    preferences.layout === "review"
-      ? "history"
-      : preferences.layout === "research"
-        ? "ai"
-        : preferences.layout === "writing" && outlineEnabled
-          ? "outline"
-          : undefined;
-  const tool = focus.active
-    ? focusTool?.activation === focus.activation
-      ? focusTool?.tool
-      : undefined
-    : normalTool?.layout === preferences.layout && normalTool.selection === layoutSelection
-      ? normalTool.tool
-      : defaultTool;
+  const initialTool = returnVisit
+    ? "ai"
+    : citation
+      ? citation.outline && outlineEnabled
+        ? "outline"
+        : "paper"
+      : "layout";
+  const { tool, rememberedTab, chooseTool } = useDocumentTools(
+    outlineEnabled,
+    location.state.__TSR_key,
+    initialTool,
+  );
   const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
   const toolAnchor = useRef<ReturnType<typeof captureReaderAnchor>>(undefined);
   const toolPane = useRef<HTMLElement>(null);
   const openToolButton = useRef<HTMLButtonElement>(null);
-  const [lastTab, setLastTab] = useState<DocumentTab>();
-  const initialTab = outlineEnabled ? "outline" : "ai";
-  const rememberedTab =
-    lastTab === "outline" && !outlineEnabled ? initialTab : (lastTab ?? initialTab);
   const paneId = `document-tools-${documentId}`;
   const toolbar = useRef<HTMLDivElement>(null);
   const inlineVisit = useRef<{
     anchor: ReturnType<typeof captureReaderAnchor>;
-    source: string;
+    revision: string;
     scrollTop: number;
     opener: HTMLElement | undefined;
     passage: string | undefined;
-  }>(undefined);
+  }>(
+    returnVisit?.inline
+      ? { ...returnVisit.inline, revision: returnVisit.revision, opener: undefined }
+      : undefined,
+  );
   const [contentsInitial, setContentsInitial] = useState<string>();
   const contentsDestination = useRef<HTMLElement | null>(null);
   const moveToTool = useRef(false);
   const returnFromTool = useRef(false);
-  const chooseTool = useCallback(
-    (next: Tool | undefined) => {
-      if (focus.activation !== undefined)
-        setFocusTool({ activation: focus.activation, tool: next });
-      else setNormalTool({ layout: preferences.layout, selection: layoutSelection, tool: next });
-    },
-    [focus.activation, layoutSelection, preferences.layout],
-  );
   function setTool(next: Tool | undefined) {
     if (next === tool) return;
-    if (isDocumentTab(next)) setLastTab(next);
     const viewport = canvas.current?.closest("main");
     if (next === "contents" && viewport) setContentsInitial(headingAtReadingPosition(viewport));
     toolAnchor.current =
@@ -239,7 +302,7 @@ function DocumentWorkspace({
         const active = window.document.activeElement;
         inlineVisit.current ??= {
           anchor: toolAnchor.current,
-          source: reading.source,
+          revision: snapshot.revision,
           scrollTop: viewport.scrollTop,
           passage:
             savedSelection.current?.range.startContainer.parentElement?.closest<HTMLElement>(
@@ -254,7 +317,12 @@ function DocumentWorkspace({
   }
   const outline = useQuery({ ...outlineQuery(workspace, documentId), enabled: outlineEnabled });
   const canvas = useRef<HTMLDivElement>(null);
-  const savedEditorSelection = useRef<{ source: string; anchor: number; head: number }>(undefined);
+  const savedEditorSelection = useRef<{
+    source: string;
+    anchor: number;
+    head: number;
+    blockId?: string;
+  }>(undefined);
   const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
   const restoringEditor = useRef(false);
 
@@ -329,7 +397,8 @@ function DocumentWorkspace({
           viewport,
           analysis.blocks,
           visit.anchor,
-          visit.source === reading.source,
+          visit.revision === snapshot.revision &&
+            body.saves.confirmed().markdown === reading.source,
         );
       }
       if (visit) {
@@ -340,7 +409,7 @@ function DocumentWorkspace({
     if (anchor && modeRef.current === "read" && !(tool && inlineVisit.current)) {
       return restoreReaderAnchor(viewport, analysis.blocks, anchor, true);
     }
-  }, [tool, analysis.blocks, reading.source]);
+  }, [tool, analysis.blocks, reading.source, snapshot.revision, body]);
 
   useEffect(() => {
     const pane = toolPane.current;
@@ -360,6 +429,107 @@ function DocumentWorkspace({
     pane?.addEventListener("keydown", closeDocumentTool);
     return () => pane?.removeEventListener("keydown", closeDocumentTool);
   }, [analysis.blocks, chooseTool, tool]);
+
+  function rememberSource(transcript: AiTranscriptVisit) {
+    const viewport = canvas.current?.closest("main");
+    if (!viewport) return;
+    const inline = inlineVisit.current;
+    onSourceVisit({
+      documentId,
+      revision: snapshot.revision,
+      transcript,
+      selection: snapshot.markdown === reading.source ? selectedContext(reading.source) : undefined,
+      reading: {
+        anchor: captureReaderAnchor(viewport, analysis.blocks),
+        scrollTop: viewport.scrollTop,
+      },
+      inline: inline && {
+        anchor: inline.anchor,
+        scrollTop: inline.scrollTop,
+        passage: inline.passage,
+      },
+    });
+  }
+
+  const handledVisit = useRef<SourceVisit>(undefined);
+  useLayoutEffect(() => {
+    if (!returnVisit) {
+      handledVisit.current = undefined;
+      return;
+    }
+    if (handledVisit.current === returnVisit) return;
+    const range = returnVisit.selection;
+    savedEditorSelection.current =
+      range && returnVisit.revision === snapshot.revision
+        ? {
+            source: snapshot.markdown,
+            anchor: range.from,
+            head: range.to,
+            ...(range.blockId && { blockId: range.blockId }),
+          }
+        : undefined;
+    inlineVisit.current = returnVisit.inline && {
+      ...returnVisit.inline,
+      revision: returnVisit.revision,
+      opener: undefined,
+    };
+  }, [returnVisit, snapshot.revision, snapshot.markdown]);
+
+  useEffect(() => {
+    const viewport = canvas.current?.closest("main");
+    if (!returnVisit || tool !== "ai" || !viewport || handledVisit.current === returnVisit) return;
+    // The shell resets the scroller when document identity changes.
+    let stop: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      const { anchor, scrollTop } = returnVisit.reading;
+      viewport.scrollTop = scrollTop;
+      if (anchor)
+        stop = restoreReaderAnchor(
+          viewport,
+          analysis.blocks,
+          anchor,
+          returnVisit.revision === snapshot.revision,
+        );
+      handledVisit.current = returnVisit;
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      stop?.();
+    };
+  }, [tool, returnVisit, analysis.blocks, snapshot.revision]);
+
+  const handledCitation = useRef<typeof citation>(undefined);
+  useLayoutEffect(() => {
+    if (!citation || returnVisit) {
+      handledCitation.current = undefined;
+      return;
+    }
+    if (handledCitation.current === citation) return;
+    const destination = citation.outline && outlineEnabled ? "outline" : undefined;
+    if (tool !== destination) return;
+    const frame = requestAnimationFrame(() => {
+      const surface = canvas.current;
+      if (!surface) return;
+      const block = citation.block ? renderedBlock(surface, citation.block) : undefined;
+      const from =
+        citation.from !== undefined && citation.revision === snapshot.revision
+          ? blockAtOffset(analysis.blocks, citation.from)
+          : undefined;
+      const target =
+        destination === "outline"
+          ? toolPane.current
+          : (block ??
+            (from && renderedBlock(surface, from.id)) ??
+            surface.querySelector("article"));
+      if (target) {
+        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: destination || from || block ? "center" : "start" });
+      }
+      handledCitation.current = citation;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [citation, returnVisit, analysis.blocks, outlineEnabled, snapshot.revision, tool]);
 
   const rememberReadingSelection = useCallback(() => {
     if (modeRef.current !== "read") return;
@@ -447,28 +617,34 @@ function DocumentWorkspace({
         : outlineSession.saves.flush(),
     ]);
   }, [body, outlineSession]);
-  async function resolveAiContext(): Promise<AiContext[]> {
-    const confirmed = body.saves.confirmed();
-    const source = mode === "read" ? reading.source : body.editor.source();
+  function selectedContext(source: string) {
     const root = canvas.current;
     const stored = savedSelection.current;
-    const editor =
+    const editor: { anchor: number; head: number; blockId?: string } | undefined =
       mode === "read"
         ? savedEditorSelection.current?.source === source
           ? savedEditorSelection.current
           : undefined
         : body.editor.selection();
     const range = editor
-      ? { from: Math.min(editor.anchor, editor.head), to: Math.max(editor.anchor, editor.head) }
+      ? {
+          from: Math.min(editor.anchor, editor.head),
+          to: Math.max(editor.anchor, editor.head),
+          ...(editor.blockId && { blockId: editor.blockId }),
+        }
       : root && stored?.source === source
         ? readerSelection(root, stored.range, source, analysis)
         : undefined;
-    const local =
-      range && range.from < range.to
-        ? range
-        : source === reading.source && selectedBlock
-          ? { from: selectedBlock.from, to: selectedBlock.to, blockId: selectedBlock.id }
-          : undefined;
+    return range && range.from < range.to
+      ? range
+      : source === reading.source && selectedBlock
+        ? { from: selectedBlock.from, to: selectedBlock.to, blockId: selectedBlock.id }
+        : undefined;
+  }
+  async function resolveAiContext(): Promise<AiContext[]> {
+    const confirmed = body.saves.confirmed();
+    const source = mode === "read" ? reading.source : body.editor.source();
+    const local = selectedContext(source);
     if (!local) return [{ documentId }];
     if (local.to - local.from > 65_536) {
       throw new ContextUnavailable("所选范围过长，请缩小范围后重试。");
@@ -722,6 +898,11 @@ function DocumentWorkspace({
       }
     >
       <div className={styles.documentTools} ref={toolbar}>
+        {citation?.revision && citation.revision !== snapshot.revision && (
+          <output>引用时的正文已更新，当前显示最新版本。</output>
+        )}
+        {citation?.outline && !outlineEnabled && <output>引用的提纲已移除。</output>}
+
         {!tool && (
           <Button
             ref={openToolButton}
@@ -842,6 +1023,8 @@ function DocumentWorkspace({
                   documents={documents ?? []}
                   writable={writable}
                   resolveContext={resolveAiContext}
+                  returnVisit={returnVisit?.transcript}
+                  onSourceVisit={rememberSource}
                 />
               </Tabs.Panel>
               <Tabs.Panel id="history" className={styles.tabPanel}>

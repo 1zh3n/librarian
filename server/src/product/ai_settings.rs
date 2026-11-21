@@ -149,7 +149,6 @@ impl AiDiscoveryService {
     }
 
     // Called by the connection writer (A2) after authenticating the current admin.
-    #[allow(dead_code)]
     pub(super) fn validate_discovery(
         &self,
         actor: &str,
@@ -177,7 +176,6 @@ impl AiDiscoveryService {
     }
 
     // The managed runner connects to these addresses with the original TLS hostname.
-    #[allow(dead_code)]
     pub(super) async fn resolve_endpoint(
         &self,
         base_url: &str,

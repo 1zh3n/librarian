@@ -86,6 +86,9 @@ impl Site {
         users
             .create_user("writer", "fixture-password", false, Profile::default())
             .unwrap();
+        users
+            .create_user("admin", "fixture-password", true, Profile::default())
+            .unwrap();
         let member = users.create_token("writer", "fixture").unwrap();
         let folder = root.path().join("spaces/field");
         fs::create_dir_all(&folder).unwrap();
@@ -147,6 +150,7 @@ impl Site {
         Connection::open(self.root.path().join(".librarian/metadata.sqlite3")).unwrap()
     }
     fn reopen(&mut self) {
+        self.app = Router::new();
         self.app = librarian::Product::open(self.root.path(), 0)
             .unwrap()
             .router();
@@ -377,7 +381,9 @@ async fn offline_runner_blocks_new_work_and_unclaimed_tasks_expire() {
             [],
         )
         .unwrap();
-    assert!(matches!(site.enqueue().await.status, 409 | 503));
+    let offline = site.enqueue().await;
+    assert_eq!(offline.status, 503, "{}", offline.json);
+    assert_eq!(offline.json["code"], "runner_offline");
     let beat = call(
         &site.app,
         OWNER,
@@ -391,7 +397,7 @@ async fn offline_runner_blocks_new_work_and_unclaimed_tasks_expire() {
     assert_eq!(queued.status, 202);
     let id = queued.json["id"].as_str().unwrap();
     site.db().execute("UPDATE ai_operations SET entry=json_set(entry, '$.queuedAt', unixepoch()-121) WHERE id=?",[id]).unwrap();
-    assert_eq!(site.claim(V2, OWNER).await.status, 204);
+    // No runner is available to poll. The member still observes the queue deadline.
     let result = call(
         &site.app,
         Auth {
@@ -404,6 +410,7 @@ async fn offline_runner_blocks_new_work_and_unclaimed_tasks_expire() {
     )
     .await;
     assert_eq!(result.json["status"], "failed");
+    assert_eq!(site.claim(V2, OWNER).await.status, 204);
     site.original();
 }
 
@@ -433,5 +440,109 @@ async fn pausing_ai_revokes_in_flight_effects_and_rejects_new_jobs() {
         site.claim(V2, OWNER).await.status,
         204 | 409 | 503
     ));
+    site.original();
+}
+
+#[tokio::test]
+async fn probe_lease_is_instance_bound_and_cannot_access_workspace_tools() {
+    let site = Site::new().await;
+    let login = site
+        .app
+        .clone()
+        .oneshot(
+            Request::post("/.auth/librarian/login")
+                .header("host", "localhost")
+                .header("origin", "http://localhost")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from("username=admin&password=fixture-password"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status().as_u16(), 303);
+    let cookie = login.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let request = Request::post("/api/v1/ai/settings/connections/local/probe")
+        .header("host", "localhost")
+        .header("origin", "http://localhost")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "modelId":"material-test","thinking":{"mode":"provider_default"}
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let response = site.app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status().as_u16(), 202);
+    let probe: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
+    assert_eq!(site.claim(V1, LEGACY).await.status, 204);
+    let claim = site.claim(V2, OWNER).await;
+    assert_eq!(claim.status, 200, "{}", claim.json);
+    assert_eq!(claim.json["taskKind"], "probe");
+    assert_eq!(claim.json["operationId"], probe["id"]);
+    assert!(claim.json.get("input").is_none());
+    let lease = claim.json["leaseId"].as_str().unwrap();
+    let path = format!("{V2}/claims/{lease}");
+    site.denied_routes(V2, FOREIGN, lease).await;
+    for (method, route, args) in [
+        ("GET", "documents", Value::Null),
+        ("POST", "sources", json!({"documentId":site.doc})),
+        (
+            "POST",
+            "events",
+            json!({"kind":"text_delta","executorSeq":1,"text":"private probe"}),
+        ),
+    ] {
+        let reply = call(&site.app, OWNER, method, &format!("{path}/{route}"), args).await;
+        assert!(
+            matches!(reply.status, 403 | 404 | 409 | 422),
+            "{route} {}",
+            reply.status
+        );
+    }
+    let provider = call(
+        &site.app,
+        OWNER,
+        "GET",
+        &format!("{path}/provider"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(provider.status, 200);
+    assert_eq!(provider.headers["cache-control"], "no-store");
+    let again = call(
+        &site.app,
+        OWNER,
+        "GET",
+        &format!("{path}/provider"),
+        Value::Null,
+    )
+    .await;
+    assert!(matches!(again.status, 403 | 404 | 409 | 410));
+    let failure = json!({"code":"rate_limit","text":"untrusted synthetic error marker"});
+    let receipt = call(
+        &site.app,
+        OWNER,
+        "POST",
+        &format!("{path}/fail"),
+        failure.clone(),
+    )
+    .await;
+    assert_eq!(receipt.status, 200);
+    assert_eq!(receipt.json["errorCode"], "rate_limit");
+    assert!(!receipt
+        .json
+        .to_string()
+        .contains("untrusted synthetic error marker"));
+    let replay = call(&site.app, OWNER, "POST", &format!("{path}/fail"), failure).await;
+    assert_eq!(replay.status, 200);
+    assert_eq!(replay.json, receipt.json);
     site.original();
 }

@@ -1,5 +1,7 @@
 pub mod segment;
 mod storage;
+mod tools;
+pub(super) use tools::{charge_read, runner_routes, selected, Citation, Selected};
 
 use std::{fs, io, sync::Arc};
 
@@ -200,19 +202,36 @@ async fn upload(
     file.sync_all().await.map_err(ApiError::internal)?;
     drop(file);
     let size = size as i64;
-    let s = service.clone();
-    let material=run(move|| {
-        let _guard=s.metadata.ai_guard()?;
-        authorize(&s,&account,&conversation)?;
-        let id=Uuid::new_v4().simple().to_string();
-        let expires=storage::now()+storage::DRAFT_TTL;
-        let mut conn=s.metadata.connection()?;
-        let tx=conn.transaction()?;
-        tx.execute("INSERT INTO ai_materials(id,conversation_id,name,format,size,status,expires_at) VALUES (?1,?2,?3,?4,?5,'parsing',?6)",params![id,conversation,query.name,kind,size,expires])?;
-        tmp.persist_noclobber(dir.join(format!("{id}.raw"))).map_err(ApiError::internal)?;
+    let store = service.clone();
+    let material = run(move || {
+        let _guard = store.metadata.ai_guard()?;
+        authorize(&store, &account, &conversation)?;
+        let id = Uuid::new_v4().simple().to_string();
+        let expires_at = storage::now() + storage::DRAFT_TTL;
+        let mut conn = store.metadata.connection()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO ai_materials(id,conversation_id,name,format,size,status,expires_at)
+             VALUES (?1,?2,?3,?4,?5,'parsing',?6)",
+            params![id, conversation, query.name, kind, size, expires_at],
+        )?;
+        tmp.persist_noclobber(dir.join(format!("{id}.raw")))
+            .map_err(ApiError::internal)?;
+        #[cfg(unix)]
+        fs::File::open(&dir)
+            .and_then(|f| f.sync_all())
+            .map_err(ApiError::internal)?;
         tx.commit()?;
-        Ok(MaterialView {id,name:query.name,size,status:"parsing".into(),expires_at:expires,error_code:None})
-    }).await?;
+        Ok(MaterialView {
+            id,
+            name: query.name,
+            size,
+            status: "parsing".into(),
+            expires_at,
+            error_code: None,
+        })
+    })
+    .await?;
     storage::kick(&service);
     Ok((StatusCode::ACCEPTED, Json(material)))
 }
@@ -222,14 +241,20 @@ async fn list(
     Path(conversation): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<MaterialView>>, ApiError> {
-    let a = Account::authenticate(&service.spaces, &headers, false)?;
-    run(move|| {
-        authorize(&service,&a,&conversation)?;
-        let con=service.metadata.connection()?;
-        let mut q=con.prepare("SELECT id,name,size,status,expires_at,error_code FROM ai_materials WHERE conversation_id=?1 AND expires_at>?2 ORDER BY rowid")?;
-        let items=q.query_map(params![conversation,storage::now()],MaterialView::row)?.collect::<rusqlite::Result<_>>()?;
+    let account = Account::authenticate(&service.spaces, &headers, false)?;
+    run(move || {
+        authorize(&service, &account, &conversation)?;
+        let conn = service.metadata.connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT id,name,size,status,expires_at,error_code FROM ai_materials
+             WHERE conversation_id=?1 AND expires_at>?2 ORDER BY rowid",
+        )?;
+        let items = stmt
+            .query_map(params![conversation, storage::now()], MaterialView::row)?
+            .collect::<rusqlite::Result<_>>()?;
         Ok(Json(items))
-    }).await
+    })
+    .await
 }
 
 async fn remove(
@@ -270,13 +295,21 @@ pub(super) struct SegmentPage {
     next_cursor: Option<String>,
 }
 
-fn load(
-    db: &Metadata,
-    con: &Connection,
+fn ready(
+    conn: &Connection,
     conversation: &str,
     id: &str,
-) -> Result<(String, Vec<Segment>), ApiError> {
-    let (name,status):(String,String)=con.query_row("SELECT name,status FROM ai_materials WHERE id=?1 AND conversation_id=?2 AND expires_at>?3",params![id,conversation,storage::now()],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(ApiError::not_found)?;
+    now: i64,
+) -> Result<(String, i64), ApiError> {
+    let (name, size, status): (String, i64, String) = conn
+        .query_row(
+            "SELECT name,size,status FROM ai_materials
+         WHERE conversation_id=?1 AND id=?2 AND expires_at>?3",
+            params![conversation, id, now],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?
+        .ok_or_else(ApiError::not_found)?;
     if status != "ready" {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
@@ -284,6 +317,16 @@ fn load(
             "Wait for a ready material",
         ));
     }
+    Ok((name, size))
+}
+
+fn load(
+    db: &Metadata,
+    con: &Connection,
+    conversation: &str,
+    id: &str,
+) -> Result<(String, Vec<Segment>), ApiError> {
+    let (name, _) = ready(con, conversation, id, storage::now())?;
     // id has been matched to a server-generated database row.
     let f = fs::File::open(storage::directory(db)?.join(format!("{id}.json"))).map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
@@ -375,6 +418,21 @@ pub(super) fn bind_turn(
     ids: &[String],
 ) -> Result<(), ApiError> {
     const BATCH_BYTES: i64 = 25 * 1024 * 1024;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let managed: bool = tx.query_row(
+        "SELECT mode='managed' FROM ai_configuration WHERE singleton=1",
+        [],
+        |r| r.get(0),
+    )?;
+    if !managed {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "managed_activation_required",
+            "Activate managed AI to analyze selected materials",
+        ));
+    }
     if ids.len() > 5 {
         return Err(ApiError::invalid("Select up to five materials per turn"));
     }
@@ -385,14 +443,7 @@ pub(super) fn bind_turn(
         if !seen.insert(id) {
             return Err(ApiError::invalid("Duplicate material selection"));
         }
-        let (size,status):(i64,String)=tx.query_row("SELECT size,status FROM ai_materials WHERE conversation_id=?1 AND id=?2 AND expires_at>?3",params![conversation,id,now],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(ApiError::not_found)?;
-        if status != "ready" {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                "material_not_ready",
-                "Select only ready materials",
-            ));
-        }
+        let (_, size) = ready(tx, conversation, id, now)?;
         total += size;
         if total > BATCH_BYTES {
             return Err(ApiError::invalid("Selected materials exceed 25 MiB"));

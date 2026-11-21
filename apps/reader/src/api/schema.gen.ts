@@ -820,6 +820,506 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/ai/settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["getAiSettings"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/connections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["createAiConnection"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/connections/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations["removeAiConnection"];
+    options?: never;
+    head?: never;
+    patch: operations["updateAiConnection"];
+    trace?: never;
+  };
+  "/ai/settings/preference": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations["setAiPreference"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/default": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations["setAiDefault"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/global-enabled": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations["setAiGlobalEnabled"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/managed-activation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["activateManagedAi"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/connections/{id}/probe": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["startAiProbe"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/settings/probes/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    get: operations["getAiProbe"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listConversations"];
+    put?: never;
+    post: operations["createConversation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["getConversation"];
+    put?: never;
+    post?: never;
+    delete: operations["deleteConversation"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}/turns": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["listTurns"];
+    put?: never;
+    post: operations["createTurn"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}/turns/{turnId}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        turnId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["cancelTurn"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}/materials": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["listAiMaterials"];
+    put?: never;
+    post: operations["uploadAiMaterial"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}/materials/{materialId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        materialId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations["removeAiMaterial"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}/materials/{materialId}/segments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        materialId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["listAiMaterialSegments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/conversations/{conversationId}/materials/{materialId}/segments/{segmentId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        materialId: string;
+        segmentId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["readAiMaterialSegment"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["heartbeatManagedRunner"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["claimManagedTask"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["discoverAiDocumentsV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/sources": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["readAiSourceV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["reportAiRunnerEventV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/renew": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["renewAiLeaseV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["failAiOperationV2"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations["finishAiOperationV2"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/provider": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    get: operations["getManagedProvider"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/materials/{materialId}/segments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+        materialId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["findLeasedMaterialSegments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/runner/v2/claims/{lease}/materials/{materialId}/segments/{segmentId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+        materialId: string;
+        segmentId: string;
+      };
+      cookie?: never;
+    };
+    get: operations["readLeasedMaterialSegment"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/ai/operations/{id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["cancelAiConfirmation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1065,6 +1565,7 @@ export interface components {
     AiConfirmation: {
       id: string;
       paths: string[];
+      plan?: components["schemas"]["AiReorganizationPlan"];
     };
     AiOperation: {
       id: string;
@@ -1081,11 +1582,16 @@ export interface components {
         | "needs_confirmation"
         | "canceled";
       answer: string | null;
-      sources: components["schemas"]["AiSourceReference"][];
+      sources: (
+        | components["schemas"]["AiSourceReference"]
+        | components["schemas"]["AiMaterialSource"]
+      )[];
       commitId: string | null;
       confirmation: components["schemas"]["AiConfirmation"] | null;
       undoCommitId: string | null;
       changes: components["schemas"]["MutationFileChange"][];
+      writeResult?: components["schemas"]["AiWriteResult"];
+      selection?: components["schemas"]["ModelSelection"];
     };
     AiClaim: {
       operationId: string;
@@ -1240,14 +1746,11 @@ export interface components {
       document: components["schemas"]["SnapshotDocument"];
       attachmentPaths: string[];
     };
-    AiDiscoveryInput: {
-      /** @enum {string} */
-      provider: "deepseek";
-      /** Format: uri */
-      baseUrl: string;
-      /** Format: password */
-      apiKey: string;
-    };
+    AiDiscoveryInput:
+      | components["schemas"]["DraftAiDiscovery"]
+      | {
+          connectionId: string;
+        };
     DiscoveredModel: {
       id: string;
       name?: string;
@@ -1268,6 +1771,253 @@ export interface components {
        */
       fetchedAt: number;
       models: components["schemas"]["DiscoveredModel"][];
+    };
+    DraftAiDiscovery: {
+      /** @enum {string} */
+      provider: "deepseek";
+      /** Format: uri */
+      baseUrl: string;
+      /** Format: password */
+      apiKey: string;
+    };
+    ThinkingSelection:
+      | {
+          /** @enum {string} */
+          mode: "provider_default" | "off";
+        }
+      | {
+          /** @enum {string} */
+          mode: "effort";
+          level: string;
+        };
+    ModelSelection: {
+      connectionId: string;
+      modelId: string;
+      thinking: components["schemas"]["ThinkingSelection"];
+    };
+    AiConnection: {
+      id: string;
+      label: string;
+      /** @enum {string} */
+      provider: "deepseek";
+      version: number;
+      enabled: boolean;
+      models: components["schemas"]["DiscoveredModel"][];
+      fetchedAt: number;
+      baseUrl?: string;
+      hasApiKey?: boolean;
+      credentialAvailable?: boolean;
+    };
+    AiSettingsView: {
+      settingsVersion: number;
+      globalEnabled: boolean;
+      /** @enum {string} */
+      dispatchMode: "legacy" | "managed";
+      runnerOnline: boolean;
+      connections: components["schemas"]["AiConnection"][];
+      defaultSelection: components["schemas"]["ModelSelection"] | null;
+      preference: components["schemas"]["ModelSelection"] | null;
+      effectiveSelection: components["schemas"]["ModelSelection"] | null;
+      fallbackReason: string | null;
+    };
+    CreateAiConnection: {
+      label: string;
+      /** @enum {string} */
+      provider: "deepseek";
+      baseUrl: string;
+      discoveryId: string;
+      keyChange: {
+        /** @enum {string} */
+        kind: "replace";
+        /** Format: password */
+        apiKey: string;
+      };
+    };
+    UpdateAiConnection: {
+      expectedVersion: number;
+      label?: string;
+      /** @enum {string} */
+      provider?: "deepseek";
+      baseUrl?: string;
+      discoveryId?: string;
+      keyChange?:
+        | {
+            /** @enum {string} */
+            kind: "replace";
+            /** Format: password */
+            apiKey: string;
+          }
+        | {
+            /** @enum {string} */
+            kind: "keep" | "clear";
+          };
+      enabled?: boolean;
+    };
+    ManagedActivation: {
+      activationId: string;
+      expectedSettingsVersion: number;
+      selection: components["schemas"]["ModelSelection"];
+    };
+    AiProbeInput: {
+      modelId: string;
+      thinking: components["schemas"]["ThinkingSelection"];
+    };
+    AiProbe: {
+      id: string;
+      status: string;
+      errorCode?: string | null;
+    };
+    ConversationScope: {
+      workspaceId: string;
+      documentId?: string | null;
+    };
+    ConversationView: {
+      id: string;
+      workspaceId: string;
+      documentId: string | null;
+      createdAt: number;
+      updatedAt: number;
+    };
+    CreateTurn: {
+      clientTurnId: string;
+      /** @enum {string} */
+      mode: "chat" | "edit";
+      prompt: string;
+      context?: components["schemas"]["AiContext"][];
+      retryOfTurnId?: string;
+      materialIds?: string[];
+    };
+    TurnView: {
+      id: string;
+      conversationId: string;
+      clientTurnId: string;
+      operationId: string;
+      prompt: string;
+      retryOfTurnId: string | null;
+      createdAt: number;
+      historyTruncated: boolean;
+      operation: components["schemas"]["AiOperation"];
+    };
+    TurnPage: {
+      items: components["schemas"]["TurnView"][];
+      nextCursor?: string;
+    };
+    ConversationPage: {
+      items: components["schemas"]["ConversationView"][];
+      nextCursor?: string;
+    };
+    AiMaterialView: {
+      id: string;
+      name: string;
+      status: string;
+      size: number;
+      expiresAt: number;
+      errorCode?: string;
+    };
+    AiSegmentLocation: {
+      segmentId: string;
+      page?: number;
+      paragraphStart?: number;
+      paragraphEnd?: number;
+    };
+    AiMaterialSegment: {
+      segmentId: string;
+      page?: number;
+      paragraphStart?: number;
+      paragraphEnd?: number;
+      text: string;
+    };
+    AiMaterialSource: {
+      id: string;
+      /** @enum {string} */
+      kind: "material";
+      conversationId: string;
+      materialId: string;
+      name: string;
+      segmentId: string;
+      page?: number;
+      paragraphStart?: number;
+      paragraphEnd?: number;
+    };
+    AiLeasedSelection: {
+      modelId: string;
+      thinking: components["schemas"]["ThinkingSelection"];
+    };
+    AiClaimInput: components["schemas"]["AiTask"] & {
+      history?: {
+        prompt: string;
+        answer: string;
+      }[];
+      historyTruncated?: boolean;
+      materials?: {
+        id: string;
+        name: string;
+      }[];
+    };
+    AiManagedClaim:
+      | {
+          leaseId: string;
+          operationId: string;
+          expiresAt: number;
+          selection: components["schemas"]["AiLeasedSelection"];
+          /** @enum {string} */
+          taskKind: "chat";
+          input: components["schemas"]["AiClaimInput"];
+        }
+      | {
+          leaseId: string;
+          operationId: string;
+          expiresAt: number;
+          selection: components["schemas"]["AiLeasedSelection"];
+          /** @enum {string} */
+          taskKind: "probe";
+        };
+    AiReorganizationRequest:
+      | {
+          /** @enum {string} */
+          kind: "move";
+          from: string;
+          to: string;
+        }
+      | {
+          /** @enum {string} */
+          kind: "delete";
+          documentIds: string[];
+        };
+    AiReorganizationPlan: {
+      request: components["schemas"]["AiReorganizationRequest"];
+      changes: components["schemas"]["MutationFileChange"][];
+      pathLinks: {
+        from: string;
+        to: string;
+      }[];
+      partialLinks: boolean;
+    };
+    AiWriteResult: {
+      created: number;
+      updated: number;
+      documents: {
+        documentId: string;
+        path: string;
+        readerPath: string;
+      }[];
+    };
+    AiManagedEdit:
+      | {
+          path: string;
+          baseRevision: string | null;
+          markdown: string | null;
+        }
+      | {
+          documentId: string;
+          baseRevision: string;
+          markdown: string | null;
+        };
+    AiManagedResult: {
+      answer: string;
+      sourceIds?: string[];
+      edits?: components["schemas"]["AiManagedEdit"][];
+      reorganization?: components["schemas"]["AiReorganizationRequest"];
     };
   };
   responses: never;
@@ -3964,6 +4714,1169 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AiDiscovery"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getAiSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiSettingsView"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createAiConnection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateAiConnection"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            id: string;
+            version: number;
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  removeAiConnection: {
+    parameters: {
+      query: {
+        expectedVersion: number;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  updateAiConnection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAiConnection"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  setAiPreference: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          selection: components["schemas"]["ModelSelection"] | null;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  setAiDefault: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          selection: components["schemas"]["ModelSelection"];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  setAiGlobalEnabled: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          enabled: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  activateManagedAi: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ManagedActivation"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            activationId: string;
+            /** @enum {string} */
+            dispatchMode: "managed";
+            settingsVersion: number;
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  startAiProbe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiProbeInput"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiProbe"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getAiProbe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiProbe"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listConversations: {
+    parameters: {
+      query: {
+        workspaceId: string;
+        documentId?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConversationPage"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createConversation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConversationScope"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConversationView"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getConversation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConversationView"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  deleteConversation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listTurns: {
+    parameters: {
+      query?: {
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TurnPage"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createTurn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateTurn"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TurnView"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  cancelTurn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        turnId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TurnView"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listAiMaterials: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiMaterialView"][];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  uploadAiMaterial: {
+    parameters: {
+      query: {
+        name: string;
+      };
+      header?: never;
+      path: {
+        conversationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "text/plain": string;
+        "text/markdown": string;
+        "application/pdf": string;
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiMaterialView"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  removeAiMaterial: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        materialId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listAiMaterialSegments: {
+    parameters: {
+      query?: {
+        cursor?: string;
+        q?: string;
+      };
+      header?: never;
+      path: {
+        conversationId: string;
+        materialId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            items: components["schemas"]["AiSegmentLocation"][];
+            nextCursor?: string;
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  readAiMaterialSegment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        conversationId: string;
+        materialId: string;
+        segmentId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiMaterialSegment"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  heartbeatManagedRunner: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Success */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  claimManagedTask: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiManagedClaim"];
+        };
+      };
+      /** @description No queued task */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  discoverAiDocumentsV2: {
+    parameters: {
+      query?: {
+        q?: string;
+      };
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Accessible document metadata in this task's workspace */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentSummary"][];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  readAiSourceV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiSourceRequest"];
+      };
+    };
+    responses: {
+      /** @description Authorized source snapshot */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiSourceData"];
+        };
+      };
+      /** @description Operation could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  reportAiRunnerEventV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiRunnerEvent"];
+      };
+    };
+    responses: {
+      /** @description Durable event sequence */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiEventReceipt"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  renewAiLeaseV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description New execution lease expiration */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiLeaseRenewal"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  failAiOperationV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json":
+          | components["schemas"]["AiRunnerFailure"]
+          | {
+              text: string;
+              /** @enum {string} */
+              code: "authentication" | "rate_limit" | "timeout" | "incompatible" | "unavailable";
+            };
+      };
+    };
+    responses: {
+      /** @description Failed operation state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiOperation"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  finishAiOperationV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json":
+          | components["schemas"]["AiManagedResult"]
+          | {
+              /** @constant */
+              ok: true;
+            };
+      };
+    };
+    responses: {
+      /** @description Operation result or confirmation */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiOperation"];
+        };
+      };
+      /** @description Operation could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  getManagedProvider: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            messagesUrl: string;
+            apiKey: string;
+            pinnedIp: string;
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  findLeasedMaterialSegments: {
+    parameters: {
+      query?: {
+        cursor?: string;
+        q?: string;
+      };
+      header?: never;
+      path: {
+        lease: string;
+        materialId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            items: components["schemas"]["AiSegmentLocation"][];
+            nextCursor?: string;
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  readLeasedMaterialSegment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+        materialId: string;
+        segmentId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            source: components["schemas"]["AiMaterialSource"];
+            text: string;
+          };
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  cancelAiConfirmation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiConfirmRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiOperation"];
         };
       };
       /** @description Request could not be completed */

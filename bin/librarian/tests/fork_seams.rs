@@ -15,6 +15,9 @@ const PASSWORD: &str = "test-account-only-password";
 const LEFT: &str = "清晨，河岸鸟鸣。\r\n";
 const RIGHT: &str = "Private test space B.\n";
 
+#[path = "fixtures/mcp_workspace.rs"]
+mod mcp_workspace;
+
 struct Server {
     root: TempDir,
     _task: ServerTask,
@@ -32,7 +35,16 @@ impl Drop for ServerTask {
 
 impl Server {
     async fn boot() -> Self {
+        Self::with_reader_base(None).await
+    }
+
+    async fn with_reader_base(base: Option<&str>) -> Self {
         let root = tempfile::tempdir().unwrap();
+        if let Some(base) = base {
+            let dir = root.path().join(".librarian");
+            fs::create_dir(&dir).unwrap();
+            fs::write(dir.join("server.json"),json!({"publicReaderUrl":base}).to_string()).unwrap();
+        }
         let users = UserStore::create_empty(root.path()).unwrap();
         for name in ["alice", "bob", "reader"] {
             users
@@ -602,7 +614,12 @@ async fn mcp_lists_only_product_tools_and_their_input_contracts() {
     let response = server.rpc(&session.access, "tools/list", json!({})).await;
     let tools: Value = response.json().await.unwrap();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    let expected: [(&str, bool, &[&str]); 13] = [
+    let expected: [(&str, bool, &[&str]); 18] = [
+        ("workspace_upload_files", false, &["workspaceId","targetDirectory","operationId","files"]),
+        ("workspace_apply_edits", false, &["workspaceId","operationId","edits"]),
+        ("workspace_request_reorganization", false, &["workspaceId","operationId","request"]),
+        ("workspace_get_operation", true, &["workspaceId","operationId"]),
+        ("workspace_undo_operation", false, &["workspaceId","operationId"]),
         ("workspace_list", true, &[]),
         ("workspace_publish", false, &["workspaceId", "delivery"]),
         (

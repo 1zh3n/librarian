@@ -234,10 +234,11 @@ fn decode(bytes: &[u8]) -> Option<Cow<'_, str>> {
     } else {
         return std::str::from_utf8(bytes).ok().map(Cow::Borrowed);
     };
-    if tail.len() % 2 != 0 {
+    let (pairs, remainder) = tail.as_chunks::<2>();
+    if !remainder.is_empty() {
         return None;
     }
-    char::decode_utf16(tail.chunks_exact(2).map(|pair| units([pair[0], pair[1]])))
+    char::decode_utf16(pairs.iter().copied().map(units))
         .collect::<Result<String, _>>()
         .ok()
         .map(Cow::Owned)

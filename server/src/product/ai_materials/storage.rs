@@ -163,13 +163,20 @@ fn drain(db: &Metadata) -> Result<(), ApiError> {
         };
         let parsed = parse_file(&dir, &id, &format);
         let con = db.connection()?;
-        let live: bool = con.query_row("SELECT EXISTS(SELECT 1 FROM ai_materials WHERE id=?1 AND status='working' AND expires_at>?2)",params![id,now()],|r|r.get(0))?;
+        let live: bool = con.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ai_materials WHERE id=?1 AND status='working' AND expires_at>?2)",
+            params![id, now()], |r| r.get(0),
+        )?;
         if live {
             let result = parsed.and_then(|segments| {
                 let tmp = NamedTempFile::new_in(&dir).map_err(|_| "storage_error")?;
                 serde_json::to_writer(tmp.as_file(), &segments).map_err(|_| "storage_error")?;
                 tmp.as_file().sync_all().map_err(|_| "storage_error")?;
                 tmp.persist(dir.join(format!("{id}.json")))
+                    .map_err(|_| "storage_error")?;
+                #[cfg(unix)]
+                File::open(&dir)
+                    .and_then(|f| f.sync_all())
                     .map_err(|_| "storage_error")?;
                 Ok(())
             });
@@ -216,6 +223,7 @@ fn parse_file(dir: &Path, id: &str, format: &str) -> Result<Vec<Segment>, &'stat
                     (libc::RLIMIT_AS, 512 * 1024 * 1024),
                     (libc::RLIMIT_FSIZE, 8 * 1024 * 1024),
                     (libc::RLIMIT_CORE, 0),
+                    (libc::RLIMIT_CPU, DEADLINE.as_secs()),
                 ] {
                     let limit = libc::rlimit {
                         rlim_cur: max,

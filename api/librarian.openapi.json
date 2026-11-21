@@ -3479,6 +3479,1789 @@
           }
         }
       }
+    },
+    "/ai/settings": {
+      "get": {
+        "operationId": "getAiSettings",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettingsView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/connections": {
+      "post": {
+        "operationId": "createAiConnection",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAiConnection"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/connections/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateAiConnection",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAiConnection"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeAiConnection",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/settings/preference": {
+      "put": {
+        "operationId": "setAiPreference",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "selection"
+                ],
+                "properties": {
+                  "selection": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/ModelSelection"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/default": {
+      "put": {
+        "operationId": "setAiDefault",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "selection"
+                ],
+                "properties": {
+                  "selection": {
+                    "$ref": "#/components/schemas/ModelSelection"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/global-enabled": {
+      "put": {
+        "operationId": "setAiGlobalEnabled",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/managed-activation": {
+      "post": {
+        "operationId": "activateManagedAi",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "activationId",
+                    "dispatchMode",
+                    "settingsVersion"
+                  ],
+                  "properties": {
+                    "activationId": {
+                      "type": "string"
+                    },
+                    "dispatchMode": {
+                      "type": "string",
+                      "enum": [
+                        "managed"
+                      ]
+                    },
+                    "settingsVersion": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedActivation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/connections/{id}/probe": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "startAiProbe",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProbe"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiProbeInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/settings/probes/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getAiProbe",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProbe"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/conversations": {
+      "post": {
+        "operationId": "createConversation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationScope"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listConversations",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "documentId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/conversations/{conversationId}": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getConversation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteConversation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/conversations/{conversationId}/turns": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listTurns",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createTurn",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTurn"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/conversations/{conversationId}/turns/{turnId}/cancel": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "turnId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "cancelTurn",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/conversations/{conversationId}/materials": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listAiMaterials",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiMaterialView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "uploadAiMaterial",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiMaterialView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "text/markdown": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/conversations/{conversationId}/materials/{materialId}": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "materialId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "removeAiMaterial",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/conversations/{conversationId}/materials/{materialId}/segments": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "materialId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listAiMaterialSegments",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AiSegmentLocation"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/conversations/{conversationId}/materials/{materialId}/segments/{segmentId}": {
+      "parameters": [
+        {
+          "name": "conversationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "materialId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "segmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readAiMaterialSegment",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiMaterialSegment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/v2/heartbeat": {
+      "post": {
+        "operationId": "heartbeatManagedRunner",
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/v2/claims": {
+      "post": {
+        "operationId": "claimManagedTask",
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiManagedClaim"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No queued task"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/documents": {
+      "get": {
+        "operationId": "discoverAiDocumentsV2",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accessible document metadata in this task's workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/sources": {
+      "post": {
+        "operationId": "readAiSourceV2",
+        "responses": {
+          "200": {
+            "description": "Authorized source snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSourceData"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSourceRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/events": {
+      "post": {
+        "operationId": "reportAiRunnerEventV2",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Durable event sequence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiEventReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiRunnerEvent"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/renew": {
+      "post": {
+        "operationId": "renewAiLeaseV2",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New execution lease expiration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiLeaseRenewal"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/fail": {
+      "post": {
+        "operationId": "failAiOperationV2",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Failed operation state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AiRunnerFailure"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "text",
+                      "code"
+                    ],
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "authentication",
+                          "rate_limit",
+                          "timeout",
+                          "incompatible",
+                          "unavailable"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/result": {
+      "put": {
+        "operationId": "finishAiOperationV2",
+        "responses": {
+          "200": {
+            "description": "Operation result or confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Operation could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AiManagedResult"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "ok"
+                    ],
+                    "properties": {
+                      "ok": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ]
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/provider": {
+      "parameters": [
+        {
+          "name": "lease",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getManagedProvider",
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "messagesUrl",
+                    "apiKey",
+                    "pinnedIp"
+                  ],
+                  "properties": {
+                    "messagesUrl": {
+                      "type": "string"
+                    },
+                    "apiKey": {
+                      "type": "string"
+                    },
+                    "pinnedIp": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/materials/{materialId}/segments": {
+      "parameters": [
+        {
+          "name": "lease",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "materialId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "findLeasedMaterialSegments",
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AiSegmentLocation"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/materials/{materialId}/segments/{segmentId}": {
+      "parameters": [
+        {
+          "name": "lease",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "materialId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "segmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readLeasedMaterialSegment",
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "source",
+                    "text"
+                  ],
+                  "properties": {
+                    "source": {
+                      "$ref": "#/components/schemas/AiMaterialSource"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/operations/{id}/cancel": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "cancelAiConfirmation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiConfirmRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3499,6 +5282,16 @@
       "deliveryToken": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "managedRunnerToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Private token issued to one enrolled runner instance."
+      },
+      "runnerInstance": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Librarian-Runner-Id"
       }
     },
     "schemas": {
@@ -4536,6 +6329,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "plan": {
+            "$ref": "#/components/schemas/AiReorganizationPlan"
           }
         }
       },
@@ -4591,7 +6387,14 @@
           "sources": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AiSourceReference"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/AiSourceReference"
+                },
+                {
+                  "$ref": "#/components/schemas/AiMaterialSource"
+                }
+              ]
             }
           },
           "commitId": {
@@ -4621,6 +6424,12 @@
             "items": {
               "$ref": "#/components/schemas/MutationFileChange"
             }
+          },
+          "writeResult": {
+            "$ref": "#/components/schemas/AiWriteResult"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ModelSelection"
           }
         }
       },
@@ -4816,7 +6625,8 @@
           "text": {
             "type": "string"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateWorkspace": {
         "type": "object",
@@ -5270,29 +7080,22 @@
         }
       },
       "AiDiscoveryInput": {
-        "type": "object",
-        "required": [
-          "provider",
-          "baseUrl",
-          "apiKey"
-        ],
-        "properties": {
-          "provider": {
-            "type": "string",
-            "enum": [
-              "deepseek"
-            ]
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DraftAiDiscovery"
           },
-          "baseUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "apiKey": {
-            "type": "string",
-            "format": "password",
-            "writeOnly": true
+          {
+            "type": "object",
+            "required": [
+              "connectionId"
+            ],
+            "properties": {
+              "connectionId": {
+                "type": "string"
+              }
+            }
           }
-        }
+        ]
       },
       "DiscoveredModel": {
         "type": "object",
@@ -5366,6 +7169,1033 @@
             "items": {
               "$ref": "#/components/schemas/DiscoveredModel"
             }
+          }
+        }
+      },
+      "DraftAiDiscovery": {
+        "type": "object",
+        "required": [
+          "provider",
+          "baseUrl",
+          "apiKey"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek"
+            ]
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "apiKey": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true
+          }
+        }
+      },
+      "ThinkingSelection": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "provider_default",
+                  "off"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "mode",
+              "level"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "effort"
+                ]
+              },
+              "level": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "ModelSelection": {
+        "type": "object",
+        "required": [
+          "connectionId",
+          "modelId",
+          "thinking"
+        ],
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "thinking": {
+            "$ref": "#/components/schemas/ThinkingSelection"
+          }
+        }
+      },
+      "AiConnection": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "provider",
+          "version",
+          "enabled",
+          "models",
+          "fetchedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek"
+            ]
+          },
+          "version": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredModel"
+            }
+          },
+          "fetchedAt": {
+            "type": "integer"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "hasApiKey": {
+            "type": "boolean"
+          },
+          "credentialAvailable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiSettingsView": {
+        "type": "object",
+        "required": [
+          "settingsVersion",
+          "globalEnabled",
+          "dispatchMode",
+          "runnerOnline",
+          "connections",
+          "defaultSelection",
+          "preference",
+          "effectiveSelection",
+          "fallbackReason"
+        ],
+        "properties": {
+          "settingsVersion": {
+            "type": "integer"
+          },
+          "globalEnabled": {
+            "type": "boolean"
+          },
+          "dispatchMode": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "managed"
+            ]
+          },
+          "runnerOnline": {
+            "type": "boolean"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiConnection"
+            }
+          },
+          "defaultSelection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveSelection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fallbackReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CreateAiConnection": {
+        "type": "object",
+        "required": [
+          "label",
+          "provider",
+          "baseUrl",
+          "discoveryId",
+          "keyChange"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek"
+            ]
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "discoveryId": {
+            "type": "string"
+          },
+          "keyChange": {
+            "type": "object",
+            "required": [
+              "kind",
+              "apiKey"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "replace"
+                ]
+              },
+              "apiKey": {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              }
+            }
+          }
+        }
+      },
+      "UpdateAiConnection": {
+        "type": "object",
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek"
+            ]
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "discoveryId": {
+            "type": "string"
+          },
+          "keyChange": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "apiKey"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "replace"
+                    ]
+                  },
+                  "apiKey": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "keep",
+                      "clear"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ManagedActivation": {
+        "type": "object",
+        "required": [
+          "activationId",
+          "expectedSettingsVersion",
+          "selection"
+        ],
+        "properties": {
+          "activationId": {
+            "type": "string"
+          },
+          "expectedSettingsVersion": {
+            "type": "integer"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ModelSelection"
+          }
+        }
+      },
+      "AiProbeInput": {
+        "type": "object",
+        "required": [
+          "modelId",
+          "thinking"
+        ],
+        "properties": {
+          "modelId": {
+            "type": "string"
+          },
+          "thinking": {
+            "$ref": "#/components/schemas/ThinkingSelection"
+          }
+        }
+      },
+      "AiProbe": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ConversationScope": {
+        "type": "object",
+        "required": [
+          "workspaceId"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "documentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ConversationView": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "documentId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "documentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        }
+      },
+      "CreateTurn": {
+        "type": "object",
+        "required": [
+          "clientTurnId",
+          "mode",
+          "prompt"
+        ],
+        "properties": {
+          "clientTurnId": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "edit"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "context": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiContext"
+            }
+          },
+          "retryOfTurnId": {
+            "type": "string"
+          },
+          "materialIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TurnView": {
+        "type": "object",
+        "required": [
+          "id",
+          "conversationId",
+          "clientTurnId",
+          "operationId",
+          "prompt",
+          "retryOfTurnId",
+          "createdAt",
+          "historyTruncated",
+          "operation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "clientTurnId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "retryOfTurnId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "historyTruncated": {
+            "type": "boolean"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AiOperation"
+          }
+        }
+      },
+      "TurnPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TurnView"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        }
+      },
+      "ConversationPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationView"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        }
+      },
+      "AiMaterialView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "size",
+          "expiresAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": "integer"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        }
+      },
+      "AiSegmentLocation": {
+        "type": "object",
+        "required": [
+          "segmentId"
+        ],
+        "properties": {
+          "segmentId": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "paragraphStart": {
+            "type": "integer"
+          },
+          "paragraphEnd": {
+            "type": "integer"
+          }
+        }
+      },
+      "AiMaterialSegment": {
+        "type": "object",
+        "required": [
+          "segmentId",
+          "text"
+        ],
+        "properties": {
+          "segmentId": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "paragraphStart": {
+            "type": "integer"
+          },
+          "paragraphEnd": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "AiMaterialSource": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "conversationId",
+          "materialId",
+          "name",
+          "segmentId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "material"
+            ]
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "materialId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "segmentId": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "paragraphStart": {
+            "type": "integer"
+          },
+          "paragraphEnd": {
+            "type": "integer"
+          }
+        }
+      },
+      "AiLeasedSelection": {
+        "type": "object",
+        "required": [
+          "modelId",
+          "thinking"
+        ],
+        "properties": {
+          "modelId": {
+            "type": "string"
+          },
+          "thinking": {
+            "$ref": "#/components/schemas/ThinkingSelection"
+          }
+        }
+      },
+      "AiClaimInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AiTask"
+          },
+          {
+            "type": "object",
+            "required": [],
+            "properties": {
+              "history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "prompt",
+                    "answer"
+                  ],
+                  "properties": {
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "answer": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "historyTruncated": {
+                "type": "boolean"
+              },
+              "materials": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AiManagedClaim": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "leaseId",
+              "operationId",
+              "expiresAt",
+              "selection",
+              "taskKind",
+              "input"
+            ],
+            "properties": {
+              "leaseId": {
+                "type": "string"
+              },
+              "operationId": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "integer"
+              },
+              "selection": {
+                "$ref": "#/components/schemas/AiLeasedSelection"
+              },
+              "taskKind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "input": {
+                "$ref": "#/components/schemas/AiClaimInput"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "leaseId",
+              "operationId",
+              "expiresAt",
+              "selection",
+              "taskKind"
+            ],
+            "properties": {
+              "leaseId": {
+                "type": "string"
+              },
+              "operationId": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "integer"
+              },
+              "selection": {
+                "$ref": "#/components/schemas/AiLeasedSelection"
+              },
+              "taskKind": {
+                "type": "string",
+                "enum": [
+                  "probe"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AiReorganizationRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "from",
+              "to"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "move"
+                ]
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "documentIds"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "delete"
+                ]
+              },
+              "documentIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AiReorganizationPlan": {
+        "type": "object",
+        "required": [
+          "request",
+          "changes",
+          "pathLinks",
+          "partialLinks"
+        ],
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/AiReorganizationRequest"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MutationFileChange"
+            }
+          },
+          "pathLinks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "from",
+                "to"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "partialLinks": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiWriteResult": {
+        "type": "object",
+        "required": [
+          "created",
+          "updated",
+          "documents"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer"
+          },
+          "updated": {
+            "type": "integer"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "documentId",
+                "path",
+                "readerPath"
+              ],
+              "properties": {
+                "documentId": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "readerPath": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AiManagedEdit": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "path",
+              "baseRevision",
+              "markdown"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "baseRevision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "markdown": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "documentId",
+              "baseRevision",
+              "markdown"
+            ],
+            "properties": {
+              "documentId": {
+                "type": "string"
+              },
+              "baseRevision": {
+                "type": "string"
+              },
+              "markdown": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AiManagedResult": {
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiManagedEdit"
+            }
+          },
+          "reorganization": {
+            "$ref": "#/components/schemas/AiReorganizationRequest"
           }
         }
       }

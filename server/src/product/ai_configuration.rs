@@ -483,6 +483,8 @@ fn update_sync(
         params![old.label,old.base_url,old.ciphertext,old.enabled,json!(old.catalog).to_string(),id])?;
     bump(&tx)?;
     tx.commit()?;
+    drop(db);
+    super::ai_managed::sweep(service)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -508,6 +510,8 @@ async fn remove(
         tx.execute("DELETE FROM ai_connections WHERE id=?1", [&id])?;
         bump(&tx)?;
         tx.commit()?;
+        drop(db);
+        super::ai_managed::sweep(&service)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -594,12 +598,16 @@ async fn global_enabled(
             "UPDATE ai_configuration SET enabled=?1,version=version+1 WHERE singleton=1",
             [enabled],
         )?;
+        drop(db);
+        if !enabled {
+            super::ai_managed::sweep(&service)?;
+        }
         Ok(StatusCode::NO_CONTENT)
     })
     .await
 }
 
-fn runner_online(db: &Connection) -> Result<bool, ApiError> {
+pub(super) fn runner_online(db: &Connection) -> Result<bool, ApiError> {
     Ok(db.query_row(
         "SELECT EXISTS(SELECT 1 FROM ai_runner_instances WHERE last_seen >= unixepoch()-30)",
         [],

@@ -23,6 +23,11 @@ struct Args {
 enum Command {
     #[command(hide = true)]
     MaterialParser { format: String },
+    /// Enroll a managed runner using a private local identity file.
+    RunnerEnroll {
+        #[arg(long)]
+        identity_file: PathBuf,
+    },
     /// Set up the first local administrator with a password received on stdin.
     Init {
         #[arg(long, default_value = "admin")]
@@ -34,6 +39,17 @@ fn main() -> std::io::Result<()> {
     let args = Args::parse();
     if let Some(Command::MaterialParser { format }) = args.command {
         return ai_materials::worker(&format);
+    }
+    if let Some(Command::RunnerEnroll { identity_file }) = &args.command {
+        let root = args.data_root.as_ref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "runner-enroll requires --data-root",
+            )
+        })?;
+        silverbullet_server::product::runner_enrollment::enroll(root, identity_file)?;
+        println!("Librarian runner enrolled");
+        return Ok(());
     }
     serve(args)
 }

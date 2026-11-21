@@ -295,6 +295,8 @@ async fn list_turns(
     run(move || {
         authorize(&service, &account, &id)?;
         let (time, last, limit) = query.bounds(i64::MIN)?;
+        let _guard=service.metadata.ai_guard()?;
+        super::ai_managed::sweep(&service)?;
         let db = service.metadata.connection()?;
         let mut stmt = db.prepare(&format!(
             "{TURN_SELECT} WHERE t.conversation_id=?1 AND (t.created_at,t.id)>(?2,?3)
@@ -341,6 +343,7 @@ fn create_turn(
     let db = &service.metadata;
     let _guard = db.ai_guard()?;
     let conversation = authorize(service, account, &id)?;
+    super::ai_managed::sweep(service)?;
     if input.client_turn_id.trim().is_empty() || input.client_turn_id.len() > 128 {
         return Err(ApiError::invalid(
             "Expected a stable client turn ID of at most 128 bytes",
@@ -485,9 +488,12 @@ pub(super) fn claim_history(
         return Ok(None);
     };
     let mut stmt = conn.prepare(
-        "SELECT t.prompt,json_extract(o.entry,'$.view.answer') FROM ai_turns t
+        "SELECT t.prompt,json_extract(o.entry,'$.view.answer'),o.id FROM ai_turns t
          JOIN ai_operations o ON o.id=t.operation_id
          WHERE t.conversation_id=? AND t.created_at<? AND o.status='succeeded'
+           AND NOT EXISTS (SELECT 1 FROM ai_material_reads r
+             LEFT JOIN ai_materials m ON m.id=r.material_id WHERE r.operation_id=o.id
+             AND (m.id IS NULL OR m.expires_at<=unixepoch() OR m.status!='ready'))
          ORDER BY t.created_at DESC LIMIT 13",
     )?;
     let mut history = Vec::new();
@@ -504,6 +510,12 @@ pub(super) fn claim_history(
             truncated = true;
             break;
         }
+        // A follow-up answer may quote the earlier answer even without another tool read.
+        conn.execute(
+            "INSERT OR IGNORE INTO ai_material_reads(operation_id,material_id)
+             SELECT ?1,material_id FROM ai_material_reads WHERE operation_id=?2",
+            params![operation, row.get::<_, String>(2)?],
+        )?;
         history.push(pair);
         remaining -= bytes;
     }
