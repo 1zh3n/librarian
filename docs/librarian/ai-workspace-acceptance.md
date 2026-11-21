@@ -2,6 +2,24 @@
 
 AI 功能在 `spike/librarian-ai-workspace` 保存到 `b6ada3b3`。集成分支 `feat/librarian-reader-ai-integration` 从远端 Reader UI 的 `999a4531` 建立。2026 年 11 月 21 日的网页验收使用独立 HTTPS 服务、受管执行器和合成文档。
 
+## 从顶栏进入跨工作区助手
+
+2026 年 11 月 22 日，产品代码 `1b15d661`。登录后，在首页或正文顶栏点「AI」进入 `/ai`。新会话默认选中「全部空间」，读取范围以当前账号可访问的空间为限。通过「对话范围」可进入单个空间；从正文选区提问则继续使用文档内的对话。模型和连接从顶栏「设置 → AI」配置。
+
+在隔离的 Reader 实例上，用实际 DeepSeek Flash 完成了以下九轮。测试账号从零个空间开始，浏览器通过产品接口回读结果。
+
+| 在 Reader 中执行 | 核对结果 |
+| --- | --- |
+| 创建「东区核查」，比较两个空间的同名《盘点.md》 | 两份原文分别记录 713 和 906 毫米。回答给出相差 193 毫米，两条实际引用各自带空间名、文档 ID 和 revision。 |
+| 输入追问草稿，打开西区引用，浏览器后退，发送追问 | 实际打开西区的 906 毫米原文。后退回到原引用并恢复键盘焦点和草稿；在同一会话追问得到 193 毫米。 |
+| 修改西区原文，再撤销 | 模型产生一份更新回执；撤销后从文档接口读取全文，与初始 Markdown 逐字相同。 |
+| 将东区文档移入西区，再从西区复制回已改名的东区 | 预览中确认源、目标后执行。移动保留原 ID，旧链接打开正确正文；副本具有独立 ID，正文与源一致。 [移动预览](evidence/ai-workspace/global-move-preview.png) |
+| 工作区改名、授予成员只读权限、移除成员 | 同一空间 ID 保持有效。用第二个账号验证权限，授权后能读，移除后在其空间列表中消失。 |
+
+旧候选的手机会话区高 176 CSS px，同组工具栏控件中心相差 24 px。本次在 390 × 844 的真实模型对话中量得会话区高 569.6 px，「全部空间」占一行，页面宽 390 px；桌面会话区高 579.6 px。用确定性回答复测的桌面和手机画面中，同组控件中心差均为 0 px。320 px、200% 字号和缩短键盘视口的操作在 Chromium 模拟环境完成。 [真实桌面对话](evidence/ai-workspace/global-chat-desktop.png) · [真实手机宽度对话](evidence/ai-workspace/global-chat-phone.png) · [九轮操作回执](evidence/ai-workspace/global-assistant-receipts.json) · [确定性样本与逐项测量](evidence/standalone-chat/README.md)
+
+用受控执行器另外复测了撤权后隐藏已有答案和来源、同路径同内容替换后拒绝过期写入，以及快速写入先于事件订阅完成时刷新正文。分别从 v9 数据升级并重放原回执，核对了原 Markdown 字节、文档和来源 ID、事件流和旧会话的空间范围。浏览器回归从实际 Rust 服务启动，运行命令见本文末尾。
+
 ## 集成后的真实 Reader 与 DeepSeek
 
 从顶栏「设置 → AI」显式启用受管执行器。个人偏好选择 DeepSeek V4 Pro、思考等级 high，保存后关闭弹窗，再从顶栏打开。浏览器回读模型和等级，密钥框为空，关闭后焦点回到设置按钮。复测的四个视口横向溢出均为 0 CSS px。[1440 px](evidence/ai-workspace/settings-reopened-1440.png) · [390 px](evidence/ai-workspace/settings-reopened-390.png) · [360 px](evidence/ai-workspace/settings-reopened-360.png) · [320 px](evidence/ai-workspace/settings-reopened-320.png)

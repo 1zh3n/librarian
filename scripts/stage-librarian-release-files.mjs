@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 export function stageReleaseFiles(root, bundle) {
   const evidence = execFileSync("git", [
     "ls-files", "-z", "--", "docs/librarian/evidence/ai-workspace/",
-    "docs/librarian/evidence/managed-reader/", "docs/librarian/*mcp*.md",
+    "docs/librarian/evidence/managed-reader/", "docs/librarian/evidence/standalone-chat/",
+    "docs/librarian/*mcp*.md",
   ], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
   for (const file of [
     "LICENSE.md",
