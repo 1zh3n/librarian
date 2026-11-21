@@ -20,7 +20,7 @@
 
 - Reader 解析 Markdown 后使用 `rehype-sanitize`，安全渲染与原始 Markdown 存储保持独立。Reader 附件通过授权 API，严格限制可内联类型，并返回 `nosniff`。登录和 MCP 同意页有自己的安全头。审阅确认了 Reader 既有控制和上表的输出边界。 [Markdown 保真与清理测试](../../apps/reader/tests/markdown-fidelity.test.ts) · [快照附件测试](../../bin/librarian/tests/snapshots.rs#L356)
 - 文档与投递检查相对文件路径，拒绝危险路径分段。ZIP 导入拒绝符号链接等特殊条目、重名与归一化别名，限制解包大小和条目数。快照使用经授权的选择范围，Git 固定版读取经验证的 blob。磁盘共享的前提见上表。 [路径校验](../../server/src/product/mutations.rs#L528) · [ZIP 检查](../../server/src/product/delivery.rs#L668) · [归档回归](../../bin/librarian/tests/deliveries.rs#L292)
-- 浏览器写入校验同源，退出撤销服务器会话。真实入口应固定 Host 并由可信代理覆盖转发协议。OAuth 的外部客户端元数据取用默认限制 HTTPS、公开地址和重定向。系统 DNS 返回 fake-IP 或其他非公网地址时，CIMD/JWKS 解析可用固定公共 DoH 回退；DoH 端点 pin 到 `1.1.1.1`，只接受公网答案，正常公网解析不发请求。公开入口仍建议默认关闭 MCP。 [同源测试](../../bin/librarian/tests/document_api.rs#L579) · [来源计算](../../server/src/auth/cookie.rs#L53) · [外部请求策略](../../server/src/auth/mcp/net.rs#L55)
+- 浏览器写入校验同源，退出撤销服务器会话。真实入口应固定 Host 并由可信代理覆盖转发协议。OAuth 的外部客户端元数据取用默认限制 HTTPS、公开地址和重定向。系统 DNS 返回 fake-IP 或其他非公网地址时，CIMD/JWKS 解析可用固定公共 DoH 回退；DoH 端点 pin 到 `1.1.1.1`，只接受公网答案，正常公网解析不发请求。登录页 CSP 对 React Aria 注入的 pressable 样式使用 SHA-256 白名单，不启用 `unsafe-inline`。公开入口仍建议默认关闭 MCP。 [同源测试](../../bin/librarian/tests/document_api.rs#L579) · [来源计算](../../server/src/auth/cookie.rs#L53) · [外部请求策略](../../server/src/auth/mcp/net.rs#L55)
 
 ## 依赖检查
 

@@ -19,6 +19,6 @@
 
 自动化检查：`document.querySelectorAll("h1")` 在三种视口都只返回 `["MCP 设置、图片与阅读模式评估"]`；`root.scrollWidth` 分别等于 1440、390、320。
 
-## 已知未改
+## 登录页 CSP 清理
 
-登录页仍有一条 CSP inline-style 控制台提示，不影响登录和 Reader 正文；留作后续清理。
+`1905d6a8` 把 React Aria 注入的 pressable 样式加入登录页 CSP 的 SHA-256 白名单，未启用 `unsafe-inline`；18447 登录页控制台无 CSP 错误，表单和触摸样式正常。
