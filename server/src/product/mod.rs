@@ -10,6 +10,8 @@ mod ai_provider;
 mod ai_reorganization;
 mod ai_runner;
 mod ai_settings;
+mod ai_space_management;
+mod ai_transfer;
 mod auth;
 mod backup;
 mod contract;

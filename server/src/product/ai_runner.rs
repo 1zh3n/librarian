@@ -45,6 +45,7 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .route("/claims/{lease}/result", put(result))
         .layer(Extension(Protocol::Legacy));
     let managed = common
+        .route("/claims/{lease}/workspaces", get(workspaces))
         .route("/claims/{lease}/renew", post(managed_renew))
         .route("/claims/{lease}/fail", post(managed_fail))
         .route("/claims/{lease}/result", put(managed_result))
@@ -163,7 +164,7 @@ async fn claim(
             }
         }
         for mut op in Operation::claimable(db, now, protocol)? {
-            if op.recover_committed(db)? {
+            if op.recover_committed(&service)? {
                 continue;
             }
             if let Err(error) = ai_managed::check_operation(&service, &mut op) {
@@ -180,13 +181,20 @@ async fn claim(
                 op.settle(db, OperationStatus::Failed)?;
                 continue;
             }
+            // Keep the membership snapshot valid until the history and lease are issued.
+            // Resuming an accepted action acquires the workspace lock inside its own domain service.
+            let _workspace_guard = if op.accepted.is_none() {
+                Some(db.workspace_guard()?)
+            } else {
+                None
+            };
             let write = op.view.mode == Mode::Edit;
             let account = match op.actor(&service, write) {
                 Ok(account) => account,
                 Err(error)
                     if matches!(
                         error.status(),
-                        StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+                        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
                     ) =>
                 {
                     op.settle(db, OperationStatus::Canceled)?;
@@ -208,8 +216,9 @@ async fn claim(
                 .ok_or_else(|| ApiError::internal("Missing task input"))?;
             let input = ClaimInput {
                 conversation: super::ai_conversations::claim_history(
-                    db,
-                    &op.view.id,
+                    &service,
+                    &account,
+                    &mut op,
                     input.prompt.len(),
                 )?,
                 materials: if protocol == Protocol::Managed {
@@ -219,6 +228,8 @@ async fn claim(
                 },
                 task: input,
             };
+            // The captured history may have added transitive workspace dependencies.
+            op.actor(&service, write)?;
             let selection = op
                 .view
                 .selection
@@ -270,8 +281,43 @@ pub(super) fn require_running(op: &Operation) -> Result<(), ApiError> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Discovery {
     q: Option<String>,
+    workspace_id: Option<String>,
+}
+
+fn read_workspace<'a>(op: &'a Operation, requested: Option<&'a str>) -> Result<&'a str, ApiError> {
+    match (op.is_global(), requested) {
+        (true, Some(ws)) if !ws.is_empty() => Ok(ws),
+        (true, _) => Err(ApiError::invalid("Global reads require a workspaceId")),
+        (false, Some(ws)) if ws != op.view.workspace_id => Err(ApiError::not_found()),
+        _ => Ok(&op.view.workspace_id),
+    }
+}
+
+async fn workspaces(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
+    run(move || {
+        let _guard = service.metadata.ai_guard()?;
+        let mut op = checked_lease(&service,&headers,&id,Protocol::Managed)?;
+        require_running(&op)?;
+        if !op.is_global() { return Err(ApiError::not_found()); }
+        let account = op.actor(&service,false)?;
+        let _workspace_guard = service.metadata.workspace_guard()?;
+        op.ensure_owner(&service,&account,false)?;
+        let rows = service.workspaces_under_guard(&account)?;
+        let mut result = Vec::with_capacity(rows.len());
+        for w in rows {
+            op.workspace_dependencies.insert(w.id.clone());
+            result.push(serde_json::json!({"id":w.id,"name":w.name,"canWrite":w.can_write,"canManage":w.can_manage}));
+        }
+        op.store(&service.metadata,false)?;
+        Ok(Json(result))
+    }).await
 }
 
 async fn documents(
@@ -288,44 +334,50 @@ async fn documents(
         let _guard = lookup.metadata.ai_guard()?;
         let op = checked_lease(&lookup, &copy, &id, protocol)?;
         require_running(&op)?;
-        Ok((op.actor(&lookup, false)?, op.view.workspace_id))
+        let workspace = read_workspace(&op, discovery.workspace_id.as_deref())?.to_owned();
+        let account = op.actor(&lookup, false)?;
+        lookup.scope(&account, &workspace, false)?;
+        Ok((account, workspace))
     })
     .await?;
-    if let Some(query) = discovery.q {
+    let hits = if let Some(q) = discovery.q {
         let hits = super::search::find_documents(
             service.clone(),
             account,
-            workspace,
-            query,
+            workspace.clone(),
+            q,
             &HeaderMap::new(),
         )
         .await?;
-        run(move || {
-            let _guard = service.metadata.ai_guard()?;
-            let op = checked_lease(&service, &headers, &lease, protocol)?;
-            require_running(&op)?;
-            op.actor(&service, false)?;
-            Ok(Json(hits.into_iter().map(|hit| hit.document).collect()))
-        })
-        .await
+        Some(hits.into_iter().map(|hit| hit.document).collect())
     } else {
-        run(move || {
-            let _guard = service.metadata.ai_guard()?;
-            let op = checked_lease(&service, &headers, &lease, protocol)?;
-            require_running(&op)?;
-            service
-                .list(
-                    &account,
-                    &workspace,
-                    DocumentList {
-                        after: None,
-                        limit: Some(100),
-                    },
-                )
-                .map(Json)
-        })
-        .await
-    }
+        None
+    };
+    run(move || {
+        let _guard = service.metadata.ai_guard()?;
+        let mut op = checked_lease(&service, &headers, &lease, protocol)?;
+        require_running(&op)?;
+        let _workspace_guard = service.metadata.workspace_guard()?;
+        let account = op.actor(&service, false)?;
+        service.scope(&account, &workspace, false)?;
+        let docs = match hits {
+            Some(hits) => hits,
+            None => service.list(
+                &account,
+                &workspace,
+                DocumentList {
+                    after: None,
+                    limit: Some(100),
+                },
+            )?,
+        };
+        if op.is_global() {
+            op.workspace_dependencies.insert(workspace);
+            op.store(&service.metadata, false)?;
+        }
+        Ok(Json(docs))
+    })
+    .await
 }
 
 #[derive(Serialize)]
@@ -441,6 +493,10 @@ async fn fail(
         let _guard = db.ai_guard()?;
         let mut op = checked_lease(&service, &headers, &lease, protocol)?;
         op.actor(&service, false)?;
+        if op.recover_committed(&service)? {
+            op.actor(&service, false)?;
+            return Ok(Json(op.view));
+        }
         let text = request.text.trim();
         if text.is_empty() || text.len() > 1024 {
             return Err(ApiError::invalid(
@@ -462,6 +518,7 @@ async fn fail(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SourceRequest {
+    workspace_id: Option<String>,
     document_id: String,
     #[serde(default)]
     outline: bool,
@@ -489,12 +546,12 @@ async fn source(
         let _guard = db.ai_guard()?;
         let mut op = checked_lease(&service, &headers, &lease, protocol)?;
         require_running(&op)?;
+        let _workspace_guard = db.workspace_guard()?;
         let account = op.actor(&service, false)?;
-        let (workspace, path) = db.document_path(&request.document_id)?;
-        if workspace != op.view.workspace_id {
-            return Err(ApiError::not_found());
-        }
+        let workspace = read_workspace(&op, request.workspace_id.as_deref())?.to_owned();
+        let (instance, _) = service.scope(&account, &workspace, false)?;
         let (path, markdown, revision) = if request.outline {
+            let path = service.path_in(&workspace, &request.document_id)?;
             let outline = service.get_outline_in(&account, &workspace, &request.document_id)?;
             let revision = outline.revision.ok_or_else(ApiError::not_found)?;
             (
@@ -504,7 +561,7 @@ async fn source(
             )
         } else {
             let snapshot = service.get_in(&account, &workspace, &request.document_id)?;
-            (path, snapshot.markdown, snapshot.revision)
+            (snapshot.path, snapshot.markdown, snapshot.revision)
         };
         let context = op.input.as_ref().and_then(|input| {
             input
@@ -535,6 +592,10 @@ async fn source(
         };
         if let Some(source) = op.delivered.iter().find(|source| {
             source.document_id == request.document_id
+                && source
+                    .workspace_id
+                    .as_deref()
+                    .is_none_or(|id| id == workspace)
                 && source.path == path
                 && source.revision == revision
                 && source.block_id == block_id
@@ -552,6 +613,8 @@ async fn source(
             ));
         }
         let source = SourceReference {
+            workspace_id: Some(workspace.clone()),
+            workspace_name: Some(instance.config.name.clone()),
             material: None,
             id: Uuid::new_v4().to_string(),
             document_id: request.document_id,
@@ -565,6 +628,9 @@ async fn source(
         let tx = conn.transaction()?;
         if protocol == Protocol::Managed {
             super::ai_materials::charge_read(&tx, &op, markdown.len())?;
+        }
+        if op.is_global() {
+            op.workspace_dependencies.insert(workspace);
         }
         op.delivered.push(source.clone());
         op.store_in(&tx, false)?;
@@ -605,10 +671,21 @@ fn invalid_selection() -> ApiError {
     ApiError::invalid("Source selection is outside the Markdown character boundaries")
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum GlobalAction {
+    Management(super::ai_space_management::Action),
+    Transfer(super::ai_transfer::Request),
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ResultRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    action: Option<GlobalAction>,
     answer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_workspace_id: Option<String>,
     #[serde(default)]
     source_ids: Vec<String>,
     #[serde(default)]
@@ -652,9 +729,13 @@ async fn result(
                     "This lease already submitted a different result",
                 ));
             }
-            if op.view.status == OperationStatus::Running && op.accepted.is_some() {
+            if op.view.status == OperationStatus::Running
+                && op.accepted.is_some()
+                && !op.recover_committed(&service)?
+            {
                 op.apply_result(&service, &account)?;
             }
+            op.actor(&service, false)?;
             if op.view.status == OperationStatus::Conflict {
                 return Err(ApiError::conflict(None));
             }
@@ -668,8 +749,47 @@ async fn result(
                 "Reorganization requires a dedicated edit operation",
             ));
         }
+        if request.target_workspace_id.is_some() != (op.is_global() && !request.edits.is_empty())
+            || (op.is_global()
+                && (request.reorganization.is_some()
+                    || request.edits.iter().any(|e| e.markdown == Some(None))))
+        {
+            return Err(ApiError::invalid(
+                "Global document edits require one targetWorkspaceId and Markdown",
+            ));
+        }
+        if let Some(target) = &request.target_workspace_id {
+            service.scope(&account, target, true)?;
+            op.view.target_workspace_id = Some(target.clone());
+            op.workspace_dependencies.insert(target.clone());
+        }
+        let action = request.action.clone();
+        if action.is_some()
+            && (!op.is_global()
+                || op.protocol != Protocol::Managed
+                || op.view.mode != Mode::Edit
+                || !request.edits.is_empty()
+                || request.reorganization.is_some())
+        {
+            return Err(ApiError::invalid(
+                "A workspace action requires a dedicated global edit",
+            ));
+        }
         let reorganization = request.reorganization.clone();
-        let accepted = verify_result(&service, &op, request)?;
+        let accepted = {
+            let _workspace_guard = service.metadata.workspace_guard()?;
+            let accepted = verify_result(&service, &op, request)?;
+            if let Some(ws) = &op.view.target_workspace_id {
+                service.scope(&account, ws, true)?;
+                op.write_targets = super::ai_reorganization::global_write_targets(
+                    db,
+                    ws,
+                    &accepted.edits,
+                    &op.delivered,
+                )?;
+            }
+            accepted
+        };
         let paths = accepted
             .edits
             .iter()
@@ -678,6 +798,24 @@ async fn result(
             .collect::<Vec<_>>();
         op.result_fingerprint = Some(fingerprint);
         op.input = None;
+        match action {
+            Some(GlobalAction::Transfer(request)) => {
+                op.workspace_dependencies
+                    .insert(request.source_workspace_id.clone());
+                op.workspace_dependencies
+                    .insert(request.target_workspace_id.clone());
+                op.accepted = Some(accepted);
+                super::ai_transfer::preview(&service, &account, &mut op, request)?;
+                return Ok(Json(op.view));
+            }
+            Some(GlobalAction::Management(action)) => {
+                if let Some(id) = action.workspace() {
+                    op.workspace_dependencies.insert(id.to_owned());
+                }
+                op.management_action = Some(action);
+            }
+            None => (),
+        }
         if let Some(request) = reorganization {
             op.accepted = Some(accepted);
             super::ai_reorganization::preview(&service, &account, &mut op, request)?;
@@ -690,6 +828,7 @@ async fn result(
                 id: Uuid::new_v4().to_string(),
                 paths,
                 plan: None,
+                transfer: None,
             });
             op.view.status = OperationStatus::NeedsConfirmation;
         }
@@ -764,7 +903,7 @@ fn verify_result(
                     .markdown
                     .ok_or_else(|| ApiError::invalid("Expected Markdown or explicit deletion"))?;
                 if let Some(revision) = &base_revision {
-                    super::ai_reorganization::verify_read(&op.delivered, &path, revision)?;
+                    super::ai_reorganization::verify_read(op.delivered.iter(), &path, revision)?;
                 } else if markdown.is_none() {
                     return Err(ApiError::invalid("Deleting a file requires its revision"));
                 }
@@ -794,9 +933,9 @@ fn verify_result(
                 .collect::<Result<Vec<_>, ApiError>>()?;
             edits = super::ai_reorganization::resolve_edits(
                 service,
-                &op.view.workspace_id,
+                op.view.mutation_workspace(),
                 batch,
-                Some(&op.delivered),
+                (!op.is_global()).then_some(op.delivered.as_slice()),
             )?;
         }
     }

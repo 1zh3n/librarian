@@ -202,6 +202,8 @@ pub(in crate::product) fn leased_read(
         charge_read(&tx, op, segment.text.len())?;
         let source = crate::product::ai::SourceReference {
             id: Uuid::new_v4().to_string(),
+            workspace_id: None,
+            workspace_name: None,
             document_id: String::new(),
             revision: String::new(),
             path: String::new(),

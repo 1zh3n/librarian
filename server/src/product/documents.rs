@@ -86,6 +86,13 @@ impl DocumentService {
 
     pub(super) fn workspaces(&self, account: &Account) -> Result<Vec<Workspace>, ApiError> {
         let _workspace_guard = self.metadata.workspace_guard()?;
+        self.workspaces_under_guard(account)
+    }
+
+    pub(super) fn workspaces_under_guard(
+        &self,
+        account: &Account,
+    ) -> Result<Vec<Workspace>, ApiError> {
         let registry = self.spaces.manager.registry().current();
         let mut workspaces = Vec::new();
         for instance in registry.instances.values() {

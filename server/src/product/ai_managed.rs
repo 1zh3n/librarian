@@ -157,7 +157,7 @@ pub(super) fn check_operation(
     if matches!(
         op.view.status,
         OperationStatus::Queued | OperationStatus::Running | OperationStatus::NeedsConfirmation
-    ) && !op.recover_committed(&service.metadata)?
+    ) && !op.recover_committed(service)?
     {
         op.view.answer = Some("AI 配置已更改，请重新提交。".into());
         op.settle(&service.metadata, OperationStatus::Failed)?;
@@ -303,7 +303,7 @@ pub(super) fn reconcile(service: &DocumentService, op: &mut Operation) -> Result
     {
         return Ok(());
     }
-    if op.recover_committed(&service.metadata)? {
+    if op.recover_committed(service)? {
         return Ok(());
     }
     if !valid(service, op)? {

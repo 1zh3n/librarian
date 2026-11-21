@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -43,12 +46,12 @@ pub(super) fn resolve_path(
     }
 }
 
-pub(super) fn verify_read(
-    delivered: &[SourceReference],
+pub(super) fn verify_read<'a>(
+    mut delivered: impl Iterator<Item = &'a SourceReference>,
     path: &str,
     revision: &str,
 ) -> Result<(), ApiError> {
-    if delivered.iter().any(|s| {
+    if delivered.any(|s| {
         s.material.is_none()
             && s.path == path
             && s.revision == revision
@@ -83,7 +86,7 @@ pub(super) fn resolve_edits(
         }
         let path = resolve_path(service, workspace, edit.path, edit.document_id)?;
         if let (Some(reads), Some(revision)) = (delivered, &base_revision) {
-            verify_read(reads, &path, revision)?;
+            verify_read(reads.iter(), &path, revision)?;
         }
         resolved.push(MutationEdit {
             path,
@@ -112,9 +115,43 @@ pub(super) struct WriteResult {
     pub documents: Vec<WrittenDocument>,
 }
 
+fn document_for_edit(path: &str) -> String {
+    path.strip_suffix(".outline.md")
+        .map(|stem| format!("{stem}.md"))
+        .unwrap_or_else(|| path.to_owned())
+}
+
+pub(super) fn global_write_targets(
+    db: &Metadata,
+    workspace: &str,
+    edits: &[MutationEdit],
+    delivered: &[SourceReference],
+) -> Result<BTreeMap<String, String>, ApiError> {
+    let mut conn = db.connection()?;
+    let tx = conn.transaction()?;
+    let mut targets = BTreeMap::new();
+    for edit in edits {
+        let path = document_for_edit(&edit.path);
+        let id = Metadata::document_id_in(&tx, workspace, &path)?;
+        if let Some(revision) = &edit.base_revision {
+            verify_read(
+                delivered.iter().filter(|s| {
+                    s.workspace_id.as_deref() == Some(workspace) && s.document_id == id
+                }),
+                &edit.path,
+                revision,
+            )?;
+        }
+        targets.insert(edit.path.clone(), id);
+    }
+    tx.commit()?;
+    Ok(targets)
+}
+
 pub(super) fn write_result(
     db: &Metadata,
     receipt: &MutationReceipt,
+    targets: &BTreeMap<String, String>,
 ) -> Result<WriteResult, ApiError> {
     let mut result = WriteResult {
         created: 0,
@@ -130,13 +167,12 @@ pub(super) fn write_result(
         } else {
             result.updated += 1;
         }
-        let path = change
-            .path
-            .strip_suffix(".outline.md")
-            .map(|stem| format!("{stem}.md"))
-            .unwrap_or_else(|| change.path.clone());
+        let path = document_for_edit(&change.path);
         if is_document_path(&path) {
-            let document_id = db.document_id(&receipt.workspace_id, &path)?;
+            let document_id = match targets.get(&change.path) {
+                Some(id) => id.clone(),
+                None => db.document_id(&receipt.workspace_id, &path)?,
+            };
             let reader_path = format!(
                 "/workspaces/{}/documents/{document_id}",
                 receipt.workspace_id
@@ -313,6 +349,7 @@ pub(super) fn preview(
     let confirmation = Confirmation {
         id: Uuid::new_v4().to_string(),
         paths,
+        transfer: None,
         plan: Some(Plan {
             request,
             changes,
@@ -415,7 +452,7 @@ pub(super) fn check_undo_targets(
     if let Some(written) = &view.write_result {
         for doc in &written.documents {
             let path = service
-                .path_in(&view.workspace_id, &doc.document_id)
+                .path_in(view.mutation_workspace(), &doc.document_id)
                 .map_err(conflict_if_missing)?;
             if doc.path != path && doc.path != outline_path(&path) {
                 return Err(ApiError::conflict(None));

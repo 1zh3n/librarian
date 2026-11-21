@@ -133,7 +133,9 @@ impl Metadata {
     fn initialize(path: &Path) -> rusqlite::Result<Connection> {
         let mut connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
-        connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;")?;
+        // SQLite requires foreign keys to be disabled before beginning a parent-table rebuild.
+        // Validate the migrated graph before commit and enable enforcement for all service calls.
+        connection.execute_batch("PRAGMA foreign_keys = OFF; PRAGMA secure_delete = ON;")?;
         let transaction =
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let version: i64 =
@@ -219,7 +221,7 @@ impl Metadata {
         }
         if version <= 8 {
             transaction.pragma_update(None, "user_version", 9)?;
-        } else if version != 9 {
+        } else if version > 10 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         super::file_actions::storage::migrate(&transaction)?;
@@ -227,13 +229,25 @@ impl Metadata {
         super::ai_probes::migrate(&transaction)?;
         super::ai_conversations::migrate(&transaction)?;
         super::ai_materials::migrate(&transaction)?;
+        super::ai_space_management::migrate(&transaction)?;
         transaction.execute_batch("CREATE TABLE IF NOT EXISTS workspace_imports (
             operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL, receipt TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS mcp_operation_origins (
             operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL,
             client_id TEXT NOT NULL, grant_id TEXT NOT NULL, request_digest TEXT NOT NULL,
             kind TEXT NOT NULL, undo_id TEXT NOT NULL);")?;
+        if version < 10 {
+            super::ai_conversations::migrate_global_scope(&transaction)?;
+            if transaction
+                .prepare("PRAGMA foreign_key_check")?
+                .exists([])?
+            {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            transaction.pragma_update(None, "user_version", 10)?;
+        }
         transaction.commit()?;
+        connection.pragma_update(None, "foreign_keys", true)?;
         Ok(connection)
     }
 
@@ -265,7 +279,15 @@ impl Metadata {
     }
 
     pub(crate) fn document_id(&self, workspace: &str, path: &str) -> Result<String, ApiError> {
-        Ok(self.connection()?.query_row(
+        Self::document_id_in(&*self.connection()?, workspace, path)
+    }
+
+    pub(super) fn document_id_in(
+        conn: &Connection,
+        workspace: &str,
+        path: &str,
+    ) -> Result<String, ApiError> {
+        Ok(conn.query_row(
             "INSERT INTO documents (id, workspace_id, path) VALUES (?1, ?2, ?3)
              ON CONFLICT(workspace_id, path) DO UPDATE SET path = excluded.path RETURNING id",
             [
