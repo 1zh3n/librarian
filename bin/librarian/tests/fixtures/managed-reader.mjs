@@ -13,7 +13,14 @@ import { fileURLToPath } from "node:url";
 import { stageManagedRunner } from "../../../../scripts/bundle-managed-runner.mjs";
 
 import { createMessagesScenario, privateMarkers } from "./managed-messages.mjs";
-export { first, comparison, materialTurn, privateMarkers } from "./managed-messages.mjs";
+export {
+  first,
+  comparison,
+  materialTurn,
+  acrossSpaces,
+  followUpAcrossSpaces,
+  privateMarkers,
+} from "./managed-messages.mjs";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 function verifyStorage(dbPath, turns) {

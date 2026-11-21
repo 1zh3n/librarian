@@ -7,6 +7,8 @@ export interface ScriptedTurn {
 export const first: ScriptedTurn;
 export const comparison: ScriptedTurn;
 export const materialTurn: ScriptedTurn;
+export const acrossSpaces: ScriptedTurn;
+export const followUpAcrossSpaces: ScriptedTurn;
 export const privateMarkers: string[];
 export interface ManagedReader {
   url: string;

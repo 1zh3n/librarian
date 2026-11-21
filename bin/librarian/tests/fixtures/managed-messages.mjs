@@ -17,11 +17,32 @@ export const materialTurn = {
   prompt: "请读取预算和会议文件，核对两个数字。",
   answer: "预算为七十，复核数字为四十二。",
 };
+export const acrossSpaces = {
+  ...first,
+  prompt: "比较田野笔记和河口调查的普查记录，给出两处来源。",
+  answer: "田野笔记记录十只，河口调查记录二十只。",
+};
+export const followUpAcrossSpaces = {
+  ...first,
+  prompt: "两处相差多少？",
+  answer: "河口调查比田野笔记多十只。",
+};
 const thought = "PRIVATE_FIXTURE_THINKING_2B87";
 const signature = "PRIVATE_FIXTURE_SIGNATURE_41AD";
 const toolPhase = "PRIVATE_FIXTURE_TOOL_STAGE_763E";
 const fixtureCredential = "provider-fixture-only";
 export const privateMarkers = [thought, signature, toolPhase, fixtureCredential];
+const roundsBeforeAnswer = new Map([
+  [first, 3],
+  [comparison, 4],
+  [materialTurn, 5],
+  [acrossSpaces, 6],
+  [followUpAcrossSpaces, 1],
+]);
+const precedingTurn = new Map([
+  [comparison, first],
+  [followUpAcrossSpaces, acrossSpaces],
+]);
 
 function toolResult(body, id) {
   const result = body.messages
@@ -45,7 +66,7 @@ export function createMessagesScenario(message) {
       assert.equal(url, "/anthropic/v1/messages");
       assert.equal(body.stream, true);
       const input = JSON.parse(body.messages[0].content[0].text);
-      const turn = [first, comparison, materialTurn].find((t) => input.prompt === t.prompt);
+      const turn = [...roundsBeforeAnswer.keys()].find((t) => input.prompt === t.prompt);
       assert.ok(turn, "Unexpected current prompt");
       assert.equal(body.model, turn.model);
       assert.deepEqual(body.thinking, { type: "enabled" });
@@ -56,9 +77,10 @@ export function createMessagesScenario(message) {
           body.messages.map((m) => m.role),
           ["user"],
         );
+        const previous = precedingTurn.get(turn);
         assert.deepEqual(
           input.history,
-          turn === comparison ? [{ prompt: first.prompt, answer: first.answer }] : [],
+          previous ? [{ prompt: previous.prompt, answer: previous.answer }] : [],
         );
         for (const marker of privateMarkers) assert.ok(!JSON.stringify(input).includes(marker));
         assert.ok(!gates.has(turn), "Duplicate initial provider request");
@@ -77,12 +99,36 @@ export function createMessagesScenario(message) {
       };
       if (!body.tools) {
         // A script cannot supply an answer before the previous tool receipts were validated.
-        assert.equal(round, turn === first ? 3 : turn === comparison ? 4 : 5);
+        assert.equal(round, roundsBeforeAnswer.get(turn));
         await send({ text: turn.answer, beforeEnd: () => gates.get(turn).promise });
         finished.push(turn);
         return;
       }
-      if (turn === materialTurn) {
+      if (turn === followUpAcrossSpaces) return send({ text: toolPhase });
+      if (turn === acrossSpaces) {
+        if (round === 0) return tool("spaces", "list_workspaces", {});
+        const { workspaces } = toolResult(body, "spaces");
+        const workspace = workspaces.find(
+          (item) => item.name === (round < 3 ? "田野笔记" : "河口调查"),
+        );
+        assert.ok(workspace);
+        if (round === 1 || round === 3) {
+          if (round === 3) assert.match(toolResult(body, "read-field").markdown, /记录十只。/);
+          return tool("find-" + workspace.id, "search_workspace", {
+            workspaceId: workspace.id,
+            query: "普查记录",
+          });
+        }
+        if (round === 2 || round === 4) {
+          const { documents } = toolResult(body, "find-" + workspace.id);
+          const doc = documents.find((item) => item.path === "普查记录.md");
+          assert.ok(doc);
+          return tool(round === 2 ? "read-field" : "read-river", "read_document", {
+            documentId: doc.id,
+          });
+        }
+        assert.match(toolResult(body, "read-river").markdown, /记录二十只。/);
+      } else if (turn === materialTurn) {
         const files = input.materials;
         assert.equal(files?.length, 2, "Expected selected material metadata");
         const file = files.find((f) => f.name === (round < 2 ? "budget.pdf" : "meeting.docx"));
