@@ -17,6 +17,8 @@
 
 ## 首轮走查时保留的问题
 
+下表记录起点。来源往返与登录纠错的修订结果见下文。
+
 | 页面或流程 | 本轮观察 | 后续优先级 |
 | --- | --- | --- |
 | 文档 AI、版本恢复与引用 | 进入编辑、打开和关闭 AI 时，桌面测试长文的当前章节均保持 y=210。发送选区、实际引用与恢复新版本走产品回归。打开回答中的来源后，浏览器后退会收起原 AI 标签，再次查看回答多一步。 | 下一项。用「从回答核对来源 → 后退 → 继续原回答」验收工具状态、焦点和阅读位置。 [返回后的桌面](evidence/reader-ux-web/back-from-ai-source.png) · [实际引用与返回记录](evidence/reader-ux-web/source-return.json) |
@@ -42,6 +44,34 @@
 | 1440 × 900 | [改前](evidence/reader-ux-web/source-back-1440-before.jpeg) · [返回后](evidence/reader-ux-web/source-back-1440-after.png) · [正文、对话与键盘焦点](evidence/reader-ux-web/source-back-1440-after.json) |
 | 390 × 844 | [改前](evidence/reader-ux-web/source-back-390-before.jpeg) · [返回后](evidence/reader-ux-web/source-back-390-after.png) · [正文、对话与键盘焦点](evidence/reader-ux-web/source-back-390-after.json) |
 
+在来源页进入空间设置后连续后退两次，也能回到原回答。同篇来源有独立的追问草稿。若点击后取消离开，随后从目录切换文档，已取消的引用记录不会覆盖新的草稿或重开辅助区。正文保存与离开同时发生时，以服务端确认的版本和选区发出下一条追问。以上路径使用真实导航、编辑和保存，并用可控的回答记录复现时间顺序。 [浏览器回归](../../apps/reader/tests/e2e/document-citation-navigation.spec.ts)
+
+整篇正文、段落及提纲的链接都带回执版本。提纲核对自己的版本，来源已变更时页面就近提示。服务器返回 401、403 或 404 后撤下此前可见的正文。单独拒绝提纲时正文仍可读。临时读取失败保留编辑草稿。在完整源码中点击本篇段落引文，阅读态会聚焦对应段落。用 Chromium 模拟中文组合输入时，结束组词后也会聚焦引文。权限变化和时间顺序用可控的 API 响应与 Chromium 验证。 [来源目标与失效回归](../../apps/reader/tests/e2e/document-citation-targets.spec.ts)
+
 ## 登录纠错
 
 输错密码后，用户名留在原字段，错误信息关联到两个字段，焦点移到已清空的密码框。可直接重输密码并返回带查询参数的原地址。限流状态保留独立提示。 [改前](evidence/reader-ux-web/login-before.png) · [改后](evidence/reader-ux-web/login-after.png) · [键盘操作](evidence/reader-ux-web/login-keyboard-after.json)
+
+## 改版各路径的验收入口
+
+| 使用路径 | 同状态画面和操作数据 |
+| --- | --- |
+| 在目标目录新建并开始写，调整两侧分栏 | [目录、首行输入、焦点及尺寸](reader-directory-dock.md) |
+| 长文阅读、就地编辑与工具切换 | [1440、390、360、320 px 与 200% 文字缩放](reader-layout-verification.md) |
+| 搜索、设置、新建和键盘命令 | [迁移前后画面](evidence/reader-collections/overlay-comparison.png) · [设置草稿与焦点](evidence/reader-collections/interactions.json) |
+| 账号、导入、备份、发布及旧离线地址 | [逐页对照与固定版本升级](reader-management-verification.md) · [表单触控与错误纠正](evidence/reader-controls/interactions.json) |
+
+## 本轮联合验收
+
+产品实现提交为 `5d9ca253`，使用分支 `feat/librarian-reader-ux` 的 Vite 生产构建和隔离的 Rust 产品服务。实测服务返回的 `/assets/reader-shell.json` 与本地构建逐字节相同，SHA-256 为 `18ddac850a5c4ce2f91caf85f239b567cb6c3768190c863ec00f4ac8900c5ef1`。
+
+| 验收 | 结果 |
+| --- | --- |
+| 产品 Playwright 全套 · Chromium、真实 Rust API、本地 Git 与 Zola 0.23.6 | 142/142 通过，3 个 worker。覆盖长目录键盘新建、登录纠错、搜索与设置草稿、引用往返、版本恢复、导入、备份、发布和离线地址。 |
+| CodeMirror Spike Playwright 与 Reader Vitest | 16/16 与 58/58 通过。 |
+| Librarian 发行二进制 crate 的 Rust 测试 | 83/83 通过。 |
+| 类型、组件边界和 lint、格式、OpenAPI 一致性、生产构建 | 全部通过。 |
+
+来源往返另外在独立 fixture 逐一复测 1440 和 390 px，并更新了上文两组画面和测量。两个视口返回前后的对话滚动分别为 462 和 658 px，引用链接均获得焦点，正文阅读块坐标分别保持在 457.5 和 845.5 px。收起辅助区回到打开它的段落。设置弹窗与新建弹窗都在提交等待及失败重试中核对过输入值，搜索弹窗内的 Alt+E 不会编辑背后的正文。 [弹窗回归](../../apps/reader/tests/e2e/document-dialog-input.spec.ts)
+
+本轮覆盖 Chromium 的键盘、指针、触屏模拟和文字缩放。AI 使用本地执行器替身，发布使用本地 Git 目标。实体手机软键盘、读屏、墨水屏与真实供应商接入沿发行计划复核。
