@@ -8,6 +8,18 @@
 {"publicReaderUrl":"https://docs.example.org/reader"}
 ```
 
+## 客户端注册和网络限制
+
+客户端可以按服务公布的元数据使用 CIMD（`https://.../client.json` 作为 `client_id`）或回退到动态注册（DCR）。CIMD 要求服务器能访问客户端公布的 HTTPS 地址。系统 DNS 返回透明代理 fake-IP 或其他非公网地址时，服务端会用固定的公共 DoH（`https://cloudflare-dns.com/dns-query`，解析到 `1.1.1.1`）重新查询 A/AAAA，只接受公网结果；正常公网解析不会发出 DoH 请求。回退只发送客户端元数据主机名，不发送文档内容。
+
+如果 DoH 也不可达，授权页才会显示 `SilverBullet could not verify this app, so it cannot connect.`。此时让客户端使用预注册或 DCR 客户端 ID，而不是放宽 SSRF 校验：
+
+- OpenCode 2.3.2：在 `mcp.servers.<name>.oauth.client_id` 写入一个在 `/.auth/register` 注册的公共客户端 ID；配置了 `client_id` 时 OpenCode 不再选择 CIMD。
+- Codex 0.171.0：`codex mcp add ... --oauth-client-id <id>` 或 `codex mcp login <name> --oauth-client-registration dcr`。
+- 其他客户端：按其文档配置静态客户端，或在 Reader 的「连接」里查看已连接应用后撤销重试。
+
+Codex 还会在 OAuth 发现阶段拒绝私网 IP 字面量作为授权服务器，并要求 Rust 进程信任部署证书。给服务器配置 DNS 主机名、匹配的证书并让 `publicReaderUrl` 使用该主机名，才适合把 Codex 作为验收客户端；`SSL_CERT_FILE` 或系统信任库是部署侧配置。细节和实测记录见交接仓库 `docs/superpowers/specs/2026-11-22-librarian-connections-settings-and-dogfood.md` 的 9.7 节。
+
 `workspace_list` 列出获准的工作区。单篇 Markdown 可调用 `document_create` 或取得当前内容 revision 后调用 `document_update`。两者保留原有请求和版本回执，响应另含 `documentId`、`path`、`readerPath` 和 `readerUrl`。未配置公开地址时写入仍然成功，回执给出相对路径、空的 `readerUrl` 和 `readerUrlError: "reader_url_unavailable"`。链接由服务端配置生成，打开正文仍需当前成员权限。
 
 ## 上传方案和附件
