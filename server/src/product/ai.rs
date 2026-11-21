@@ -322,7 +322,9 @@ impl Operation {
         if self.view.status != OperationStatus::Running || self.accepted.is_none() {
             return Ok(false);
         }
-        let Some(receipt) = mutations::receipt(db, &self.view.id, &self.view.workspace_id, &self.owner)? else {
+        let Some(receipt) =
+            mutations::receipt(db, &self.view.id, &self.view.workspace_id, &self.owner)?
+        else {
             return Ok(false);
         };
         self.view.commit_id = Some(receipt.commit_id);
