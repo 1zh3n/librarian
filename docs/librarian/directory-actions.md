@@ -12,6 +12,7 @@
 | 阅读 A，用键盘复制旁边的「周报.md」 | 第一次建议「周报（副本）.md」，再次复制跳过占用的名字。手动命名也可提交，阅读地址保留，原件与副本有独立文档 ID。[同目录复制](evidence/directory-recovery/copy-desktop.png) |
 | 390 px 触屏搜索「归档」 | 同名目录显示为「一组/归档」与「二组/归档」。选中后显示完整目的地，跨目录默认沿用原文件名。[触屏目录搜索](evidence/directory-recovery/copy-search-touch.png) |
 | 删除目录，关闭回执后刷新，再从「最近删除」恢复 | 依据原路径选中条目后能找回目录及原文档。关闭列表时焦点落到恢复行，正在读的另一篇长文留在操作前的段落。[恢复列表](evidence/directory-recovery/recovery-desktop.png) |
+| 从「最近删除」按 Escape，然后直接点空间设置齿轮 | 焦点回到「根目录更多」，文字提示留在目录标题行里。设置按钮中心可直接点击；指针也可以移到提示上阅读。[浏览器命中测试](../../apps/reader/tests/e2e/document-recently-deleted.spec.ts) |
 | 删除后在同名位置新建另一篇，再恢复原件 | 显示同名提示；改选「归档」、把名称改为「旧访谈」后，两篇各保留自己的内容和 ID。320 px、200% 字号下可滚动到完整提交按钮，页面无横向滚动。[390 px 改址](evidence/directory-recovery/recovery-conflict-phone.png) · [320 px 大字](evidence/directory-recovery/recovery-conflict-320-large-text.png) |
 
 ## 首轮目录操作验收

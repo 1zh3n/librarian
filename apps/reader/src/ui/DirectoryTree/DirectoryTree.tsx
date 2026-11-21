@@ -2,7 +2,7 @@ import { Icon } from "../Icon";
 import { useMemo, useRef, useState } from "react";
 import { Collection, Group, Tree, TreeItem, TreeItemContent } from "react-aria-components";
 import { Button } from "../Button";
-import { Tooltip } from "../Tooltip";
+import { Tooltip, type TooltipPlacement } from "../Tooltip";
 import type { DocumentSummary } from "../../api/client";
 import styles from "./DirectoryTree.module.css";
 
@@ -55,14 +55,16 @@ function entries(documents: readonly DocumentSummary[], folderPaths: readonly st
 function MoreButton({
   name,
   folder,
+  tooltipPlacement = "top",
   openMenu,
 }: {
   name: string;
   folder: string;
+  tooltipPlacement?: TooltipPlacement;
   openMenu: OpenDirectoryMenu;
 }) {
   return (
-    <Tooltip text={name} className={styles.tooltip}>
+    <Tooltip text={name} className={styles.tooltip} placement={tooltipPlacement}>
       <Button
         className={styles.more}
         aria-label={name}
@@ -244,7 +246,9 @@ export function DirectoryTree({
       {(tree.length > 0 || rootMenu) && (
         <div className={styles.heading}>
           <span>目录</span>
-          {openMenu && rootMenu && <MoreButton name="根目录更多" folder="" openMenu={openMenu} />}
+          {openMenu && rootMenu && (
+            <MoreButton name="根目录更多" folder="" tooltipPlacement="start" openMenu={openMenu} />
+          )}
         </div>
       )}
       <Tree

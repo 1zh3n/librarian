@@ -203,3 +203,33 @@ test("offers a different folder when the deleted document's original parent was 
     await (await page.request.get(`/api/v1/documents/${note.document.id}`)).json(),
   ).toMatchObject({ document: { id: note.document.id, path: "录音.md" }, markdown: note.markdown });
 });
+
+test("the root menu tooltip stays reachable and leaves workspace settings clickable after Escape", async ({
+  page,
+}) => {
+  await setup(page);
+  await expect(page.getByRole("article")).toContainText("走访手记");
+  const rootMenu = page.getByRole("button", { name: "根目录更多", exact: true });
+  const settings = page.getByRole("button", { name: "空间设置", exact: true });
+  const tip = page.getByRole("tooltip").filter({ hasText: "根目录更多" });
+  await openDeleted(page);
+  await page.keyboard.press("Escape");
+  await expect(rootMenu).toBeFocused();
+  await expect(tip).toBeVisible();
+  await expect
+    .poll(() =>
+      settings.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return el.contains(
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        );
+      }),
+    )
+    .toBe(true);
+  await settings.click();
+  await expect(page.getByRole("form", { name: "空间设置" })).toBeVisible();
+  await rootMenu.hover();
+  await expect(tip).toBeVisible();
+  await tip.hover();
+  await expect(tip).toBeVisible();
+});
