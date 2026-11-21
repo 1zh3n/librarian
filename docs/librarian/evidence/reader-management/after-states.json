@@ -1,0 +1,81 @@
+{
+  "requiredUsername": {
+    "text": "",
+    "background": "rgb(253, 252, 251)",
+    "color": "rgb(37, 38, 41)",
+    "border": "rgb(145, 59, 48)",
+    "opacity": "1",
+    "outline": "solid",
+    "disabled": false,
+    "focused": true,
+    "hovered": false,
+    "pressed": false,
+    "invalid": true
+  },
+  "keyboard": {
+    "text": "创建账号",
+    "background": "rgb(36, 79, 133)",
+    "color": "rgb(255, 255, 255)",
+    "border": "rgb(36, 79, 133)",
+    "opacity": "1",
+    "outline": "solid",
+    "disabled": false,
+    "focused": true,
+    "hovered": false,
+    "pressed": false,
+    "invalid": false
+  },
+  "hover": {
+    "text": "创建账号",
+    "background": "color(srgb 0.141725 0.287294 0.471059)",
+    "color": "rgb(255, 255, 255)",
+    "border": "rgb(36, 79, 133)",
+    "opacity": "1",
+    "outline": "solid",
+    "disabled": false,
+    "focused": true,
+    "hovered": true,
+    "pressed": false,
+    "invalid": false
+  },
+  "pressed": {
+    "text": "创建账号",
+    "background": "color(srgb 0.141725 0.287294 0.471059)",
+    "color": "rgb(255, 255, 255)",
+    "border": "rgb(36, 79, 133)",
+    "opacity": "1",
+    "outline": "solid",
+    "disabled": false,
+    "focused": true,
+    "hovered": true,
+    "pressed": true,
+    "invalid": false
+  },
+  "pending": {
+    "text": "正在创建…",
+    "background": "rgb(36, 79, 133)",
+    "color": "rgb(255, 255, 255)",
+    "border": "rgb(36, 79, 133)",
+    "opacity": "0.75",
+    "outline": "solid",
+    "disabled": true,
+    "focused": true,
+    "hovered": false,
+    "pressed": false,
+    "invalid": false
+  },
+  "error": {
+    "text": "该用户名已经存在。",
+    "background": "rgb(243, 242, 239)",
+    "color": "rgb(37, 38, 41)",
+    "border": "rgb(145, 59, 48)",
+    "opacity": "1",
+    "outline": "none",
+    "disabled": false,
+    "focused": false,
+    "hovered": true,
+    "pressed": false,
+    "invalid": false
+  },
+  "submissions": 1
+}

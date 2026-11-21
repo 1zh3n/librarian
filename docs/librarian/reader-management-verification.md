@@ -1,5 +1,7 @@
 # 管理与只读阅读的组件迁移验收
 
+**结论**　指定集成包在 4282 的 19 项管理与快照产品用例全部通过，五条逐页操作路径均能到达预期结果。旧固定稿通过停服冷启动、原地址升级与移除后断网复核。仍需修正两项迁移前已有的问题。Git 备份设置提交失败会丢失草稿，导入与发布有多余的容器焦点框。[集成回归明细](evidence/reader-management/after-regression.json)
+
 ## 范围与对照
 
 按改版计划阶段零、四，检查外部导入、Git 备份、站点发布、账号管理、只读固定地址与离线副本。从有相应权限的用户进入页面起，记录能否用键盘完成操作、区分禁用与可提交状态、从错误恢复，并核对回执或最终正文。
@@ -21,3 +23,28 @@
 [迁移前逐控件数据、错误恢复与键盘结果](evidence/reader-management/before.json) · [触摸目标尺寸与页面宽度](evidence/reader-management/before-touch.json)
 
 基线针对管理与快照的 19 项产品浏览器用例全部通过，含只读成员仅能查导入记录、旧管理页锚点、固定稿附件、撤销地址、登出及换号清理离线副本。另延迟账号创建请求，实测等待中按钮显示「正在创建…」并禁用，重复 Enter 仅产生一个 POST。[19 项回归明细](evidence/reader-management/before-regression.json) · [必填、键盘、悬停、按下和等待状态](evidence/reader-management/before-states.json)
+
+## 集成包复测
+
+在 4282 运行 4290 验收进程的同一份 fixture 二进制，两边返回相同的静态资源清单。共享工作树的 `dist` 在并行构建中已变化，因此以运行中的二进制和资源摘要标识这次验收。fixture SHA-256 为 `b2481eeeea6f1737d66b5538cf093ba176ee6f2707886a656e3064aeab94e62b`，资源清单 SHA-256 为 `03584b18388cda6f8e8a3c74dd0a74623cdb415c8b868cf40f1dbb5ee6ded05e`。
+
+| 路径与判定 | 相同操作在集成包上的结果 | 同状态画面 |
+| --- | --- | --- |
+| 外部导入 · 重试通过，焦点画面需修 | 键盘选择、空文件校验、丢回执后同请求重试均通过。错误提示增加红色左边线，保留文字恢复办法。「重试导入」仍在 y=440，高 40 px。按钮聚焦时整个设置容器也有蓝框。 | [迁移前](evidence/reader-management/before-import-retry.png) · [集成后](evidence/reader-management/after-import-retry.png) |
+| Git 备份 · 操作通过，草稿需修 | 下拉现用图标箭头。打开后，已选项有底色，End 指向的候选项有焦点环；Esc 取消并还焦。保存设置的 PUT 断线后，「本地备份／逐操作」仍被重置为「请选择备份目标／按批聚合」。重新选择后，保存与实际 Git 备份均完成。 | [迁移前](evidence/reader-management/before-backup-choice.png) · [集成后](evidence/reader-management/after-backup-choice.png) |
+| 站点发布 · 纠错通过，焦点画面需修 | Space 勾选后标记可辨。无效 Git 版本提交失败，目标、版本输入和选中的一篇都保留。修改提交 ID 后 Zola 发布完成并产生对应链接。主操作仍在 y=761；错误态同时描边两层容器，难以判断下一次键盘操作的位置。 | [迁移前](evidence/reader-management/before-publication-error.png) · [集成后](evidence/reader-management/after-publication-error.png) |
+| 账号 · 通过 | 空表单提交后用户名获得焦点，必填错误边框从灰色变为红褐色。重复用户名就近报错，修改后创建成功并清空密码。等待时按钮显示「正在创建…」、保留焦点并阻止第二次提交；实测只有一个 POST。 | [迁移前](evidence/reader-management/before-account-error.png) · [集成后](evidence/reader-management/after-account-error.png) · [交互状态](evidence/reader-management/after-states.json) |
+| 只读固定稿、离线 · 通过 | 两篇目录的触发器在两个版本中均为 756×44 px，正文及当前篇标记位置一致。Enter 展开、选第二篇、焦点进入新标题。网络错误后重试保存成功，断网能读显式保存的固定稿。 | [迁移前](evidence/reader-management/before-snapshot-directory.png) · [集成后](evidence/reader-management/after-snapshot-directory.png) |
+
+在模拟触摸设备上，暗色目标选择器及候选项文字清晰，选项能直接点选。集成版 320、360、390 px 下，备份目标触发器与选项均高 44 px。390 px、200% 字号时分别为 106 和 80 px，页面滚动宽度仍为 390 px。导入和账号错误态在这四组视口与字号下也无页面横溢。[暗色迁移前](evidence/reader-management/before-touch-dark.png) · [暗色集成后](evidence/reader-management/after-touch-dark.png) · [触摸测量](evidence/reader-management/after-touch.json) · [五条路径实测](evidence/reader-management/after.json)
+
+### 跨版本的旧副本
+
+在旧版创建并保存两篇固定稿，保留数据根与独立 Chromium 资料。关停 4282 服务再冷启浏览器，原地址从旧缓存显示「河岸记录甲」和「正在读取离线副本」。恢复服务时使用原数据根与集成包的 Web 资源；同一地址加载新入口 `reader-BdfCvtBF.js`，仍显示已保存，键盘可进入「河岸记录乙」。按 Enter 移除副本后断网再请求原内容，读取失败。[旧地址与原始提交](evidence/reader-management/legacy-before.json) · [断网、升级与移除结果](evidence/reader-management/legacy-after.json) · [停服时从旧缓存打开第一篇](evidence/reader-management/old-cache-offline.png) · [恢复服务后用新界面打开第二篇](evidence/reader-management/old-address-upgraded.png)
+
+### 交回实施者的两项问题
+
+1. **备份设置保存失败丢失草稿。** 网络恢复后，保留并再次提交用户选中的目标与粒度，核对响应中的设置和后续备份回执。目标确已失效时，应说明需要重选的字段。
+2. **管理页的键盘焦点框扩散到标签容器。** 用键盘从外部导入进入重试，再到发布页提交错误版本，核对实际焦点和外框。子控件操作时应能识别当前操作对象；标签面板自身真正接收焦点时仍应有可见提示。
+
+这两项在迁移前和指定集成包中都已复现。此次验收只提交报告、截图和测量。

@@ -1,0 +1,397 @@
+{
+  "revision": "4290 integrated reader-shell 03584b18",
+  "viewport": [
+    1440,
+    900
+  ],
+  "theme": "light",
+  "scenes": {
+    "imports": {
+      "import-retry": {
+        "accessible": "- form \"导入文件\":\n  - paragraph: 选择 Markdown 文件，或选择包含文档和附件的 ZIP。\n  - button \"选择文件\"\n  - text: 走查.md\n  - alert: 未收到导入结果。可以重试同一批文件，或在导入记录中核对结果。\n  - button \"重试导入\"\n  - button \"取消本次导入\"",
+        "controls": {
+          "pick": {
+            "x": 481,
+            "y": 336,
+            "w": 64,
+            "h": 36,
+            "focus": false,
+            "disabled": false,
+            "background": "rgba(0, 0, 0, 0)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(37, 38, 41)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "retry": {
+            "x": 481,
+            "y": 440,
+            "w": 82,
+            "h": 40,
+            "focus": true,
+            "disabled": false,
+            "background": "rgb(36, 79, 133)",
+            "color": "rgb(255, 255, 255)",
+            "border": "rgb(36, 79, 133)",
+            "outline": "solid",
+            "outlineWidth": "2px"
+          }
+        }
+      },
+      "reflow": [
+        {
+          "viewport": 390,
+          "rootTextPercent": 100,
+          "pageWidth": 390,
+          "panelWidth": 327,
+          "targets": [
+            [
+              64,
+              40
+            ],
+            [
+              82,
+              40
+            ]
+          ]
+        },
+        {
+          "viewport": 360,
+          "rootTextPercent": 100,
+          "pageWidth": 360,
+          "panelWidth": 297,
+          "targets": [
+            [
+              64,
+              40
+            ],
+            [
+              82,
+              40
+            ]
+          ]
+        },
+        {
+          "viewport": 320,
+          "rootTextPercent": 100,
+          "pageWidth": 320,
+          "panelWidth": 257,
+          "targets": [
+            [
+              64,
+              40
+            ],
+            [
+              82,
+              40
+            ]
+          ]
+        },
+        {
+          "viewport": 390,
+          "rootTextPercent": 200,
+          "pageWidth": 390,
+          "panelWidth": 279,
+          "targets": [
+            [
+              128,
+              80
+            ],
+            [
+              162,
+              80
+            ]
+          ]
+        }
+      ],
+      "result": "空文件禁用，丢失首次 201 回执，键盘重试同一请求，新增 1。",
+      "status": "pass"
+    },
+    "backup": {
+      "backup-choice": {
+        "accessible": "- region \"Git 备份\":\n  - heading \"Git 备份\" [level=3]\n  - form \"备份设置\":\n    - text: 备份目标\n    - button \"请选择备份目标 备份目标\" [expanded]: 请选择备份目标\n    - text: 备份粒度\n    - button \"按批聚合 备份粒度\": 按批聚合\n    - paragraph: 备份目标已配置，请选择目标并保存。\n    - button \"保存备份设置\"\n    - button \"立即备份\" [disabled]",
+        "controls": {
+          "target": {
+            "x": 489,
+            "y": 400,
+            "w": 338,
+            "h": 40,
+            "focus": false,
+            "disabled": false,
+            "background": "rgb(253, 252, 251)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(130, 131, 137)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "save": {
+            "x": 489,
+            "y": 488,
+            "w": 110,
+            "h": 40,
+            "focus": false,
+            "disabled": false,
+            "background": "rgb(253, 252, 251)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(130, 131, 137)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "start": {
+            "x": 607,
+            "y": 488,
+            "w": 82,
+            "h": 40,
+            "focus": false,
+            "disabled": true,
+            "background": "rgb(243, 242, 239)",
+            "color": "rgb(90, 91, 97)",
+            "border": "rgb(224, 223, 220)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "option": {
+            "x": 494,
+            "y": 492,
+            "w": 328,
+            "h": 40,
+            "focus": true,
+            "disabled": false,
+            "background": "rgb(235, 233, 229)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(224, 223, 220)",
+            "outline": "solid",
+            "outlineWidth": "2px"
+          }
+        }
+      },
+      "draftAfterError": "请选择备份目标",
+      "modeAfterError": "按批聚合",
+      "result": "首次保存断线后重新选择、保存，随后本地 Git 备份完成。",
+      "status": "pass"
+    },
+    "publish": {
+      "invalidSelection": {
+        "checked": true,
+        "commit": "bad-revision",
+        "target": "本地博客"
+      },
+      "publication-error": {
+        "accessible": "- region \"Zola 发布\":\n  - heading \"Zola 发布\" [level=3]\n  - form \"选择发布版本\":\n    - text: 发布目标\n    - button \"本地博客 发布目标\": 本地博客\n    - group \"文档范围\":\n      - text: 文档范围\n      - checkbox \"deliveries/qa-publish/河岸.md\" [checked]\n      - text: deliveries/qa-publish/河岸.md\n      - checkbox \"野外/01.md\"\n      - text: 野外/01.md\n      - checkbox \"野外/02.md\"\n      - text: 野外/02.md\n    - text: 文档版本\n    - button \"选择一个项目 文档版本\": 选择一个项目\n    - text: Git 提交 ID*\n    - textbox \"Git 提交 ID*\": bad-revision\n    - alert: 无法提交发布，请检查目标、版本与文档。\n    - button \"确认并发布\"\n  - paragraph: 暂无发布记录。",
+        "controls": {
+          "sub": {
+            "x": 489,
+            "y": 761,
+            "w": 96,
+            "h": 40,
+            "focus": false,
+            "disabled": false,
+            "background": "rgb(36, 79, 133)",
+            "color": "rgb(255, 255, 255)",
+            "border": "rgb(36, 79, 133)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "rev": {
+            "x": 839,
+            "y": 653,
+            "w": 338,
+            "h": 40,
+            "focus": false,
+            "disabled": false,
+            "background": "rgb(253, 252, 251)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(130, 131, 137)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "doc": {
+            "x": 496,
+            "y": 493,
+            "w": 13,
+            "h": 13,
+            "focus": false,
+            "disabled": false,
+            "background": "rgba(0, 0, 0, 0)",
+            "color": "rgb(0, 0, 0)",
+            "border": "rgb(0, 0, 0)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          }
+        }
+      },
+      "localLink": "https://blog.example.test/articles/qa-shore/",
+      "status": "pass"
+    },
+    "account": {
+      "preserved": {
+        "username": "reader",
+        "passwordPresent": true
+      },
+      "account-error": {
+        "accessible": "- form \"新建账号\":\n  - text: 用户名*\n  - textbox \"用户名*\": reader\n  - text: 初始密码*\n  - textbox \"初始密码*\": 〔合成口令已隐去〕\n  - paragraph: 初始密码至少 15 个字符。\n  - alert: 该用户名已经存在。\n  - button \"创建账号\"",
+        "controls": {
+          "name": {
+            "x": 473,
+            "y": 518,
+            "w": 354,
+            "h": 40,
+            "focus": true,
+            "disabled": false,
+            "background": "rgb(253, 252, 251)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(130, 131, 137)",
+            "outline": "solid",
+            "outlineWidth": "2px"
+          },
+          "pass": {
+            "x": 839,
+            "y": 518,
+            "w": 354,
+            "h": 40,
+            "focus": false,
+            "disabled": false,
+            "background": "rgb(253, 252, 251)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(130, 131, 137)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          },
+          "sub": {
+            "x": 473,
+            "y": 660,
+            "w": 82,
+            "h": 40,
+            "focus": false,
+            "disabled": false,
+            "background": "rgb(36, 79, 133)",
+            "color": "rgb(255, 255, 255)",
+            "border": "rgb(36, 79, 133)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          }
+        }
+      },
+      "reflow": [
+        {
+          "viewport": 390,
+          "rootTextPercent": 100,
+          "pageWidth": 390,
+          "panelWidth": 343,
+          "targets": [
+            [
+              343,
+              40
+            ],
+            [
+              343,
+              40
+            ],
+            [
+              82,
+              40
+            ]
+          ]
+        },
+        {
+          "viewport": 360,
+          "rootTextPercent": 100,
+          "pageWidth": 360,
+          "panelWidth": 313,
+          "targets": [
+            [
+              313,
+              40
+            ],
+            [
+              313,
+              40
+            ],
+            [
+              82,
+              40
+            ]
+          ]
+        },
+        {
+          "viewport": 320,
+          "rootTextPercent": 100,
+          "pageWidth": 320,
+          "panelWidth": 273,
+          "targets": [
+            [
+              273,
+              40
+            ],
+            [
+              273,
+              40
+            ],
+            [
+              82,
+              40
+            ]
+          ]
+        },
+        {
+          "viewport": 390,
+          "rootTextPercent": 200,
+          "pageWidth": 390,
+          "panelWidth": 311,
+          "targets": [
+            [
+              311,
+              80
+            ],
+            [
+              311,
+              80
+            ],
+            [
+              162,
+              80
+            ]
+          ]
+        }
+      ],
+      "result": "重复账号纠正为新账号后创建成功，密码已清空。",
+      "status": "pass"
+    },
+    "snapshot": {
+      "snapshot-directory": {
+        "accessible": "- main:\n  - paragraph: 固定版本\n  - button \"移除离线副本\"\n  - status: 已保存离线副本\n  - heading \"文档目录 · 2 篇\" [level=3]:\n    - button \"文档目录 · 2 篇\" [expanded]\n  - group \"文档目录 · 2 篇\":\n    - navigation \"阅读地址中的文档\":\n      - link \"河岸记录甲\":\n        - /url: /r/85af6b2435244feebe9751d83aad3cc6?documentId=doc_32a564e77c614260a3e8ca6b036d4985\n      - link \"河岸记录乙\":\n        - /url: /r/85af6b2435244feebe9751d83aad3cc6?documentId=doc_e11e5f56cc67485093ef47084d2e03bf\n  - article \"河岸记录甲\":\n    - heading \"河岸记录甲\" [level=1]\n    - paragraph: 沿岸考察手记。",
+        "controls": {
+          "directory": {
+            "x": 342,
+            "y": 147,
+            "w": 756,
+            "h": 44,
+            "focus": true,
+            "disabled": false,
+            "background": "rgba(0, 0, 0, 0)",
+            "color": "rgb(90, 91, 97)",
+            "border": "rgb(90, 91, 97)",
+            "outline": "solid",
+            "outlineWidth": "2px"
+          },
+          "remove": {
+            "x": 342,
+            "y": 104,
+            "w": 106,
+            "h": 36,
+            "focus": false,
+            "disabled": false,
+            "background": "rgba(0, 0, 0, 0)",
+            "color": "rgb(37, 38, 41)",
+            "border": "rgb(130, 131, 137)",
+            "outline": "none",
+            "outlineWidth": "0px"
+          }
+        }
+      },
+      "offline": "河岸记录甲\n\n沿岸考察手记。",
+      "result": "断网保存报错，联网后 Enter 重试成功。目录跳章聚焦标题，断网新页能打开此前保存的固定稿。",
+      "status": "pass"
+    }
+  }
+}
