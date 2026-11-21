@@ -524,6 +524,35 @@ test("a stale save keeps the local buffer and the remote file", async ({ page },
   expect((await download).suggestedFilename()).toBe("正文-本地草稿.md");
 });
 
+test("a failed remote read keeps the conflict recoverable", async ({ page }) => {
+  const { apiUrl, document, origin } = await createNote(page, "UnreadableStaleBody.md", "共同原件");
+  await page
+    .getByRole("article")
+    .getByText("共同原件")
+    .click({ position: { x: 8, y: 16 } });
+  const body = editor(page, "Markdown 正文");
+  await body.press("Control+End");
+  const remote = await page.request.put(apiUrl, {
+    headers: { origin },
+    data: { markdown: "远程版本", baseRevision: document.revision },
+  });
+  expect(remote.ok()).toBe(true);
+  let failRead = true;
+  await page.route(`**${apiUrl}`, (route) => {
+    if (failRead && route.request().method() === "GET") {
+      failRead = false;
+      return route.abort("failed");
+    }
+    return route.continue();
+  });
+  await page.keyboard.insertText("本地草稿");
+  await expect(page.getByRole("alert")).toContainText("暂时无法读取服务器版本");
+  await expect(body).toContainText("共同原件本地草稿");
+  await page.getByRole("button", { name: "重试读取" }).click();
+  await expect(page.getByRole("button", { name: "合并…" })).toBeVisible();
+  expect((await readNote(page, apiUrl)).markdown).toBe("远程版本");
+});
+
 test("reloading a stale body replaces the draft and keeps saving on the remote revision", async ({
   page,
 }, testInfo) => {
