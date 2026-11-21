@@ -1,8 +1,8 @@
 # DeepSeek Harness 技术验证
 
-2026-11-21 · 本地替身通过 · 真实模型待测
+2026-11-21 · 本地替身通过 · 真实模型对比完成，选用 Harness
 
-官方 Harness 可嵌入独立执行器。以合成文档验证了工具隔离、来源、条件写入、断线回执重试及撤销。当前环境未提供 `DEEPSEEK_API_KEY`，真实 DeepSeek 的鉴权、模型选用工具的行为、任务完成率与用量均待测。保留现有执行器，真实模型上的两项固定任务及对比线路通过后再决定产品接入。
+官方 Harness 可嵌入独立执行器。以合成文档验证了工具隔离、来源、条件写入、断线回执重试及撤销。初次 Spike 只用了本地模型替身。下方记录了后续在真实供应商上执行的两轮对比。
 
 ## 基线与组合
 
@@ -77,3 +77,29 @@ node bin/librarian/examples/deepseek-harness-spike/runner.mjs --once
 1. 用 fixture 的 `reader` 账号打开「田野笔记」的 Workspace AI，提交问答「分别查阅河岸清晨与林间回声。这两篇各记录了什么？请逐篇总结。」领取后应显示两个正文实际来源及可点击路径，操作应没有提交。
 2. 在「林间回声」打开文档 AI，提交修改「只把正文中的『鸟鸣』改成『鸟叫』，保留其余字节与提纲。」回传后在 Reader 查看差异和单个 Git 版本，点击撤销，比较前后的 `/documents/{documentId}` Markdown UTF-8 字节。
 3. 重新启动 fixture，在同一模型和同一初始样本上重复。旧线路以 `OPENAI_BASE_URL=https://api.deepseek.com OPENAI_MODEL=deepseek-flash OPENAI_API_KEY="$DEEPSEEK_API_KEY" node bin/librarian/examples/ai_runner.mjs --once` 领取任务。记录两条线路的鉴权、交互次数、token、响应时间、错误及最终业务回执。旧线路的 CLI 未打印模型调用计数或 token，可通过受控的本地转发测量，或在记录中将这些指标列为缺失。
+
+
+## 真实 DeepSeek 对比与选型
+
+2026-11-21。选用官方 DeepSeek Harness 作为受管执行器，旧 Node 示例继续服务既有部署。Harness 在两次独立运行中均完成跨文档问答和单文档条件修改。旧 Node 的跨文档问答连续两次在解析模型动作时终止。样本仅覆盖固定的两项任务。
+
+- 基线为 `c1059e7241aa62ebcb704264423b946a79c99f13`，产品工作树为 `/home/xia/Projects/Doc/librarian/.superpowers/sdd/ai-workspace-worktree`，独立分支为 `spike/librarian-ai-workspace`。Fork、origin 和 upstream 与上表相同。开工时工作树干净。Rust 服务继续使用现有 claims、sources、result、diff 和 undo 接口。
+- 两轮分别为每条路线启动一套全新的回环 Rust fixture，使用相同的两篇合成文档、提纲、账号和上节固定提示词。模型均为官方 `deepseek-flash`。Harness 使用 Messages 和禁用思考；旧 Node 使用 Chat Completions 和供应商默认思考设置。计时为领取任务的 CLI 墙钟时间，包含服务回传；两种调用配置不同，此处不作速度排名。
+- Chromium 实际点开「野外/01.md」「野外/02.md」两条来源并返回。回答分别概括湿地水位和林间鸟鸣，服务端问答无 Git 提交。修改指定的正文一处，提纲保持原样。每次成功修改的版本列表只增加一项，Reader 展示期望 diff，由界面撤销。
+- 四次修改前与撤销后的 UTF-8 SHA-256 均为 `fd913a8fa2e95c21dd587d6f4f61e9610a602ec41ed04db0917566613f517d04`，修改后均为 `188a932223a082510b40360346cbe75925ad412ca53c3d6d31b8c0805a311534`。
+- 旧 Node 两次问答的供应商 HTTP 状态均为 200；第一步模型消息不能解析为执行器要求的 JSON，没有来源或版本。重测记录到 content 为 160 字符字符串且没有原生工具调用。Harness 两轮回执均无工具错误。表中 token 按各官方适配器的 usage 计数，旧 Node 通过只观察状态和用量的 fetch 探针计量。
+
+| 轮次 | 路线 | 任务 | 模型请求 | 工具／动作 | 输入 / 输出 token | 耗时 ms | 操作 ID | 新版本 | 结果 |
+| --- | --- | --- | ---: | --- | ---: | ---: | --- | --- | --- |
+| 1 | harness | 问答 | 3 | search_workspace → search_workspace → read_document → read_document | 2272 / 744 | 5810 | cf377423-b436-4061-a97f-ecbbb48de289 | 无 | 通过 |
+| 1 | harness | 修改 | 3 | read_document → submit_document_edits | 810 / 200 | 3081 | ad265508-8fd2-4725-b15b-3211d9c60622 | 6b69cda166499cb0b9c13792864928aa34b7d0e7 | 通过 |
+| 1 | node | 问答 | 1 | 首个响应无法解析为动作 JSON | 299 / 54 | 670 | a616fb4f-fd3b-4028-be28-df4f213f205e | 无 | 失败 |
+| 1 | node | 修改 | 1 | finish | 484 / 264 | 1838 | 43195712-def0-48b9-9ab7-3888c16ab9ab | 398be90cf12feeaab32cf1f8deef84d1dcca3193 | 通过 |
+| 2 | harness | 问答 | 3 | search_workspace → search_workspace → read_document → read_document | 2052 / 517 | 4137 | 3e855820-7835-4fd4-8430-ffafb62bd91f | 无 | 通过 |
+| 2 | harness | 修改 | 3 | read_document → submit_document_edits | 853 / 217 | 2794 | 221afcbf-c2a8-4137-a93f-1f6c97992e30 | 7dba67a516f8a4b548e8f43053eb5e61e053d50d | 通过 |
+| 2 | node | 问答 | 1 | 首个响应无法解析为动作 JSON | 299 / 54 | 818 | 2a5e0ac1-e762-40f9-a046-e64c2ea4cc9c | 无 | 失败 |
+| 2 | node | 修改 | 1 | finish | 498 / 411 | 2766 | c7ed3b94-cde9-4561-8d06-baeecc8e1ead | d7638fc062a11994e7df6791d02d365392bae0eb | 通过 |
+
+认证目录 `GET /models` 于 2026-11-21 13:44 UTC 返回 200。返回的两个 ID 为 `deepseek-flash` 和 `deepseek-v4-pro`，名称为 DeepSeek-V4.1-Flash 和 DeepSeek-V4-Pro，均声明 low、high、max，默认 high。仅 flash 执行了上述生成任务。目录为此次响应样本，产品应采用发现结果。
+
+同一工作树复跑 Reader 构建、10 项 Rust AI 操作、5 项旧 Node、15 项 Harness（启用 Chromium）、10 项 AI 和版本浏览器用例、11 项 Fork 接缝及 6 项投递用例。既有 MCP 工具和权限回归通过；新增受管协议、网页配置和真实外部客户端发行验收属于后续工作。
