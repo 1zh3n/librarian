@@ -1,9 +1,10 @@
 import type { ScrollAnchor } from "../../markdown/anchors";
 
 export type AiTranscriptVisit = {
-  sourceId: string;
+  sourceId?: string;
   scrollTop: number;
   draft: string;
+  mode?: "chat" | "edit";
   conversation?: { username: string; id: string; materialIds?: readonly string[] };
   questions: ReadonlyMap<string, string>;
 };

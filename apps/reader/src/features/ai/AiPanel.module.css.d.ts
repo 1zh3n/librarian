@@ -1,4 +1,16 @@
 declare const styles: {
+  readonly tableScroll: string;
+  readonly toolbar: string;
+  readonly historyButton: string;
+  readonly newChat: string;
+  readonly chatMenu: string;
+  readonly historyEntry: string;
+  readonly danger: string;
+  readonly reply: string;
+  readonly speaker: string;
+  readonly mode: string;
+  readonly scope: string;
+  readonly sendControls: string;
   readonly panel: string;
   readonly transcript: string;
   readonly turns: string;

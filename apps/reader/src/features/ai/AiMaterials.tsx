@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
@@ -94,6 +95,7 @@ export function useMaterialSelection(
 }
 
 type Props = {
+  actions?: ReactNode;
   conversationId?: string | undefined;
   ensureConversation: () => Promise<string>;
   selected: readonly string[];
@@ -108,6 +110,7 @@ function selectionError(count: number, size: number) {
 }
 
 export function AiMaterials({
+  actions,
   conversationId,
   ensureConversation,
   selected,
@@ -222,9 +225,17 @@ export function AiMaterials({
     }
   }
 
+  const picker = (
+    <FilePicker
+      files={[]}
+      disabled={busy}
+      attachment={Boolean(actions)}
+      onChange={(files) => void upload(files)}
+    />
+  );
   return (
     <section className={styles.materials} aria-label="参考材料">
-      <FilePicker files={[]} disabled={busy} onChange={(files) => void upload(files)} />
+      {!actions && picker}
       {(notice || Boolean(selected.length)) && (
         <p className={styles.hint}>本轮选中材料的实际读取片段会发送给管理员配置的模型供应商。</p>
       )}
@@ -281,6 +292,12 @@ export function AiMaterials({
             </li>
           ))}
         </ul>
+      )}
+      {actions && (
+        <div className={styles.tools}>
+          {picker}
+          {actions}
+        </div>
       )}
     </section>
   );

@@ -1,4 +1,5 @@
 declare const styles: {
+  readonly tools: string;
   readonly materials: string;
   readonly list: string;
   readonly row: string;

@@ -386,6 +386,7 @@ function DocumentWorkspace({
   }, [tool, analysis.blocks, reading.source, body]);
 
   function rememberSource(transcript: AiTranscriptVisit) {
+    if (!transcript.sourceId) return;
     const viewport = canvas.current?.closest("main");
     if (!viewport) return;
     const inline = inlineVisit.current;

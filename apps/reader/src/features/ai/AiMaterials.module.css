@@ -72,3 +72,26 @@
     min-block-size: 2.75rem;
   }
 }
+
+.tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+@container chat-composer (max-width: 15em) {
+  .tools {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .tools button {
+    min-block-size: max(44px, 1.75em);
+    padding-block: 0.15em;
+  }
+  .tools button[type="submit"] {
+    grid-column: 2;
+    justify-self: end;
+  }
+}
