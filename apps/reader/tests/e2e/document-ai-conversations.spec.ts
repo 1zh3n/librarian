@@ -10,7 +10,7 @@ async function send(page: Page, question: string) {
   const saved = page.waitForResponse(
     (r) => r.request().method() === "POST" && /\/turns$/u.test(r.url()),
   );
-  await form.getByRole("button", { name: "询问", exact: true }).click();
+  await form.getByRole("button", { name: "发送", exact: true }).click();
   expect((await saved).status()).toBe(202);
   const claim = await page.request.post(claims, { headers });
   expect(claim.ok()).toBeTruthy();

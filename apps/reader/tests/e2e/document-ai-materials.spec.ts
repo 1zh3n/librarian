@@ -33,7 +33,7 @@ test("selects_private_files_for_the_turn_and_recovers_from_parse_failure", async
     (r) => r.request().method() === "POST" && r.url().endsWith("/turns"),
   );
   await form.getByRole("textbox", { name: "提示词" }).fill("对比两个数字。");
-  await form.getByRole("button", { name: "询问", exact: true }).click();
+  await form.getByRole("button", { name: "发送", exact: true }).click();
   const response = await queued;
   expect(response.status()).toBe(202);
   for (const id of response.request().postDataJSON().materialIds as string[]) ids.add(id);
@@ -87,7 +87,7 @@ test("finds_and_reads_segments_from_selected_files", async ({ page }, testInfo) 
       await textarea.evaluate((el) => el.scrollIntoView({ block: "center" }));
       await textarea.tap();
     }
-    const submit = form.getByRole("button", { name: "询问", exact: true });
+    const submit = form.getByRole("button", { name: "发送", exact: true });
     for (const [name, control] of [
       ["prompt", textarea],
       ["submit", submit],
@@ -111,7 +111,7 @@ test("finds_and_reads_segments_from_selected_files", async ({ page }, testInfo) 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await expect(form.getByRole("button", { name: "询问", exact: true })).toBeInViewport();
+    await expect(form.getByRole("button", { name: "发送", exact: true })).toBeInViewport();
     const imageName = `materials-${width}-${height}-${font}`;
     const path = testInfo.outputPath(imageName + ".png");
     await page.screenshot({ path });
@@ -121,7 +121,7 @@ test("finds_and_reads_segments_from_selected_files", async ({ page }, testInfo) 
   const queued = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/turns"),
   );
-  await form.getByRole("button", { name: "询问", exact: true }).click();
+  await form.getByRole("button", { name: "发送", exact: true }).click();
   expect((await queued).status()).toBe(202);
   const headers = {
     authorization: "Bearer synthetic-material-fixture-token",
@@ -193,7 +193,7 @@ test("finds_and_reads_segments_from_selected_files", async ({ page }, testInfo) 
   const followup = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/turns"),
   );
-  await form.getByRole("button", { name: "询问", exact: true }).click();
+  await form.getByRole("button", { name: "发送", exact: true }).click();
   expect((await followup).status()).toBe(202);
   const next = await context.request.post(claims, { headers, data: {} });
   expect(next.status()).toBe(200);
@@ -225,7 +225,7 @@ test("citation Back restores only the draft materials still available in its con
   await expect(notes).toBeChecked();
   await expect(agenda).toBeChecked();
   const prompt = form.getByRole("textbox", { name: "提示词" });
-  const send = form.getByRole("button", { name: "询问", exact: true });
+  const send = form.getByRole("button", { name: "发送", exact: true });
   const accepted = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/turns"),
   );

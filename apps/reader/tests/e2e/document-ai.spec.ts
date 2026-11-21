@@ -39,10 +39,14 @@ async function complete(page: Page, task: Claim, data: RunnerResult) {
 async function send(page: Page, prompt: string, action: "询问" | "修改" | "发送" = "询问") {
   const form = page.getByRole("form", { name: "AI 请求" });
   await form.getByRole("textbox", { name: "提示词" }).fill(prompt);
+  if (action === "修改") {
+    await form.getByRole("button", { name: /发送模式/ }).click();
+    await page.getByRole("option", { name: "修改", exact: true }).click();
+  }
   const request = page.waitForResponse(
     (response) => response.request().method() === "POST" && response.url().endsWith("/turns"),
   );
-  await form.getByRole("button", { name: action, exact: true }).click();
+  await form.getByRole("button", { name: "发送", exact: true }).click();
   expect((await request).status()).toBe(202);
   return claim(page);
 }
@@ -99,11 +103,49 @@ test("only the AI input draws a focus border, including when actions receive foc
   await expect(input).toHaveCSS("outline-style", "solid");
   await expect(form).toHaveCSS("border-top-width", "0px");
   await expect(toolTabs).toHaveCSS("outline-style", "none");
-  const submit = form.getByRole("button", { name: "询问" });
+  const mode = form.getByRole("button", { name: /发送模式/ });
+  const submit = form.getByRole("button", { name: "发送", exact: true });
   await input.press("Tab");
+  await expect(mode).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(submit).toBeFocused();
   await expect(form).toHaveCSS("border-top-width", "0px");
   await expect(toolTabs).toHaveCSS("outline-style", "none");
+});
+
+test("document AI uses one send control and makes write mode explicit", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(page, "AiWriteMode.md", "# 写作模式\n\n正文保持原样。\n");
+  await openDocumentTool(page, "AI");
+  const form = page.getByRole("form", { name: "AI 请求" });
+  const mode = form.getByRole("button", { name: /发送模式/ });
+  const submit = form.getByRole("button", { name: "发送", exact: true });
+  await expect(mode).toContainText("询问");
+  await expect(submit).toHaveCount(1);
+  await expect(form.getByRole("button", { name: "修改", exact: true })).toHaveCount(0);
+
+  await form.getByRole("textbox", { name: "提示词" }).fill("改一段");
+  await mode.click();
+  await page.getByRole("option", { name: "修改", exact: true }).click();
+  await expect(mode).toContainText("修改");
+  await expect(form.getByRole("note")).toContainText("修改会直接写入正文");
+  await page.screenshot({ path: testInfo.outputPath("document-ai-write-mode-1440.png") });
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(mode).toBeVisible();
+  await expect(submit).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+  await page.screenshot({ path: testInfo.outputPath("document-ai-write-mode-360.png") });
+
+  const request = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith("/turns"),
+  );
+  await submit.click();
+  expect((await request).status()).toBe(202);
+  const task = await claim(page);
+  expect(task.input.mode).toBe("edit");
 });
 
 test("document AI sends selection and displays only actual sources", async ({ page }) => {
@@ -421,7 +463,9 @@ test("a read-only member returns from an unavailable source to the original answ
   expect(login.status()).toBe(303);
   await page.reload();
   await openDocumentTool(page, "AI");
-  await expect(page.getByRole("button", { name: "修改", exact: true })).toHaveCount(0);
+  const form = page.getByRole("form", { name: "AI 请求" });
+  await expect(form.getByRole("button", { name: /发送模式/ })).toHaveCount(0);
+  await expect(form.getByText("询问", { exact: true })).toBeVisible();
   const task = await send(page, "看旧记录");
   const source = await readSource(page, task, reference.document.id);
   await complete(page, task, { answer: "记录保存在旧文件。", sourceIds: [source.source.id] });

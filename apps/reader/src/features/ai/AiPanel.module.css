@@ -487,6 +487,13 @@
   gap: 0.375rem;
   margin-inline-start: auto;
 }
+
+.modeHint {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  line-height: 1.5;
+}
 @container chat-composer (max-width: 15em) {
   button:has([data-icon="paperclip"]) {
     min-inline-size: 44px;

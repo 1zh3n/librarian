@@ -11,6 +11,7 @@ declare const styles: {
   readonly mode: string;
   readonly scope: string;
   readonly sendControls: string;
+  readonly modeHint: string;
   readonly panel: string;
   readonly transcript: string;
   readonly turns: string;

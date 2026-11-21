@@ -272,7 +272,7 @@ async function checkFollowupAfterSave(
     page.waitForRequest(
       (req) => req.method() === "POST" && postUrl.test(new URL(req.url()).pathname),
     ),
-    note.panel.getByRole("button", { name: "询问", exact: true }).click(),
+    note.panel.getByRole("button", { name: "发送", exact: true }).click(),
   ]);
   const task = posted.postDataJSON() as AiTask;
   expect(task.context).toEqual([

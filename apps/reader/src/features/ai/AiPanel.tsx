@@ -411,7 +411,7 @@ export function AiPanel({
     setMode("chat");
     tail.current = true;
   }
-  const sendControls = standalone && (
+  const sendControls = (
     <div className={styles.sendControls}>
       {writable ? (
         <Select
@@ -444,7 +444,7 @@ export function AiPanel({
       selected={selectedMaterials}
       onMaterialsChange={setSelectedMaterials}
       onPendingChange={setMaterialsPending}
-      actions={sendControls}
+      actions={standalone ? sendControls : undefined}
     />
   );
   return (
@@ -692,7 +692,7 @@ export function AiPanel({
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
-          void submit(standalone ? sendMode : "chat");
+          void submit(sendMode);
         }}
       >
         {!standalone && attachments}
@@ -724,28 +724,14 @@ export function AiPanel({
           {(referenceError || submitError) && (
             <Feedback tone="error">{referenceError || submitError}</Feedback>
           )}
-          {standalone ? (
-            attachments || sendControls
-          ) : (
-            <div className={styles.actions}>
-              <Button
-                className={styles.button}
-                type="submit"
-                isDisabled={disabled || !prompt.trim() || Boolean(referenceError)}
-              >
-                询问
-              </Button>
-              {writable && (
-                <Button
-                  className={styles.button}
-                  isDisabled={disabled || !prompt.trim() || Boolean(referenceError)}
-                  onPress={() => void submit("edit")}
-                >
-                  修改
-                </Button>
-              )}
-            </div>
+          {sendMode === "edit" && writable && (
+            <p className={styles.modeHint} role="note">
+              {global
+                ? "修改与管理会直接执行文档或空间操作，并记录操作回执。"
+                : "修改会直接写入正文，并生成可恢复的版本。"}
+            </p>
           )}
+          {standalone ? attachments || sendControls : sendControls}
         </div>
       </Form>
     </section>
