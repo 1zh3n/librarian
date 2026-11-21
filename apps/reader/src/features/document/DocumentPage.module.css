@@ -277,6 +277,8 @@
 }
 
 .canvas :where(table) {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   margin-block-end: 0.5rem;
 }

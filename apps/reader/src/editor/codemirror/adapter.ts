@@ -1,3 +1,4 @@
+import { forceParsing } from "@codemirror/language";
 import { deleteMarkupBackward, markdown } from "@codemirror/lang-markdown";
 import {
   defaultKeymap,
@@ -31,7 +32,7 @@ import { anchorSampleInset, blockAtOffset, resolveAnchor } from "../../markdown/
 import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
-import { hideFrontMatterControl, livePreview } from "./livePreview";
+import { documentPreviewTypography, hideFrontMatterControl, livePreview } from "./livePreview";
 import { markdownEnter } from "./markdownEnter";
 import { frontMatterRange } from "./syntax";
 
@@ -137,9 +138,18 @@ type EditorOptions = {
   readonly readOnly?: boolean;
   readonly ariaLabel?: string;
   readonly hideMetadataInPreview?: boolean;
+  readonly documentTypography?: boolean;
   readonly onDeferredExternalResult?: (revision: string | null, result: ExternalResult) => void;
   readonly onBufferChange?: (source: string, composing: boolean) => void;
 };
+
+export interface EditorMountAnchor {
+  readonly viewport: HTMLElement;
+  readonly sourceOffset: number;
+  readonly screenTop: number;
+  /** The side of a caret that supplied the clicked glyph, including at a soft wrap. */
+  readonly glyphSide?: 1 | -1;
+}
 
 export interface EditorSession {
   source(): string;
@@ -163,13 +173,16 @@ export interface EditorSession {
     sameRevision: boolean,
     keepSelection?: boolean,
   ): Promise<boolean>;
-  mount(parent: HTMLElement, autoFocus?: boolean): () => void;
+  mount(parent: HTMLElement, autoFocus?: boolean, anchor?: EditorMountAnchor): () => void;
 }
 
 export function openEditor(initial: string, options: EditorOptions = {}): EditorSession {
   const source = readSource(initial);
   const doc = Text.of(editorText(initial).split("\n"));
   const metadata = frontMatterRange(doc);
+  const previewExtensions = options.documentTypography
+    ? [livePreview, documentPreviewTypography]
+    : livePreview;
   const preview = new Compartment();
   const undoHistory = new Compartment();
   const selection = options.selection;
@@ -192,7 +205,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       markdown({ extensions: GFM, completeHTMLTags: false, addKeymap: false }),
       composing,
       compositionEvents,
-      preview.of(livePreview),
+      preview.of(previewExtensions),
       hideFrontMatterControl.of(options.hideMetadataInPreview ?? false),
       editorFocus,
       keymap.of([
@@ -335,7 +348,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       } else {
         const { pos, assoc } = view.posAndSideAtCoords({ x, y }, false);
         const hiddenMetadata =
-          options.hideMetadataInPreview && preview.get(state) === livePreview
+          options.hideMetadataInPreview && preview.get(state) === previewExtensions
             ? frontMatterRange(state.doc)
             : undefined;
         if (hiddenMetadata && hiddenMetadata.to === end) {
@@ -366,7 +379,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         return false;
       }
       const transaction = state.update({
-        effects: preview.reconfigure(enabled ? [] : livePreview),
+        effects: preview.reconfigure(enabled ? [] : previewExtensions),
       });
       dispatch(transaction);
       view?.focus();
@@ -430,12 +443,14 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       }
       return true;
     },
-    mount(parent, autoFocus = true) {
+    mount(parent, autoFocus = true, anchor) {
       if (view) {
         throw new Error("The editor is already mounted");
       }
+      const at = anchor && editorOffset(state.field(sourceField), anchor.sourceOffset);
       const mounted = new EditorView({
         state,
+        ...(at !== undefined && { scrollTo: EditorView.scrollIntoView(at, { y: "center" }) }),
         parent,
         dispatchTransactions(transactions, editor) {
           const wasComposing = state.field(composing);
@@ -450,6 +465,15 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       });
       view = mounted;
       if (autoFocus) mounted.focus();
+      if (anchor && at !== undefined) {
+        // Measure the target viewport and its preview decorations before the first paint.
+        mounted.coordsAtPos(at);
+        if (preview.get(state) === previewExtensions)
+          forceParsing(mounted, mounted.viewport.to, 32);
+        const glyph = anchor.glyphSide && mounted.coordsAtPos(at, anchor.glyphSide);
+        const top = glyph?.top ?? mounted.documentTop + mounted.lineBlockAt(at).top;
+        anchor.viewport.scrollTop += top - anchor.screenTop;
+      }
       return () => {
         mounted.destroy();
         if (view === mounted) {

@@ -95,3 +95,5 @@
 在 Chromium 上连续点三次文末空白，其中一次先按 Esc 回到阅读。旧版会追加三个换行。修正后第一次只追加一个换行，后两次复用该行，期间只有一次正文保存请求。随后输入「明早继续。」并从 API 回读，文字就在第二行。空文档、已有多行留白和缩进的原文也分别验证了输入与撤销。 [第三次点击后的光标](evidence/reader-editing-workflow/reused-final-line.png) · [浏览器回归](../../apps/reader/tests/e2e/document-edit.spec.ts)
 
 在 1280 × 800 的三段短文中，点第一行句号右方 65 px，输入「岸边已能落脚。」，API 回读显示这句话接在第一段原句末尾，另两段完整。随后点最后一段下方两次，只补入一个换行。浏览器同时覆盖桌面和窄屏折行两侧、段间上下两侧、长文视口下沿、引用列表缩进，以及预览和源码中的已存空行。 [第一行续写画面](evidence/reader-editing-workflow/nearby-line-end.png) · [阅读纸面落点](../../apps/reader/tests/e2e/document-edit.spec.ts) · [编辑器坐标回归](../../apps/reader/tests/e2e/editor-paper-placement.spec.ts)
+
+在 Chromium 的 1440 × 900 视口中，滚到 41 节长文的第 21 节，点击段落里的「桩」。从阅读到编辑，旧版首帧闪回文首。修正后三次冷开均从 y=265.55 落到 y=265.30，接下来的 24 帧维持同一位置。在内网预览文档的页首，原来下移 94 px 的字保持在 y=392.2，正文可滚动区域的总高度维持 1502 px。测试还从页首两个空行和段落之间进入编辑，核对立即输入、中文组合输入、撤销及原文行尾。图中上下两幅分别是点击前后按相同屏幕坐标截取的第 21 节。 [画面对照](evidence/reader-editing-workflow/first-edit-position.png) · [逐帧位置与原文回读](../../apps/reader/tests/e2e/document-first-click-stability.spec.ts) · [标题、导语与段间距](../../apps/reader/tests/e2e/document-preview-typesetting.spec.ts)
