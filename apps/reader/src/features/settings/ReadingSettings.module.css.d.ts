@@ -6,10 +6,7 @@ declare const styles: {
   readonly field: string;
   readonly input: string;
   readonly button: string;
-  readonly options: string;
-  readonly option: string;
   readonly checkbox: string;
-  readonly mark: string;
   readonly actions: string;
   readonly error: string;
   readonly tabList: string;

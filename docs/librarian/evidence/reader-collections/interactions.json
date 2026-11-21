@@ -1,0 +1,66 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "browser": "Playwright Chromium",
+  "document": "野外/01.md",
+  "before": {
+    "point": {
+      "x": 192,
+      "y": 164
+    },
+    "popover": {
+      "x": 194,
+      "y": 166,
+      "width": 144,
+      "height": 82
+    },
+    "firstMenuItemFocused": true,
+    "createDirectory": "野外",
+    "palette": {
+      "x": 433,
+      "y": 113,
+      "width": 574,
+      "height": 141.59375
+    },
+    "inputFocused": true,
+    "fontDraft": "24",
+    "settings": {
+      "x": 417,
+      "y": 237.5,
+      "width": 606,
+      "height": 425
+    },
+    "focusAfterEscape": "ARTICLE"
+  },
+  "after": {
+    "point": {
+      "x": 192,
+      "y": 164
+    },
+    "popover": {
+      "x": 194,
+      "y": 166,
+      "width": 144,
+      "height": 82
+    },
+    "firstMenuItemFocused": true,
+    "createDirectory": "野外",
+    "palette": {
+      "x": 433,
+      "y": 113,
+      "width": 574,
+      "height": 141.59375
+    },
+    "inputFocused": true,
+    "fontDraft": "24",
+    "settings": {
+      "x": 417,
+      "y": 237.5,
+      "width": 606,
+      "height": 425
+    },
+    "focusAfterEscape": "ARTICLE"
+  }
+}

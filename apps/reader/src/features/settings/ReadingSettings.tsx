@@ -1,34 +1,21 @@
+import { Dialog } from "../../ui/Dialog";
 import { useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  Form,
-  Heading,
-  Input,
-  Label,
-  ListBox,
-  ListBoxItem,
-  Modal,
-  ModalOverlay,
-  Popover,
-  Select,
-  SelectValue,
-  TextField,
-} from "../../ui/primitives";
-import { Tabs } from "../../ui/Tabs";
+import { Button } from "../../ui/Button";
+import { Checkbox, Field, Form, Select } from "../../ui/Forms";
+import { Feedback } from "../../ui/Feedback";
+import { Tabs, TabPanel } from "../../ui/Tabs";
 import type { DevicePreferences } from "../../api/client";
 import styles from "./ReadingSettings.module.css";
 
 const themes = [
-  { id: "system", name: "跟随系统" },
-  { id: "light", name: "浅色" },
-  { id: "dark", name: "深色" },
-];
+  { value: "system", label: "跟随系统" },
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+] as const;
 const fonts = [
-  { id: "serif", name: "衬线" },
-  { id: "sans", name: "无衬线" },
-];
+  { value: "serif", label: "衬线" },
+  { value: "sans", label: "无衬线" },
+] as const;
 
 type SettingsActions = {
   save: (changes: Partial<DevicePreferences>) => Promise<DevicePreferences>;
@@ -48,50 +35,37 @@ export function ReadingSettings({
 }) {
   const [saving, setSaving] = useState(false);
   return (
-    <ModalOverlay
-      isOpen
-      isDismissable={!saving}
-      isKeyboardDismissDisabled={saving}
-      onOpenChange={(open) => {
-        if (!open) close();
-      }}
-      className={styles.overlay}
-    >
-      <Modal className={styles.modal}>
-        <Dialog className={styles.dialog}>
-          <Heading slot="title">应用设置</Heading>
-          {preferences ? (
-            <PreferencesForm
-              preferences={preferences}
-              saving={saving}
-              setSaving={setSaving}
-              save={save}
-              close={close}
-            />
+    <Dialog title="应用设置" busy={saving} onClose={close} classes={styles}>
+      {preferences ? (
+        <PreferencesForm
+          preferences={preferences}
+          saving={saving}
+          setSaving={setSaving}
+          save={save}
+          close={close}
+        />
+      ) : (
+        <div className={styles.fields}>
+          {loading ? (
+            <Feedback>正在读取设备设置…</Feedback>
           ) : (
-            <div className={styles.fields}>
-              {loading ? (
-                <output>正在读取设备设置…</output>
-              ) : (
-                <p className={styles.error} role="alert">
-                  无法读取设备设置。
-                </p>
-              )}
-              <div className={styles.actions}>
-                <Button className={styles.button} onPress={close}>
-                  关闭
-                </Button>
-                {!loading && (
-                  <Button className={styles.button} onPress={retry}>
-                    重试
-                  </Button>
-                )}
-              </div>
-            </div>
+            <Feedback tone="error" className={styles.error}>
+              无法读取设备设置。
+            </Feedback>
           )}
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+          <div className={styles.actions}>
+            <Button className={styles.button} onPress={close}>
+              关闭
+            </Button>
+            {!loading && (
+              <Button className={styles.button} onPress={retry}>
+                重试
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </Dialog>
   );
 }
 
@@ -146,142 +120,118 @@ function PreferencesForm({
           .finally(() => setSaving(false));
       }}
     >
-      <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))}>
-        <Tabs.List aria-label="应用设置" className={styles.tabList}>
-          <Tabs.Tab id="appearance" className={styles.tab}>
-            外观
-          </Tabs.Tab>
-          <Tabs.Tab id="reading" className={styles.tab}>
-            阅读与布局
-          </Tabs.Tab>
-          <Tabs.Tab id="shortcuts" className={styles.tab}>
-            快捷键
-          </Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel id="appearance" shouldForceMount className={styles.panel}>
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        label="应用设置"
+        listClassName={styles.tabList}
+        tabClassName={styles.tab}
+        items={[
+          { id: "appearance", label: "外观" },
+          { id: "reading", label: "阅读与布局" },
+          { id: "shortcuts", label: "快捷键" },
+        ]}
+      >
+        <TabPanel id="appearance" keepMounted className={styles.panel}>
           <Select
+            label="主题"
             value={theme}
-            onChange={(value) => {
-              const next = themes.find((item) => item.id === value)?.id;
-              if (next === "system" || next === "light" || next === "dark") setTheme(next);
-            }}
+            onChange={setTheme}
+            entries={themes}
             className={styles.field}
-          >
-            <Label>主题</Label>
-            <Button className={styles.input}>
-              <SelectValue />
-              <span aria-hidden="true">⌄</span>
-            </Button>
-            <Popover className={styles.options}>
-              <ListBox items={themes}>
-                {(item) => (
-                  <ListBoxItem className={styles.option} id={item.id}>
-                    {item.name}
-                  </ListBoxItem>
-                )}
-              </ListBox>
-            </Popover>
-          </Select>
+          />
           <Select
+            label="字体"
             value={font}
-            onChange={(value) => {
-              if (value === "serif" || value === "sans") setFont(value);
-            }}
+            onChange={setFont}
+            entries={fonts}
             className={styles.field}
-          >
-            <Label>字体</Label>
-            <Button className={styles.input}>
-              <SelectValue />
-              <span aria-hidden="true">⌄</span>
-            </Button>
-            <Popover className={styles.options}>
-              <ListBox items={fonts}>
-                {(item) => (
-                  <ListBoxItem className={styles.option} id={item.id}>
-                    {item.name}
-                  </ListBoxItem>
-                )}
-              </ListBox>
-            </Popover>
-          </Select>
-          <Checkbox className={styles.checkbox} isSelected={eink} onChange={setEink}>
-            <span className={styles.mark} aria-hidden="true" /> 墨水屏
+          />
+          <Checkbox className={styles.checkbox} checked={eink} onChange={setEink}>
+            墨水屏
           </Checkbox>
-          <Checkbox
-            className={styles.checkbox}
-            isSelected={reduceMotion}
-            onChange={setReduceMotion}
-          >
-            <span className={styles.mark} aria-hidden="true" /> 减少动画
+          <Checkbox className={styles.checkbox} checked={reduceMotion} onChange={setReduceMotion}>
+            减少动画
           </Checkbox>
-        </Tabs.Panel>
-        <Tabs.Panel id="reading" shouldForceMount className={styles.panel}>
-          <TextField
+        </TabPanel>
+        <TabPanel id="reading" keepMounted className={styles.panel}>
+          <Field
+            label="字号"
             className={styles.field}
             name="fontSize"
             type="number"
-            isRequired
+            required
             validationBehavior="native"
             defaultValue={String(preferences.fontSize)}
-          >
-            <Label>字号</Label>
-            <Input className={styles.input} min={16} max={28} step={1} />
-          </TextField>
-          <TextField
+            inputClassName={styles.input}
+            min={16}
+            max={28}
+            step={1}
+          />
+          <Field
+            label="行高"
             className={styles.field}
             name="lineHeight"
             type="number"
-            isRequired
+            required
             validationBehavior="native"
             defaultValue={String(preferences.lineHeight)}
-          >
-            <Label>行高</Label>
-            <Input className={styles.input} min={1.4} max={2.4} step={0.01} />
-          </TextField>
-          <TextField
+            inputClassName={styles.input}
+            min={1.4}
+            max={2.4}
+            step={0.01}
+          />
+          <Field
+            label="每行汉字数"
             className={styles.field}
             name="measure"
             type="number"
-            isRequired
+            required
             validationBehavior="native"
             defaultValue={String(preferences.measure)}
-          >
-            <Label>每行汉字数</Label>
-            <Input className={styles.input} min={28} max={56} step={1} />
-          </TextField>
-          <TextField
+            inputClassName={styles.input}
+            min={28}
+            max={56}
+            step={1}
+          />
+          <Field
+            label="空间目录宽度"
             className={styles.field}
             name="sidebarWidth"
             type="number"
-            isRequired
+            required
             validationBehavior="native"
             defaultValue={String(preferences.sidebarWidth)}
-          >
-            <Label>空间目录宽度</Label>
-            <Input className={styles.input} min={176} max={360} step={1} />
-          </TextField>
-          <TextField
+            inputClassName={styles.input}
+            min={176}
+            max={360}
+            step={1}
+          />
+          <Field
+            label="文档工具宽度"
             className={styles.field}
             name="toolsWidth"
             type="number"
-            isRequired
+            required
             validationBehavior="native"
             defaultValue={String(preferences.toolsWidth)}
-          >
-            <Label>文档工具宽度</Label>
-            <Input className={styles.input} min={200} max={480} step={1} />
-          </TextField>
-        </Tabs.Panel>
-        <Tabs.Panel id="shortcuts" shouldForceMount className={styles.panel}>
-          <TextField className={styles.field} name="focusKey" defaultValue={preferences.focusKey}>
-            <Label>专注快捷键</Label>
-            <Input
-              className={styles.input}
-              maxLength={1}
-              pattern="[A-Za-z]?"
-              placeholder="留空关闭"
-            />
-          </TextField>
+            inputClassName={styles.input}
+            min={200}
+            max={480}
+            step={1}
+          />
+        </TabPanel>
+        <TabPanel id="shortcuts" keepMounted className={styles.panel}>
+          <Field
+            label="专注快捷键"
+            className={styles.field}
+            name="focusKey"
+            defaultValue={preferences.focusKey}
+            inputClassName={styles.input}
+            maxLength={1}
+            pattern="[A-Za-z]?"
+            placeholder="留空关闭"
+          />
           <dl className={styles.shortcuts}>
             <dt>快速打开</dt>
             <dd>
@@ -296,18 +246,18 @@ function PreferencesForm({
               <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd>
             </dd>
           </dl>
-        </Tabs.Panel>
+        </TabPanel>
       </Tabs>
       {error && (
-        <p className={styles.error} role="alert">
+        <Feedback tone="error" className={styles.error}>
           无法保存设置，请重试。
-        </p>
+        </Feedback>
       )}
       <div className={styles.actions}>
         <Button className={styles.button} isDisabled={saving} onPress={close}>
           取消
         </Button>
-        <Button type="submit" variant="primary" isDisabled={saving}>
+        <Button type="submit" variant="primary" loading={saving}>
           保存设置
         </Button>
       </div>

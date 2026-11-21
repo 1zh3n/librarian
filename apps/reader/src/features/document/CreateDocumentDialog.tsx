@@ -1,19 +1,12 @@
+import { Dialog } from "../../ui/Dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
 import type { DocumentSnapshot } from "../../api/client";
-import {
-  Button,
-  Dialog,
-  Form,
-  Heading,
-  Input,
-  Label,
-  Modal,
-  ModalOverlay,
-  TextField,
-} from "../../ui/primitives";
+import { Button } from "../../ui/Button";
+import { Field, Form } from "../../ui/Forms";
+import { Feedback } from "../../ui/Feedback";
 import styles from "./CreateDocumentDialog.module.css";
 
 export function CreateDocumentDialog({
@@ -63,47 +56,48 @@ export function CreateDocumentDialog({
   }
 
   return (
-    <ModalOverlay
-      isOpen
-      isDismissable={!create.isPending}
-      isKeyboardDismissDisabled={create.isPending}
-      onOpenChange={(open) => !open && close()}
-      className={styles.overlay}
-    >
-      <Modal className={styles.modal}>
-        <Dialog className={styles.dialog}>
-          <Heading slot="title">新建文档</Heading>
-          <Form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (canSubmit) create.mutate();
-            }}
+    <Dialog title="新建文档" busy={create.isPending} onClose={close} classes={styles}>
+      <Form
+        className={styles.form}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSubmit) create.mutate();
+        }}
+      >
+        <Field
+          label="文档名称"
+          ref={nameField}
+          className={styles.field}
+          value={name}
+          onChange={setName}
+          required
+        />
+        <Field
+          label="目录（可选）"
+          className={styles.field}
+          value={directory}
+          onChange={setDirectory}
+          placeholder="例如 研究/样本"
+        />
+        {message && (
+          <Feedback className={styles.error} tone="error">
+            {message}
+          </Feedback>
+        )}
+        <div className={styles.actions}>
+          <Button isDisabled={create.isPending} onPress={close}>
+            取消
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            isDisabled={!canSubmit}
+            loading={create.isPending}
           >
-            <TextField className={styles.field} value={name} onChange={setName} isRequired>
-              <Label>文档名称</Label>
-              <Input ref={nameField} />
-            </TextField>
-            <TextField className={styles.field} value={directory} onChange={setDirectory}>
-              <Label>目录（可选）</Label>
-              <Input placeholder="例如 研究/样本" />
-            </TextField>
-            {message && (
-              <p className={styles.error} role="alert">
-                {message}
-              </p>
-            )}
-            <div className={styles.actions}>
-              <Button isDisabled={create.isPending} onPress={close}>
-                取消
-              </Button>
-              <Button type="submit" variant="primary" isDisabled={!canSubmit}>
-                {create.isPending ? "正在创建…" : "创建文档"}
-              </Button>
-            </div>
-          </Form>
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+            {create.isPending ? "正在创建…" : "创建文档"}
+          </Button>
+        </div>
+      </Form>
+    </Dialog>
   );
 }

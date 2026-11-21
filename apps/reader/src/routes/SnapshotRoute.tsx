@@ -127,44 +127,37 @@ function SnapshotReader({
         {kind === "release" && <OfflineSnapshotControl key={id} id={id} offline={offline} />}
         {documents.length > 1 && (
           <Disclosure
-            isExpanded={directoryOpen}
-            onExpandedChange={setDirectoryOpen}
+            title={`文档目录 · ${documents.length} 篇`}
+            triggerClassName={styles.directoryTrigger}
+            expanded={directoryOpen}
+            onChange={setDirectoryOpen}
             className={styles.directory}
           >
-            <Disclosure.Heading>
-              <Disclosure.Trigger className={styles.directoryTrigger}>
-                文档目录 · {documents.length} 篇 <Disclosure.Indicator />
-              </Disclosure.Trigger>
-            </Disclosure.Heading>
-            <Disclosure.Content>
-              <Disclosure.Body>
-                <nav aria-label="阅读地址中的文档" className={styles.navigation}>
-                  {documents.map((item) => (
-                    <Link
-                      key={item.id}
-                      to="/r/$snapshotId"
-                      params={{ snapshotId: id }}
-                      search={{ documentId: item.id }}
-                      onClick={(event) => {
-                        if (
-                          event.button !== 0 ||
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        )
-                          return;
-                        setDirectoryOpen(false);
-                        onChoose(item.id);
-                      }}
-                      aria-current={item.id === document.id ? "page" : false}
-                    >
-                      {item.title}
-                    </Link>
-                  ))}
-                </nav>
-              </Disclosure.Body>
-            </Disclosure.Content>
+            <nav aria-label="阅读地址中的文档" className={styles.navigation}>
+              {documents.map((item) => (
+                <Link
+                  key={item.id}
+                  to="/r/$snapshotId"
+                  params={{ snapshotId: id }}
+                  search={{ documentId: item.id }}
+                  onClick={(event) => {
+                    if (
+                      event.button !== 0 ||
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey
+                    )
+                      return;
+                    setDirectoryOpen(false);
+                    onChoose(item.id);
+                  }}
+                  aria-current={item.id === document.id ? "page" : false}
+                >
+                  {item.title}
+                </Link>
+              ))}
+            </nav>
           </Disclosure>
         )}
         {!titleIsFirstHeading && <h1 className={documentStyles.title}>{document.title}</h1>}

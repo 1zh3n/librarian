@@ -1,3 +1,4 @@
+import { Feedback } from "../ui/Feedback";
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
@@ -11,14 +12,14 @@ import { RenamePathForm } from "../features/workspace/RenamePathForm";
 import { WorkspaceEditor } from "../features/workspace/WorkspaceEditor";
 import { WorkspaceMembers } from "../features/workspace/WorkspaceMembers";
 import styles from "../features/workspace/Management.module.css";
-import { Tabs } from "../ui/Tabs";
+import { Tabs, TabPanel } from "../ui/Tabs";
 
 const route = getRouteApi("/workspaces/$workspaceId/manage");
 
-const general = { id: "general", title: "常规" };
-const members = { id: "members", title: "成员" };
-const delivery = { id: "delivery", title: "外部导入" };
-const release = { id: "release", title: "备份与发布" };
+const general = { id: "general", label: "常规" };
+const members = { id: "members", label: "成员" };
+const delivery = { id: "delivery", label: "外部导入" };
+const release = { id: "release", label: "备份与发布" };
 
 export function CreateWorkspaceRoute() {
   const navigate = useNavigate();
@@ -60,11 +61,11 @@ export function WorkspaceManagementRoute() {
     return (
       <div className={styles.page}>
         {list.isPending ? (
-          <output className={styles.status}>正在打开工作区…</output>
+          <Feedback className={styles.status}>正在打开工作区…</Feedback>
         ) : (
-          <p role="alert" className={styles.status}>
+          <Feedback tone="error" className={styles.status}>
             无法打开此工作区。
-          </p>
+          </Feedback>
         )}
       </div>
     );
@@ -80,7 +81,7 @@ export function WorkspaceManagementRoute() {
       ? [
           {
             id: "release",
-            title: "阅读地址",
+            label: "阅读地址",
             panel: <SnapshotPanel workspace={workspaceId} documents={documents.data ?? []} />,
           },
         ]
@@ -89,12 +90,12 @@ export function WorkspaceManagementRoute() {
       ? [
           {
             id: "release-site",
-            title: "站点发布",
+            label: "站点发布",
             panel: <PublicationPanel workspace={workspaceId} documents={documents.data ?? []} />,
           },
           {
             id: "release-backup",
-            title: "Git 备份",
+            label: "Git 备份",
             panel: <BackupPanel workspace={workspaceId} />,
           },
         ]
@@ -107,11 +108,11 @@ export function WorkspaceManagementRoute() {
       : releaseActions.some(({ id }) => id === hash)
         ? release.id
         : hash;
-  const openTab = (key: React.Key) => {
+  const openTab = (key: string) => {
     void navigate({
       to: "/workspaces/$workspaceId/manage",
       params: { workspaceId },
-      hash: String(key),
+      hash: key,
       hashScrollIntoView: false,
       resetScroll: false,
     });
@@ -121,16 +122,17 @@ export function WorkspaceManagementRoute() {
   return (
     <div className={styles.page}>
       <h1>{workspace.name}</h1>
-      <Tabs key={workspaceId} selectedKey={selected} onSelectionChange={openTab}>
-        <Tabs.List aria-label="空间设置" className={styles.tabList}>
-          {tabs.map(({ id, title }) => (
-            <Tabs.Tab key={id} id={id} className={styles.tab}>
-              {title}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+      <Tabs
+        key={workspaceId}
+        value={selected}
+        onChange={openTab}
+        label="空间设置"
+        items={tabs}
+        listClassName={styles.tabList}
+        tabClassName={styles.tab}
+      >
         {workspace.canManage && (
-          <Tabs.Panel id={general.id} shouldForceMount className={styles.group}>
+          <TabPanel id={general.id} keepMounted className={styles.group}>
             <section className={styles.section} aria-label="空间设置">
               <h2 id="space">空间设置</h2>
               <WorkspaceEditor current={workspace} />
@@ -141,38 +143,38 @@ export function WorkspaceManagementRoute() {
               </h2>
               <RenamePathForm workspace={workspaceId} />
             </section>
-          </Tabs.Panel>
+          </TabPanel>
         )}
         {workspace.canManage && (
-          <Tabs.Panel id={members.id} shouldForceMount className={styles.group}>
+          <TabPanel id={members.id} keepMounted className={styles.group}>
             <WorkspaceMembers workspace={workspaceId} />
-          </Tabs.Panel>
+          </TabPanel>
         )}
-        <Tabs.Panel id={delivery.id} shouldForceMount className={styles.group}>
+        <TabPanel id={delivery.id} keepMounted className={styles.group}>
           <DeliveryPanel workspace={workspaceId} writable={workspace.canWrite} />
           {workspace.canManage && <DeliveryTokens workspace={workspaceId} />}
-        </Tabs.Panel>
+        </TabPanel>
         {activeAction && (
-          <Tabs.Panel id={release.id} shouldForceMount className={styles.group}>
+          <TabPanel id={release.id} keepMounted className={styles.group}>
             {releaseActions.length === 1 ? (
               activeAction.panel
             ) : (
-              <Tabs selectedKey={activeAction.id} onSelectionChange={openTab}>
-                <Tabs.List aria-label="发布任务" className={styles.taskList}>
-                  {releaseActions.map(({ id, title }) => (
-                    <Tabs.Tab key={id} id={id} className={styles.task}>
-                      {title}
-                    </Tabs.Tab>
-                  ))}
-                </Tabs.List>
+              <Tabs
+                value={activeAction.id}
+                onChange={openTab}
+                label="发布任务"
+                items={releaseActions}
+                listClassName={styles.taskList}
+                tabClassName={styles.task}
+              >
                 {releaseActions.map(({ id, panel }) => (
-                  <Tabs.Panel key={id} id={id} shouldForceMount className={styles.group}>
+                  <TabPanel key={id} id={id} keepMounted className={styles.group}>
                     {panel}
-                  </Tabs.Panel>
+                  </TabPanel>
                 ))}
               </Tabs>
             )}
-          </Tabs.Panel>
+          </TabPanel>
         )}
       </Tabs>
     </div>

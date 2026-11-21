@@ -1,7 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import { ContextMenuPopover } from "../../ui/ContextMenuPopover";
 import type { MenuPoint } from "../../ui/ContextMenuPopover";
-import { Menu, MenuItem } from "../../ui/primitives";
+import { Menu } from "../../ui/Menu";
 import { isEditingTarget } from "../reading/readingFocus";
 import styles from "./WorkspaceContextMenu.module.css";
 
@@ -65,9 +65,6 @@ export function handleWorkspaceMenu(
   open(trigger, row?.dataset.contextFolder ?? "", point);
 }
 
-// The first action receives focus when the user explicitly opens the menu.
-const initialMenuFocus = { autoFocus: "first" } as const;
-
 export function WorkspaceContextMenu({
   target,
   create,
@@ -89,30 +86,34 @@ export function WorkspaceContextMenu({
       close={close}
       className={styles.contextMenu}
     >
-      <Menu {...initialMenuFocus} aria-label={inNavigation ? "目录操作" : "应用操作"}>
-        {create && (
-          <MenuItem
-            id="new-document"
-            className={styles.menuItem}
-            onAction={() => {
+      <Menu
+        label={inNavigation ? "目录操作" : "应用操作"}
+        focusFirst
+        items={[
+          ...(create
+            ? [
+                {
+                  id: "new-document",
+                  className: styles.menuItem,
+                  label: "新建文档…",
+                  run: () => {
+                    close();
+                    create(target.folder, target.trigger);
+                  },
+                },
+              ]
+            : []),
+          {
+            id: "search",
+            className: styles.menuItem,
+            label: hasWorkspace ? "搜索文档…" : "查找命令…",
+            run: () => {
               close();
-              create(target.folder, target.trigger);
-            }}
-          >
-            新建文档…
-          </MenuItem>
-        )}
-        <MenuItem
-          id="search"
-          className={styles.menuItem}
-          onAction={() => {
-            close();
-            search(target.trigger);
-          }}
-        >
-          {hasWorkspace ? "搜索文档…" : "查找命令…"}
-        </MenuItem>
-      </Menu>
+              search(target.trigger);
+            },
+          },
+        ]}
+      />
     </ContextMenuPopover>
   );
 }

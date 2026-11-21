@@ -2,19 +2,15 @@ import { useQueries } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   Autocomplete,
-  Button,
   Collection,
-  Dialog,
   Header,
-  Input,
   ListBox,
   ListBoxItem,
   ListBoxSection,
-  Modal,
-  ModalOverlay,
-  SearchField,
-  ToggleButton,
-} from "../../ui/primitives";
+} from "react-aria-components";
+import { Button, ToggleButton } from "../../ui/Button";
+import { SearchField } from "../../ui/SearchField";
+import { Dialog } from "../../ui/Dialog";
 import type { DocumentSummary, SearchHit, Workspace } from "../../api/client";
 import { searchQuery } from "../../api/queries";
 import { recentDocuments } from "./recentDocuments";
@@ -125,72 +121,66 @@ export function CommandPalette({
   const inputLabel = workspace ? "搜索文档" : "查找命令";
 
   return (
-    <ModalOverlay
-      isOpen
-      isDismissable
-      onOpenChange={(open) => !open && onClose()}
-      className={styles.overlay}
+    <Dialog
+      title={workspace ? "快速打开与全文搜索" : "命令"}
+      showTitle={false}
+      onClose={onClose}
+      classes={styles}
     >
-      <Modal className={styles.modal}>
-        <Dialog aria-label={workspace ? "快速打开与全文搜索" : "命令"} className={styles.dialog}>
-          <Autocomplete inputValue={text} onInputChange={setText} disableAutoFocusFirst>
-            <div
-              className={styles.toolbar}
-              onKeyDownCapture={(event) => {
-                if (event.key !== "Escape") return;
-                event.stopPropagation();
-                if (event.nativeEvent.isComposing) return;
-                event.preventDefault();
-                onClose();
-              }}
-            >
-              <SearchField aria-label={inputLabel} className={styles.field}>
-                <span className={styles.searchIcon} aria-hidden="true" />
-                <Input
-                  ref={input}
-                  placeholder={workspace ? "搜索文档或命令" : inputLabel}
-                  className={styles.input}
-                  maxLength={256}
-                />
-              </SearchField>
-              <div className={styles.actions}>
-                {current && workspaces.length > 1 && (
-                  <ToggleButton className={styles.scope} isSelected={across} onChange={setAcross}>
-                    跨空间
-                  </ToggleButton>
+      <Autocomplete inputValue={text} onInputChange={setText} disableAutoFocusFirst>
+        <div
+          className={styles.toolbar}
+          onKeyDownCapture={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            onClose();
+          }}
+        >
+          <SearchField
+            label={inputLabel}
+            classes={styles}
+            ref={input}
+            placeholder={workspace ? "搜索文档或命令" : inputLabel}
+            maxLength={256}
+          />
+          <div className={styles.actions}>
+            {current && workspaces.length > 1 && (
+              <ToggleButton className={styles.scope} isSelected={across} onChange={setAcross}>
+                跨空间
+              </ToggleButton>
+            )}
+            <Button aria-label="关闭搜索" className={styles.close} onPress={onClose}>
+              关闭
+            </Button>
+          </div>
+        </div>
+        <ListBox
+          aria-label="搜索结果"
+          className={styles.results}
+          items={sections}
+          renderEmptyState={() => <output className={styles.empty}>{emptyMessage}</output>}
+          onAction={(id) => {
+            onClose();
+            items.find((item) => item.id === id)?.run();
+          }}
+        >
+          {({ id, title, items }) => (
+            <ListBoxSection id={id}>
+              <Header className={styles.sectionTitle}>{title}</Header>
+              <Collection items={items}>
+                {({ id, title, detail }: Result) => (
+                  <ListBoxItem id={id} textValue={title} className={styles.result}>
+                    <span>{title}</span>
+                    {detail && <span className={styles.detail}>{detail}</span>}
+                  </ListBoxItem>
                 )}
-                <Button aria-label="关闭搜索" className={styles.close} onPress={onClose}>
-                  关闭
-                </Button>
-              </div>
-            </div>
-            <ListBox
-              aria-label="搜索结果"
-              className={styles.results}
-              items={sections}
-              renderEmptyState={() => <output className={styles.empty}>{emptyMessage}</output>}
-              onAction={(id) => {
-                onClose();
-                items.find((item) => item.id === id)?.run();
-              }}
-            >
-              {({ id, title, items }) => (
-                <ListBoxSection id={id}>
-                  <Header className={styles.sectionTitle}>{title}</Header>
-                  <Collection items={items}>
-                    {({ id, title, detail }: Result) => (
-                      <ListBoxItem id={id} textValue={title} className={styles.result}>
-                        <span>{title}</span>
-                        {detail && <span className={styles.detail}>{detail}</span>}
-                      </ListBoxItem>
-                    )}
-                  </Collection>
-                </ListBoxSection>
-              )}
-            </ListBox>
-          </Autocomplete>
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+              </Collection>
+            </ListBoxSection>
+          )}
+        </ListBox>
+      </Autocomplete>
+    </Dialog>
   );
 }

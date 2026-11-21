@@ -108,25 +108,6 @@
   text-align: start;
 }
 
-button.input {
-  justify-content: space-between;
-}
-
-.options {
-  min-width: var(--trigger-width);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.option {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  padding-inline: 0.65rem;
-}
-
-.option[data-focused],
 .button[data-hovered] {
   background: var(--surface-hover);
 }
@@ -138,18 +119,6 @@ button.input {
   gap: 0.4rem;
   border-radius: var(--radius);
   font-size: var(--ui-size);
-}
-
-.mark {
-  display: grid;
-  width: 19px;
-  height: 19px;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-}
-
-.checkbox[data-selected] .mark::before {
-  content: "✓";
 }
 
 .actions {

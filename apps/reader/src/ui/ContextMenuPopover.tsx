@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Popover } from "./primitives";
+import { Popover } from "@heroui/react/popover";
 
 export type MenuPoint = { x: number; y: number };
 
@@ -45,7 +45,7 @@ export function ContextMenuPopover({
   }, [point]);
 
   return (
-    <Popover
+    <Popover.Content
       ref={menu}
       triggerRef={triggerRef}
       {...(point && {
@@ -67,6 +67,6 @@ export function ContextMenuPopover({
       onOpenChange={(open) => !open && close()}
     >
       {children}
-    </Popover>
+    </Popover.Content>
   );
 }
