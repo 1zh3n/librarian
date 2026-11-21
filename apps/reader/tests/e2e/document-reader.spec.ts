@@ -383,3 +383,20 @@ test("opens a long desktop contents list at the current section and returns keyb
   await expect(page.getByRole("heading", { name: "测量站 48", exact: true })).toBeFocused();
   await expect(chosen).toHaveAttribute("aria-current", "location");
 });
+
+test("distinguishes clickable command labels from editable text with a desktop pointer", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(await fieldDocument(page));
+  const row = page.getByRole("treegrid").getByText("河岸清晨", { exact: true });
+  await row.hover();
+  await expect.soft(row).toHaveCSS("cursor", "pointer");
+  const layout = page.getByRole("button", { name: "布局", exact: true });
+  await layout.click();
+  const preset = page.getByRole("menu").getByText("写作布局", { exact: true });
+  await preset.hover();
+  await expect.soft(preset).toHaveCSS("cursor", "pointer");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("article").locator("p").first()).toHaveCSS("cursor", "text");
+});

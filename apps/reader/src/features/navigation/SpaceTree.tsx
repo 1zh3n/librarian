@@ -1,19 +1,15 @@
-import { useCallback, useMemo, useState } from "react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import { useMemo, useState } from "react";
 import {
   Button,
   Collection,
   Group,
-  Menu,
-  MenuItem,
   Tooltip,
   TooltipTrigger,
   Tree,
   TreeItem,
   TreeItemContent,
 } from "../../ui/primitives";
-import { ContextMenuPopover } from "../../ui/ContextMenuPopover";
-import type { MenuPoint } from "../../ui/ContextMenuPopover";
+import type { OpenWorkspaceMenu } from "./WorkspaceContextMenu";
 import type { DocumentSummary } from "../../api/client";
 import styles from "./SpaceTree.module.css";
 
@@ -47,24 +43,6 @@ function entries(documents: readonly DocumentSummary[]) {
   return { tree, folders };
 }
 
-type OpenMenu = (trigger: HTMLElement, folder: string, point?: MenuPoint) => void;
-
-function directoryMenu(
-  event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
-  openMenu: OpenMenu,
-) {
-  if (!(event.target instanceof Element) || !event.currentTarget.contains(event.target)) return;
-  if ("key" in event && event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
-    return;
-  event.preventDefault();
-  event.stopPropagation();
-  const row = event.target.closest<HTMLElement>("[data-context-folder]");
-  const trigger = row ?? event.target.closest("button") ?? event.currentTarget;
-  const point =
-    "button" in event && event.button >= 0 ? { x: event.clientX, y: event.clientY } : undefined;
-  openMenu(trigger, row?.dataset.contextFolder ?? "", point);
-}
-
 function MoreButton({
   name,
   folder,
@@ -72,7 +50,7 @@ function MoreButton({
 }: {
   name: string;
   folder: string;
-  openMenu: OpenMenu;
+  openMenu: OpenWorkspaceMenu;
 }) {
   return (
     <TooltipTrigger>
@@ -92,9 +70,6 @@ function MoreButton({
   );
 }
 
-// Focus the first action after the user explicitly opens the menu.
-const initialMenuFocus = { autoFocus: "first" } as const;
-
 function EntryRow({
   entry,
   open,
@@ -102,7 +77,7 @@ function EntryRow({
 }: {
   entry: Entry;
   open: (id: string) => void;
-  openMenu: OpenMenu | undefined;
+  openMenu: OpenWorkspaceMenu | undefined;
 }) {
   return (
     <TreeItem
@@ -146,12 +121,12 @@ export function SpaceTree({
   documents,
   activeDocument,
   open,
-  create,
+  openMenu,
 }: {
   documents: readonly DocumentSummary[];
   activeDocument: string | undefined;
   open: (id: string) => void;
-  create: ((folder: string, origin: HTMLElement) => void) | undefined;
+  openMenu: OpenWorkspaceMenu | undefined;
 }) {
   const { tree, folders } = useMemo(() => entries(documents), [documents]);
   const activePath = documents.find((document) => document.id === activeDocument)?.path;
@@ -165,34 +140,19 @@ export function SpaceTree({
   if (expanded.activePath !== activePath) {
     setExpanded({ activePath, keys: new Set([...expanded.keys, ...activeFolders]) });
   }
-  const [menu, setMenu] = useState<{
-    trigger: HTMLElement;
-    folder: string;
-    point: MenuPoint | undefined;
-  }>();
-  const openMenu = useCallback<OpenMenu>((trigger, folder, point) => {
-    trigger.focus({ preventScroll: true });
-    setMenu({ trigger, folder, point });
-  }, []);
   return (
-    <Group
-      aria-label="目录内容"
-      className={styles.directory}
-      tabIndex={-1}
-      onContextMenu={create ? (event) => directoryMenu(event, openMenu) : undefined}
-      onKeyDownCapture={create ? (event) => directoryMenu(event, openMenu) : undefined}
-    >
+    <Group aria-label="目录内容" className={styles.directory} tabIndex={-1}>
       {tree.length > 0 && (
         <div className={styles.heading}>
           <span>目录</span>
-          {create && <MoreButton name="根目录更多" folder="" openMenu={openMenu} />}
+          {openMenu && <MoreButton name="根目录更多" folder="" openMenu={openMenu} />}
         </div>
       )}
       <Tree
         aria-label="空间目录"
         className={styles.tree}
         items={tree}
-        dependencies={[open, create]}
+        dependencies={[open, openMenu]}
         expandedKeys={expanded.keys}
         onExpandedChange={(keys) =>
           setExpanded({ activePath, keys: new Set(Array.from(keys, String)) })
@@ -205,29 +165,8 @@ export function SpaceTree({
           if (typeof first === "string" && !folders.has(first)) open(first);
         }}
       >
-        {(entry) => <EntryRow entry={entry} open={open} openMenu={create && openMenu} />}
+        {(entry) => <EntryRow entry={entry} open={open} openMenu={openMenu} />}
       </Tree>
-      {create && menu && (
-        <ContextMenuPopover
-          trigger={menu.trigger}
-          point={menu.point}
-          close={() => setMenu(undefined)}
-          className={styles.contextMenu}
-        >
-          <Menu
-            {...initialMenuFocus}
-            aria-label="目录操作"
-            onAction={() => {
-              setMenu(undefined);
-              create(menu.folder, menu.trigger);
-            }}
-          >
-            <MenuItem id="new-document" className={styles.menuItem}>
-              新建文档…
-            </MenuItem>
-          </Menu>
-        </ContextMenuPopover>
-      )}
     </Group>
   );
 }

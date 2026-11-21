@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import {
   Button,
   Input,
@@ -54,12 +55,14 @@ export function Field({
   value,
   onChange,
   required,
+  ref,
   type,
 }: {
   label: string;
   value: string;
   onChange: (text: string) => void;
   required?: boolean;
+  ref?: Ref<HTMLInputElement>;
   type?: "text" | "datetime-local";
 }) {
   return (
@@ -71,7 +74,7 @@ export function Field({
       type={type ?? "text"}
     >
       <Label>{label}</Label>
-      <Input className={styles.input} />
+      <Input ref={ref ?? null} className={styles.input} />
     </TextField>
   );
 }

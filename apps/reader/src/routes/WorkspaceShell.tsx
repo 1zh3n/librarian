@@ -10,15 +10,11 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Button,
-  ListBox,
-  ListBoxItem,
   Menu,
   MenuItem,
   MenuSection,
   MenuTrigger,
   Popover,
-  Select,
-  SelectValue,
   ToggleButton,
   Tooltip,
   TooltipTrigger,
@@ -29,6 +25,14 @@ import type { DevicePreferences, DocumentSnapshot, DocumentSummary } from "../ap
 import { documentsQuery, sessionQuery, workspaceKeys, workspacesQuery } from "../api/queries";
 import { CreateDocumentDialog } from "../features/document/CreateDocumentDialog";
 import { rememberRecentDocument } from "../features/navigation/recentDocuments";
+import {
+  handleWorkspaceMenu,
+  WorkspaceContextMenu,
+} from "../features/navigation/WorkspaceContextMenu";
+import type {
+  OpenWorkspaceMenu,
+  WorkspaceMenuTarget,
+} from "../features/navigation/WorkspaceContextMenu";
 import { SpaceTree } from "../features/navigation/SpaceTree";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
 import {
@@ -38,6 +42,12 @@ import {
 } from "../features/reading/readingFocus";
 import { useDevicePreferences } from "../features/settings/devicePreferences";
 import styles from "./WorkspaceShell.module.css";
+
+declare module "@tanstack/history" {
+  interface HistoryState {
+    workspaceCreationSource?: string;
+  }
+}
 
 const noDocuments: readonly DocumentSummary[] = [];
 const CommandPalette = lazy(() =>
@@ -72,13 +82,15 @@ export function WorkspaceShell() {
       )?.routeId,
   });
   const creating = toolRoute === "/workspaces/new";
+  const creationSource = useRouterState({
+    select: ({ location }) => location.state.workspaceCreationSource,
+  });
   const accountSettings = toolRoute === "/accounts";
   const workspaces = useQuery(workspacesQuery);
   const authenticated = workspaces.isSuccess;
   const session = useQuery({ ...sessionQuery, enabled: authenticated });
-  const workspace = workspaceId
-    ? workspaces.data?.find((item) => item.id === workspaceId)
-    : workspaces.data?.[0];
+  const contextWorkspaceId = creating ? creationSource : (workspaceId ?? workspaces.data?.[0]?.id);
+  const workspace = workspaces.data?.find((item) => item.id === contextWorkspaceId);
   const selected = workspace?.id ?? "";
   const resource = useQuery({ ...documentsQuery(selected), enabled: Boolean(workspace) });
   const documents = resource.data ?? noDocuments;
@@ -95,6 +107,11 @@ export function WorkspaceShell() {
   const [navigationOverride, setNavigationOverride] = useState<boolean>();
   const [layoutSelection, setLayoutSelection] = useState(0);
   const [search, setSearch] = useState(false);
+  const [contextMenu, setContextMenu] = useState<WorkspaceMenuTarget>();
+  const openContextMenu = useCallback<OpenWorkspaceMenu>((trigger, folder, point) => {
+    trigger.focus({ preventScroll: true });
+    setContextMenu({ trigger, folder, point });
+  }, []);
   const [settings, setSettings] = useState(false);
   const dialogOrigin = useRef<Element | null>(null);
   const [settingsError, setSettingsError] = useState(false);
@@ -195,10 +212,14 @@ export function WorkspaceShell() {
   }, [documentId, toolRoute]);
   useEffect(
     () =>
-      router.subscribe("onResolved", ({ pathChanged }) => {
-        if (pathChanged) setCreationNotice(undefined);
+      router.subscribe("onResolved", ({ pathChanged, toLocation }) => {
+        if (pathChanged) {
+          if (!wide && toLocation.pathname === "/workspaces/new") setNavigationOverride(false);
+          setContextMenu(undefined);
+          setCreationNotice(undefined);
+        }
       }),
-    [router],
+    [router, wide],
   );
 
   useEffect(() => {
@@ -318,7 +339,17 @@ export function WorkspaceShell() {
         navigationCancelled,
       }}
     >
-      <div className={styles.application} data-reading-focus={focus.active || undefined}>
+      <div
+        className={styles.application}
+        data-reading-focus={focus.active || undefined}
+        tabIndex={-1}
+        onContextMenu={
+          authenticated ? (event) => handleWorkspaceMenu(event, openContextMenu) : undefined
+        }
+        onKeyDownCapture={
+          authenticated ? (event) => handleWorkspaceMenu(event, openContextMenu) : undefined
+        }
+      >
         <header className={styles.bar}>
           {workspace ? (
             <ToggleButton
@@ -439,43 +470,68 @@ export function WorkspaceShell() {
             {workspace && (
               <aside
                 id="workspace-navigation"
+                tabIndex={-1}
                 className={styles.navigation}
                 hidden={!navigationVisible}
               >
                 <div className={styles.workspaceBar}>
-                  <Select
-                    aria-label="空间"
-                    value={workspace.id}
-                    className={styles.workspaceChooser}
-                    onChange={(id) => {
-                      if (id === "new-workspace") {
-                        if (!wide) setNavigationOverride(false);
-                        void navigate({ to: "/workspaces/new" });
-                      } else if (id !== null && id !== selected) {
-                        void navigate({
-                          to: "/workspaces/$workspaceId",
-                          params: { workspaceId: String(id) },
-                        });
-                      }
-                    }}
-                  >
-                    <Button className={styles.workspace}>
-                      <SelectValue className={styles.workspaceName} />
+                  <MenuTrigger>
+                    <Button
+                      aria-label={`切换空间，当前为${workspace.name}`}
+                      className={styles.workspace}
+                    >
+                      <span className={styles.workspaceName}>{workspace.name}</span>
                       <span className={styles.workspaceArrow} aria-hidden="true" />
                     </Button>
-                    <Popover className={styles.popover}>
-                      <ListBox className={styles.spaces}>
-                        {workspaces.data?.map((item) => (
-                          <ListBoxItem key={item.id} id={item.id} className={styles.spaceOption}>
-                            {item.name}
-                          </ListBoxItem>
-                        ))}
-                        <ListBoxItem id="new-workspace" className={styles.spaceOption}>
+                    <Popover placement="bottom start" className={styles.popover}>
+                      <Menu aria-label="空间" className={styles.spaces}>
+                        <MenuSection
+                          aria-label="已有空间"
+                          className={styles.presets}
+                          selectionMode="single"
+                          selectedKeys={[workspace.id]}
+                          shouldCloseOnSelect
+                        >
+                          {workspaces.data?.map((item) => (
+                            <MenuItem
+                              key={item.id}
+                              id={item.id}
+                              textValue={item.name}
+                              className={styles.spaceOption}
+                              onAction={() => {
+                                if (item.id !== selected || creating) {
+                                  void navigate({
+                                    to: "/workspaces/$workspaceId",
+                                    params: { workspaceId: item.id },
+                                  });
+                                }
+                              }}
+                            >
+                              {({ isSelected }) => (
+                                <>
+                                  {item.name}
+                                  {isSelected && <span aria-hidden="true">✓</span>}
+                                </>
+                              )}
+                            </MenuItem>
+                          ))}
+                        </MenuSection>
+                        <MenuItem
+                          id="new-workspace"
+                          className={styles.spaceOption}
+                          isDisabled={creating}
+                          onAction={() =>
+                            void navigate({
+                              to: "/workspaces/new",
+                              state: { workspaceCreationSource: selected },
+                            })
+                          }
+                        >
                           新建空间
-                        </ListBoxItem>
-                      </ListBox>
+                        </MenuItem>
+                      </Menu>
                     </Popover>
-                  </Select>
+                  </MenuTrigger>
                   <TooltipTrigger>
                     <Button
                       aria-label="空间设置"
@@ -499,7 +555,7 @@ export function WorkspaceShell() {
                     documents={documents}
                     activeDocument={documentId}
                     open={openDocument}
-                    create={canCreate ? showCreateDocument : undefined}
+                    openMenu={canCreate ? openContextMenu : undefined}
                   />
                 )}
               </aside>
@@ -511,6 +567,7 @@ export function WorkspaceShell() {
           <Panel id="document-panel" minSize={wide ? 300 : "50%"}>
             <main
               ref={viewport}
+              tabIndex={-1}
               className={styles.viewport}
               style={{ paddingBlockStart: wide ? 0 : focus.navigationInset }}
             >
@@ -571,6 +628,24 @@ export function WorkspaceShell() {
             </main>
           </Panel>
         </Group>
+        {authenticated && contextMenu && (
+          <WorkspaceContextMenu
+            target={contextMenu}
+            hasWorkspace={Boolean(workspace)}
+            create={
+              canCreate &&
+              ((!creating && !accountSettings) ||
+                contextMenu.trigger.closest("#workspace-navigation"))
+                ? showCreateDocument
+                : undefined
+            }
+            search={(origin) => {
+              dialogOrigin.current = origin;
+              setSearch(true);
+            }}
+            close={() => setContextMenu(undefined)}
+          />
+        )}
         {createDocumentFor?.workspace === selected && (
           <CreateDocumentDialog
             workspace={selected}
@@ -581,7 +656,9 @@ export function WorkspaceShell() {
               const { origin } = createDocumentFor;
               setCreateDocumentFor(undefined);
               requestAnimationFrame(() => {
-                if (origin instanceof HTMLElement) origin.focus({ preventScroll: true });
+                if (document.activeElement === document.body && origin instanceof HTMLElement) {
+                  origin.focus({ preventScroll: true });
+                }
               });
             }}
           />

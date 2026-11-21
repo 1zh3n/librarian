@@ -57,6 +57,121 @@ test("places the editor caret at the clicked text within a paragraph", async ({ 
   await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe("甲乙中丙丁\n");
 });
 
+for (const [name, original] of [
+  ["short", "\uFEFF---\r\ntitle: 留白\r\n---\r\n\r\n短文。  \r\n\r\n"],
+  ["empty", ""],
+  ["metadata", "---\ntitle: 只有属性\n---\n"],
+] as const) {
+  test(`clicking the lower paper resumes writing at the exact end (${name})`, async ({ page }) => {
+    const { apiUrl, document } = await createNote(page, `Paper-${name}.md`, original);
+    const point = await page.getByRole("article").evaluate((article) => {
+      const column = article.getBoundingClientRect();
+      const viewport = article.closest("main")!.getBoundingClientRect();
+      return { x: column.left + column.width / 2, y: viewport.bottom - 24 };
+    });
+    const body = editor(page, "Markdown 正文");
+    await page.mouse.click(point.x, point.y);
+    await expect(body).toBeFocused();
+    expect((await readNote(page, apiUrl)).revision).toBe(document.revision);
+    await page.keyboard.insertText("初");
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "初");
+    await body.press("Control+Home");
+    await page.mouse.click(point.x, point.y);
+    await expect(body).toBeFocused();
+    await page.keyboard.insertText("续");
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "初续");
+    await body.press("Control+z");
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "初");
+    await body.press("Control+z");
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original);
+  });
+}
+
+test("the side margins follow the clicked visual line and a paragraph gap uses its nearest edge", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const stanza = "沿岸逐点记录水位。".repeat(18);
+  const original = "前言。\n\n" + stanza + "\n\n小结。";
+  const { apiUrl } = await createNote(page, "Paper-gutters.md", original);
+  const paragraph = page.getByRole("article").getByText(stanza);
+  const points = await paragraph.evaluate((element) => {
+    const text = element.firstChild!;
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const line = range.getClientRects()[1]!;
+    const column = element.closest("article")!.getBoundingClientRect();
+    const y = line.top + line.height / 2;
+    // Determine the actual wrap points independently of the browser's click/caret hit testing.
+    let start = -1;
+    let end = -1;
+    for (let i = 0; i < text.textContent!.length; i++) {
+      range.setStart(text, i);
+      range.setEnd(text, i + 1);
+      if (Math.abs(range.getBoundingClientRect().top - line.top) < 1) {
+        if (start < 0) start = i;
+        end = i + 1;
+      }
+    }
+    return [
+      { x: column.left - 12, y, at: start },
+      { x: column.right + 12, y, at: end },
+      {
+        x: column.left + 8,
+        y: element.getBoundingClientRect().bottom + 3,
+        at: text.textContent!.length,
+      },
+    ];
+  });
+  const body = editor(page, "Markdown 正文");
+  for (const point of points) {
+    expect(point.at).toBeGreaterThan(0);
+    await page.mouse.click(point.x, point.y);
+    await expect(body).toBeFocused();
+    await page.keyboard.insertText("光");
+    const at = original.indexOf(stanza) + point.at;
+    await expect
+      .poll(async () => (await readNote(page, apiUrl)).markdown)
+      .toBe(original.slice(0, at) + "光" + original.slice(at));
+    await body.press("Control+z");
+    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original);
+    await body.press("Escape");
+    await expect(paragraph).toBeVisible();
+  }
+});
+
+test("paper whitespace leaves modified clicks, text selection and surrounding margins in reading", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(page, "Paper-reading.md", "选择这一整段文字。");
+  const article = page.getByRole("article");
+  const body = editor(page, "Markdown 正文");
+  const { left, right, y, bottom } = await article.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element.querySelector("p")!);
+    const box = range.getBoundingClientRect();
+    return {
+      left: box.left,
+      right: box.right,
+      y: box.top + box.height / 2,
+      bottom: element.closest("main")!.getBoundingClientRect().bottom - 32,
+    };
+  });
+  await page.mouse.click(left - 48, bottom);
+  await page.mouse.click(left, bottom, { button: "right" });
+  await page.keyboard.press("Escape");
+  await page.keyboard.down("Alt");
+  await page.mouse.click(left, bottom);
+  await page.keyboard.up("Alt");
+  await page.mouse.move(left + 1, y);
+  await page.mouse.down();
+  await page.mouse.move(right - 1, y, { steps: 6 });
+  await page.mouse.up();
+  await expect(body).toHaveCount(0);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("选择这一整段文字。");
+});
+
 test("finishes an active IME composition before leaving the editor on blur", async ({ page }) => {
   await createNote(page, "CompositionBlur.md", "继续记录。\n");
   const article = page.getByRole("article");

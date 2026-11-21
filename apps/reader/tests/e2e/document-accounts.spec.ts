@@ -109,7 +109,7 @@ test("switches to a long space name at 125% zoom on a narrow screen", async ({ p
   await page.getByRole("button", { name: "展开目录" }).click();
   const currentSpace = page.getByRole("button", { name: /田野笔记/ });
   await currentSpace.click();
-  await page.getByRole("option", { name: longName, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: longName, exact: true }).click();
   const selectedSpace = page.getByRole("button", { name: new RegExp(longName, "u") });
   const settings = page.getByRole("button", { name: "空间设置", exact: true });
   await expect(selectedSpace).toBeVisible();

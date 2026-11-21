@@ -18,6 +18,10 @@ const retentions = [
   { value: "temporary", label: "临时保存" },
 ] as const;
 
+function focusWorkspaceName(input: HTMLInputElement | null) {
+  input?.focus();
+}
+
 export function WorkspaceEditor({
   current,
   onCreated,
@@ -93,7 +97,13 @@ export function WorkspaceEditor({
         });
       }}
     >
-      <Field label="空间名称" value={name} onChange={setName} required />
+      <Field
+        label="空间名称"
+        value={name}
+        onChange={setName}
+        required
+        ref={current ? null : focusWorkspaceName}
+      />
       {current ? (
         retentionFields && <div className={styles.fields}>{retentionFields}</div>
       ) : (

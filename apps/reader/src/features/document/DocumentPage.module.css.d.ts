@@ -13,6 +13,7 @@ declare const styles: {
   readonly toolTab: string;
   readonly tabPanel: string;
   readonly canvas: string;
+  readonly paper: string;
   readonly contents: string;
   readonly contentsTitle: string;
   readonly outlineCanvas: string;

@@ -224,8 +224,39 @@
   line-height: 1.7;
 }
 
-.canvas[data-editable] article {
+.page:has(.canvas[data-editable]) {
+  display: flex;
+  flex-direction: column;
+  padding-block-end: 0;
+}
+
+.page:has(.canvas[data-editable]) > .documentGrid {
+  flex: 1;
+}
+
+.canvas[data-editable] {
+  --document-editor-gutter: min(1.5rem, 4vw);
+  --document-editor-endspace: 7rem;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+}
+
+.documentGrid[data-tool] .canvas[data-editable] {
+  --document-editor-gutter: 1rem;
+}
+
+.canvas[data-editable] .paper {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  margin-inline: calc(-1 * var(--document-editor-gutter));
   cursor: text;
+}
+
+.canvas[data-editable] article {
+  margin-inline: var(--document-editor-gutter);
+  padding-block-end: var(--document-editor-endspace);
 }
 
 .canvas article :where(h1, h2, h3, h4, h5, h6) {
@@ -559,6 +590,10 @@
 }
 
 @container reading-viewport (max-width: 849px) {
+  .documentGrid:has(.toolPane:not([hidden], [data-beside-passage])) {
+    grid-template-rows: auto 1fr;
+  }
+
   .toolPane[data-beside-passage] {
     position: absolute;
     inset-block-start: var(--passage-tool-top);

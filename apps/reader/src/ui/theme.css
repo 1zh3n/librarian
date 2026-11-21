@@ -50,3 +50,17 @@
     min-block-size: 44px;
   }
 }
+
+@media (any-pointer: fine) {
+  :is(
+    button,
+    [role="button"],
+    [role="tab"],
+    [role="option"],
+    [role^="menuitem"],
+    [role="treegrid"] [role="row"]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+    user-select: none;
+  }
+}

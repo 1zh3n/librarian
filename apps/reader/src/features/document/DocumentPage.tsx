@@ -15,7 +15,7 @@ import { relativeDocumentPath } from "../../markdown/relativePath";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
 import { AiPanel } from "../ai/AiPanel";
 import { ContextUnavailable } from "../ai/aiContext";
-import { readerCaretOffset, readerSelection } from "../ai/readerSelection";
+import { readerSelection } from "../ai/readerSelection";
 import { contextSelection } from "../reading/contextSelection";
 import { isEditingTarget, useReaderLayout } from "../reading/readingFocus";
 import {
@@ -29,6 +29,7 @@ import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
 import { DocumentContents, headingAtReadingPosition } from "./DocumentContents";
 import { DocumentReferencesPanel } from "./DocumentReferencesPanel";
+import { readingPositionAtClick } from "./readingPositionAtClick";
 import { placeInlineTool } from "./inlineTool";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
@@ -652,8 +653,9 @@ function DocumentWorkspace({
   }, [analysis, body, documentId, mode, reading]);
 
   useEffect(() => {
-    const surface = canvas.current;
-    if (mode !== "read" || !writable || !surface) return;
+    const surface = canvas.current?.querySelector<HTMLElement>(`.${styles.paper}`);
+    const article = surface?.querySelector("article");
+    if (mode !== "read" || !writable || !surface || !article) return;
     function click(event: MouseEvent) {
       const target = event.target;
       if (
@@ -664,25 +666,14 @@ function DocumentWorkspace({
         event.ctrlKey ||
         event.altKey ||
         event.shiftKey ||
-        target.closest("a, button, input") ||
+        target.closest("a, button, input, textarea, select") ||
         !window.getSelection()?.isCollapsed
       )
         return;
-      const element = target.closest<HTMLElement>("[data-block-id]");
-      const block = analysis.blocks.find((item) => item.id === element?.dataset.blockId);
-      if (!element || !block) return;
-      const caret = window.document.caretPositionFromPoint?.(event.clientX, event.clientY);
-      const selection = window.getSelection();
-      const point = caret
-        ? { node: caret.offsetNode, offset: caret.offset }
-        : selection?.anchorNode
-          ? { node: selection.anchorNode, offset: selection.anchorOffset }
-          : undefined;
-      const offset =
-        point && element.contains(point.node) && surface
-          ? readerCaretOffset(surface, point, reading.source, analysis)
-          : undefined;
-      enterEditor("preview", offset ?? block.from);
+      if (article) {
+        const offset = readingPositionAtClick(article, target, event, reading.source, analysis);
+        enterEditor("preview", offset);
+      }
     }
     surface.addEventListener("click", click);
     return () => surface.removeEventListener("click", click);
@@ -920,16 +911,18 @@ function DocumentWorkspace({
         >
           {!titleIsFirstHeading && <h1 className={styles.title}>{title}</h1>}
           {mode === "read" ? (
-            <ReaderSurface
-              analysis={analysis}
-              label={title}
-              activeBlocks={selectedBlock?.ids}
-              onKeyDown={readerShortcut}
-              resolveLink={resolveLink}
-              resolveImage={resolveImage}
-            />
+            <div className={styles.paper}>
+              <ReaderSurface
+                analysis={analysis}
+                label={title}
+                activeBlocks={selectedBlock?.ids}
+                onKeyDown={readerShortcut}
+                resolveLink={resolveLink}
+                resolveImage={resolveImage}
+              />
+            </div>
           ) : (
-            <div ref={mountBody} />
+            <div className={styles.paper} ref={mountBody} />
           )}
         </div>
       </div>

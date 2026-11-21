@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import type {
@@ -16,7 +17,7 @@ async function createWorkspace(page: Page, name: string, temporary = false) {
   }
   const chooser = navigation.getByRole("button", { name: /空间/ }).first();
   await chooser.press("Enter");
-  await page.getByRole("option", { name: "新建空间" }).click();
+  await page.getByRole("menuitem", { name: "新建空间" }).click();
   const form = page.getByRole("form", { name: "新建空间" });
   await form.getByRole("textbox", { name: "空间名称" }).fill(name);
   if (temporary) {
@@ -37,7 +38,8 @@ async function createWorkspace(page: Page, name: string, temporary = false) {
   await form.getByRole("button", { name: "创建空间" }).click();
   await expect(page).toHaveURL(/\/workspaces\/[^/]+\/manage$/);
   const workspaces = (await (await page.request.get("/api/v1/workspaces")).json()) as Workspace[];
-  const workspace = workspaces.find((item) => item.name === name);
+  const createdId = new URL(page.url()).pathname.split("/")[2];
+  const workspace = workspaces.find((item) => item.id === createdId);
   if (!workspace) throw new Error("Created Workspace is missing from the account");
   return workspace;
 }
@@ -82,6 +84,193 @@ async function box(locator: Locator) {
   return rect;
 }
 
+function capturePointer(page: Page, x: number, y: number, path: string) {
+  return page.screenshot({
+    path,
+    style: `body::after {
+      content: ""; position: fixed; z-index: 2147483647; pointer-events: none;
+      left: ${x - 6}px; top: ${y - 6}px; width: 12px; height: 12px;
+      box-sizing: border-box; border: 2px solid #db2735; border-radius: 50%;
+    }`,
+  });
+}
+
+test("opens workspace actions at the sidebar controls, panel edges and reading surface", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openTreeSample(page, "整页右键验收");
+  const original = page.url();
+  const aside = page.locator("#workspace-navigation");
+  const chooser = aside.getByRole("button", { name: /空间/ }).first();
+  const settings = aside.getByRole("button", { name: "空间设置" });
+  const topSearch = page.getByRole("button", { name: "搜索文档" });
+  const sidebar = await box(aside);
+  const center = async (item: Locator) => {
+    const { x, y, width, height } = await box(item);
+    return { x: Math.floor(x + width / 2), y: Math.floor(y + height / 2) };
+  };
+  const paragraph = page.getByRole("article").getByText("阅读中的原文。");
+  const text = await paragraph.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const { x, y, width, height } = range.getBoundingClientRect();
+    return { x: Math.floor(x + width / 2), y: Math.floor(y + height / 2) };
+  });
+  const hits = [
+    { label: "空间切换", ...(await center(chooser)) },
+    { label: "空间设置", ...(await center(settings)) },
+    { label: "侧栏左上留白", x: sidebar.x + 1, y: sidebar.y + 1 },
+    { label: "目录标题", ...(await center(aside.getByText("目录", { exact: true }))) },
+    { label: "侧栏最下方", x: 1, y: sidebar.y + sidebar.height - 1 },
+    { label: "侧栏右边线", x: sidebar.x + sidebar.width - 1, y: sidebar.y + 65 },
+    {
+      label: "侧栏与正文分隔线",
+      ...(await center(page.getByRole("separator", { name: "调整空间目录宽度" }))),
+    },
+    { label: "顶栏留白", x: 280, y: 8 },
+    { label: "顶栏搜索", ...(await center(topSearch)) },
+    { label: "正文文字", ...text },
+    { label: "正文行尾", ...(await center(paragraph)) },
+    { label: "工作区右下角", x: 1439, y: 899 },
+  ];
+  const menu = page.getByRole("menu");
+  const measurements: {
+    label: string;
+    x: number;
+    y: number;
+    bounds: Awaited<ReturnType<typeof box>>;
+    viewport: ReturnType<Page["viewportSize"]>;
+  }[] = [];
+  for (const hit of hits) {
+    await test.step(hit.label, async () => {
+      await page.mouse.click(hit.x, hit.y, { button: "right" });
+      const create = menu.getByRole("menuitem", { name: "新建文档…" });
+      await expect(create).toBeVisible({ timeout: 1800 });
+      await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toBeVisible();
+      const bounds = await box(menu.locator(".."));
+      measurements.push({ ...hit, bounds, viewport: page.viewportSize() });
+      const gapX = Math.min(Math.abs(bounds.x - hit.x), Math.abs(bounds.x + bounds.width - hit.x));
+      const gapY = Math.min(Math.abs(bounds.y - hit.y), Math.abs(bounds.y + bounds.height - hit.y));
+      expect(gapX).toBeLessThanOrEqual(4);
+      expect(gapY).toBeLessThanOrEqual(4);
+      if (hit.label === "空间切换" || hit.label === "工作区右下角") {
+        await capturePointer(page, hit.x, hit.y, testInfo.outputPath(hit.label + ".png"));
+      }
+      await create.click();
+      const dialog = page.getByRole("dialog", { name: "新建文档" });
+      await expect(dialog.getByLabel("目录（可选）")).toHaveValue("");
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(original);
+    });
+  }
+  await writeFile(testInfo.outputPath("coordinates.json"), JSON.stringify(measurements, null, 2));
+  await topSearch.press("Shift+F10");
+  await menu.getByRole("menuitem", { name: /搜索文档/ }).press("Enter");
+  const palette = page.getByRole("dialog", { name: "快速打开与全文搜索" });
+  await expect(palette.getByRole("searchbox")).toBeFocused();
+  await palette.getByRole("button", { name: "关闭搜索" }).click({ button: "right" });
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(topSearch).toBeFocused();
+  await chooser.click();
+  await expect(page.getByRole("menuitem", { name: "新建空间" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await settings.click();
+  await expect(page.getByRole("tablist", { name: "空间设置" })).toBeVisible();
+});
+
+test("a second right click moves the menu directly to the next target", async ({ page }) => {
+  await openTreeSample(page, "连续右键验收");
+  const row = page.getByRole("row", { name: "观测", exact: true });
+  const rect = await box(row);
+  const menu = page.getByRole("menu");
+  await page.mouse.click(800, 600, { button: "right" });
+  await expect(menu).toBeVisible();
+  const y = Math.floor(rect.y + rect.height / 2);
+  for (const fraction of [0.75, 0.2]) {
+    const x = Math.floor(rect.x + rect.width * fraction);
+    await page.mouse.click(x, y, { button: "right" });
+    await expect(async () => {
+      const bounds = await box(menu.locator(".."));
+      expect(Math.abs(bounds.x - x)).toBeLessThanOrEqual(4);
+      expect(Math.abs(bounds.y - y)).toBeLessThanOrEqual(4);
+    }).toPass({ timeout: 1200 });
+  }
+  await menu.getByRole("menuitem", { name: "新建文档…" }).click();
+  const dialog = page.getByRole("dialog", { name: "新建文档" });
+  await expect(dialog.getByLabel("目录（可选）")).toHaveValue("研究/观测");
+  await page.keyboard.press("Escape");
+  await expect(row).toBeFocused();
+});
+
+test("offers account commands when the requested workspace is unavailable", async ({ page }) => {
+  await openFieldWorkspace(page);
+  await page.goto("/workspaces/missing-workspace-id");
+  await expect(page.getByText("此空间不可用")).toBeVisible();
+  await page.mouse.click(300, 12, { button: "right" });
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem", { name: /命令/ })).toBeVisible({ timeout: 1800 });
+  await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: /命令/ }).press("Enter");
+  await expect(page.getByRole("dialog", { name: "命令" }).getByRole("searchbox")).toBeFocused();
+
+  await page.goto("/workspaces/new");
+  const form = page.getByRole("form", { name: "新建空间" });
+  await expect(form).toBeVisible();
+  await page.mouse.click(900, 700, { button: "right" });
+  await expect(menu.getByRole("menuitem", { name: /查找命令/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const name = form.getByRole("textbox", { name: "空间名称" });
+  await name.fill("保留名称");
+  await name.click({ button: "right" });
+  await expect(menu).toHaveCount(0);
+  await expect(name).toHaveValue("保留名称");
+});
+
+test("preserves the native context menu for a selection, a link and an editor", async ({
+  page,
+}) => {
+  const workspace = await createWorkspace(page, "原生文本菜单验收");
+  const note = await addDocument(
+    page,
+    workspace.id,
+    "说明.md",
+    "可复制的一句话。\n\n[阅读原文](https://example.org)",
+  );
+  await page.goto(`/workspaces/${workspace.id}/documents/${note.document.id}`);
+  const article = page.getByRole("article");
+  const paragraph = article.getByText("可复制的一句话。");
+  const cancellations = await page.evaluateHandle(() => {
+    const events: boolean[] = [];
+    window.addEventListener("contextmenu", (event) => events.push(event.defaultPrevented));
+    return events;
+  });
+  const point = await paragraph.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    const { x, y, width, height } = range.getBoundingClientRect();
+    return { x: x + width / 2, y: y + height / 2 };
+  });
+  await page.mouse.click(point.x, point.y, { button: "right" });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("可复制的一句话。");
+  await page.keyboard.press("Escape");
+  await article.getByRole("link", { name: "阅读原文" }).click({ button: "right" });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Alt+e");
+  const editor = page.getByRole("textbox", { name: "Markdown 正文" });
+  await editor.click({ button: "right" });
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  expect(await cancellations.jsonValue()).toEqual([false, false, false]);
+});
+
 test("anchors the directory menu to the pointer across the row and flips each viewport edge", async ({
   page,
 }, testInfo) => {
@@ -99,27 +288,7 @@ test("anchors the directory menu to the pointer across the row and flips each vi
     const bounds = await box(menu.locator(".."));
     measurements.push({ x, y, menu: bounds, viewport: page.viewportSize() });
     if (index === 1) {
-      await page.evaluate(
-        ({ x, y }) => {
-          const point = document.createElement("div");
-          point.id = "test-pointer";
-          Object.assign(point.style, {
-            position: "fixed",
-            left: `${x - 6}px`,
-            top: `${y - 6}px`,
-            width: "12px",
-            height: "12px",
-            border: "2px solid #db2735",
-            borderRadius: "50%",
-            pointerEvents: "none",
-            zIndex: "2147483647",
-          });
-          document.body.append(point);
-        },
-        { x, y },
-      );
-      await page.screenshot({ path: testInfo.outputPath("directory-pointer.png") });
-      await page.locator("#test-pointer").evaluate((point) => point.remove());
+      await capturePointer(page, x, y, testInfo.outputPath("directory-pointer.png"));
     }
     expect.soft(bounds.x - x).toBeGreaterThanOrEqual(0);
     expect.soft(bounds.x - x).toBeLessThanOrEqual(4);
@@ -189,12 +358,14 @@ test("keeps the reading document while creating from a different row or the root
     [row, "ContextMenu"],
   ] as const) {
     await target.press(shortcut);
-    await expect(menu.getByRole("menuitem")).toBeFocused();
+    await expect(menu.getByRole("menuitem", { name: "新建文档…" })).toBeFocused();
     const rowRect = await box(target);
     const menuRect = await box(menu.locator(".."));
     expect(Math.abs(rowRect.x - menuRect.x)).toBeLessThanOrEqual(4);
     expect(menuRect.y - rowRect.y - rowRect.height).toBeCloseTo(2);
     await page.keyboard.press("ArrowDown");
+    await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toBeFocused();
+    await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
     await expect(folder).toHaveValue("研究/观测");
     await page.keyboard.press("Escape");
@@ -204,17 +375,17 @@ test("keeps the reading document while creating from a different row or the root
   await row.getByRole("button", { name: /折叠/ }).click();
   await expect(row).toHaveAttribute("aria-expanded", "false");
   await row.click({ button: "right" });
-  await menu.getByRole("menuitem").click();
+  await menu.getByRole("menuitem", { name: "新建文档…" }).click();
   await expect(folder).toHaveValue("研究/观测");
   await dialog.getByRole("button", { name: "取消" }).click();
   const bounds = await box(page.locator("#workspace-navigation"));
   await page.mouse.click(bounds.x + 22, bounds.y + bounds.height - 8, { button: "right" });
-  await menu.getByRole("menuitem").click({ timeout: 2500 });
+  await menu.getByRole("menuitem", { name: "新建文档…" }).click({ timeout: 2500 });
   await expect(folder).toHaveValue("");
   await dialog.getByRole("button", { name: "取消" }).click();
   const more = page.getByRole("button", { name: "根目录更多" });
   await more.press("Enter");
-  await menu.getByRole("menuitem").press("Enter");
+  await menu.getByRole("menuitem", { name: "新建文档…" }).press("Enter");
   await expect(folder).toHaveValue("");
   await page.keyboard.press("Escape");
   await expect(more).toBeFocused();
@@ -686,12 +857,11 @@ test("a read-only workspace member can open an import receipt without upload or 
     const directory = viewer.locator("#workspace-navigation");
     await expect(directory.getByRole("button", { name: /更多/ })).toHaveCount(0);
     const row = directory.getByRole("row", { name: "共享回执", exact: true });
-    const nativeAllowed = await row.evaluate((item) =>
-      item.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
-    );
-    expect(nativeAllowed).toBe(true);
     await row.click({ button: "right" });
-    await expect(viewer.getByRole("menu", { name: "目录操作" })).toHaveCount(0);
+    const menu = viewer.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
+    await menu.getByRole("menuitem", { name: /搜索文档/ }).click({ timeout: 1800 });
+    await expect(viewer.getByRole("dialog", { name: "快速打开与全文搜索" })).toBeVisible();
   } finally {
     await viewer.close();
   }
@@ -735,6 +905,8 @@ test("a share snapshot reads the selected documents anonymously and revokes the 
     const article = visitor.getByRole("article");
     await expect(article).toContainText("起点");
     await expect(visitor.getByRole("button", { name: "文档 AI" })).toHaveCount(0);
+    await article.click({ button: "right" });
+    await expect(visitor.getByRole("menu")).toHaveCount(0);
     expect(workspaceRequests).toHaveLength(0);
     await expect(article.getByRole("link", { name: "去私稿" })).toHaveCount(0);
     await expect(article).not.toContainText("should-not-render");

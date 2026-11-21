@@ -61,6 +61,7 @@ export function ContextMenuPopover({
       placement={opensLeft ? "bottom right" : "bottom left"}
       containerPadding={viewportPadding}
       offset={gap}
+      isNonModal
       isOpen
       className={className}
       onOpenChange={(open) => !open && close()}

@@ -31,6 +31,10 @@ const replaceSource = StateEffect.define<SourceDocument>();
 const restoreLineEndings = StateEffect.define<readonly TextEdit[]>();
 const editorFocus = EditorView.theme({
   "&.cm-focused": { outline: "none" },
+  ".cm-content": {
+    paddingInline: "var(--document-editor-gutter, 0px)",
+    paddingBlockEnd: "var(--document-editor-endspace, 4px)",
+  },
   ".cm-content:focus-visible": { outline: "none" },
   "&.cm-focused .cm-activeLine": {
     backgroundColor: "transparent",
