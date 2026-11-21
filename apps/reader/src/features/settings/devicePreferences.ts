@@ -68,6 +68,7 @@ export function useDevicePreferences(enabled: boolean) {
 
   return {
     preferences,
+    settingsQuery: query,
     save: mutation.mutateAsync,
   };
 }

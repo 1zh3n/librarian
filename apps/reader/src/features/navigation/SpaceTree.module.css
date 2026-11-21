@@ -1,3 +1,22 @@
+.directory {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline-offset: -2px;
+}
+
+.heading {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  margin-inline: 0.5rem;
+  padding-inline: 0.75rem 0.25rem;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  font-weight: 550;
+}
+
 .tree {
   padding: 0.25rem 0.5rem;
 }
@@ -12,21 +31,24 @@
 }
 
 .row[data-selected] {
-  background: var(--surface-selected);
   color: var(--accent);
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 currentColor;
+  font-weight: 600;
 }
 
 .item {
   display: flex;
   min-height: 38px;
   align-items: center;
-  padding-inline-end: 0.5rem;
+  padding-inline-end: 0.25rem;
   font-size: var(--ui-size);
   cursor: default;
   user-select: none;
 }
 
 .label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -42,11 +64,50 @@
   color: var(--ink-secondary);
 }
 
+.more {
+  flex: none;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin-inline-start: auto;
+  padding: 0;
+  color: var(--ink-secondary);
+}
+
+.moreIcon {
+  width: 16px;
+  height: 16px;
+  mask: url("lucide-static/icons/ellipsis.svg") no-repeat center / contain;
+  background: currentColor;
+}
+
+.more[data-hovered] {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .row:not(:hover, :focus-within) .more {
+    opacity: 0;
+  }
+}
+
+.tooltip {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: var(--ui-size);
+}
+
 .contextMenu {
   z-index: 3;
-  min-inline-size: 9rem;
+  width: min(9rem, calc(100vw - 8px));
+  overflow: auto;
   padding: 0.25rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   color: var(--ink);
   background: var(--surface);
@@ -66,10 +127,20 @@
   background: var(--surface-selected);
 }
 
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .item,
   .disclosure,
+  .more,
   .menuItem {
     min-height: 44px;
+  }
+
+  .disclosure,
+  .more {
+    width: 44px;
+  }
+
+  .row:not(:hover, :focus-within) .more {
+    opacity: 1;
   }
 }

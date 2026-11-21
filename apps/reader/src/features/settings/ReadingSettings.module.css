@@ -3,12 +3,14 @@
   z-index: 4;
   inset: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
-  padding: 1rem;
+  padding: min(1rem, 4vw);
   background: var(--overlay);
 }
 
 .modal {
+  container-type: inline-size;
   width: min(100%, 38rem);
   max-height: calc(100dvh - 2rem);
   overflow: auto;
@@ -18,7 +20,7 @@
 }
 
 .dialog {
-  padding: 1rem;
+  padding: min(1rem, 4vw);
   outline: 0;
 }
 
@@ -29,6 +31,7 @@
 
 .fields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.875rem;
 }
 
@@ -39,9 +42,13 @@
 }
 
 .tab {
+  width: auto;
+  min-width: 0;
   min-height: 44px;
+  flex: 1 1 auto;
+  white-space: normal;
   margin-block-end: -1px;
-  padding-inline: 0.4rem;
+  padding-inline: clamp(4px, 1vw, 8px);
   border-block-end: 2px solid transparent;
   border-radius: 0;
 }
@@ -79,6 +86,7 @@
 
 .field {
   display: grid;
+  min-width: 0;
   gap: 0.25rem;
   color: var(--ink-secondary);
   font-size: var(--ui-size);
@@ -98,6 +106,10 @@
 
 .input {
   text-align: start;
+}
+
+button.input {
+  justify-content: space-between;
 }
 
 .options {
@@ -142,14 +154,27 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: end;
   gap: 0.5rem;
 }
 
-.actions .button {
+.actions button {
   width: auto;
+  min-height: 44px;
+  border-radius: var(--radius);
+}
+
+.actions button[type="submit"] {
+  padding-inline: 1rem;
 }
 
 .error {
   margin: 0;
+}
+
+@container (max-width: 17rem) {
+  .panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

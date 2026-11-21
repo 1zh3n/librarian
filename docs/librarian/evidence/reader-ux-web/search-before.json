@@ -1,0 +1,113 @@
+{
+  "desktop": {
+    "topbar": [
+      {
+        "name": "收起目录",
+        "x": 18,
+        "width": 52,
+        "height": 40
+      },
+      {
+        "name": "布局",
+        "x": 1314,
+        "width": 52,
+        "height": 40
+      },
+      {
+        "name": "搜索文档",
+        "x": 1370,
+        "width": 52,
+        "height": 40
+      }
+    ],
+    "layout": "阅读布局\n写作布局\n研究布局\n校订布局\n专注阅读\n阅读设置",
+    "settings": {
+      "x": 417,
+      "y": 287.5,
+      "width": 606,
+      "height": 325
+    },
+    "focusAfterSettings": "布局",
+    "searchClose": "Esc",
+    "empty": "未找到文档",
+    "escapeFromNoMatches": "dialog open, query \"\"",
+    "scrollBeforeSearch": 455,
+    "commandFocus": "BODY",
+    "scrollAfterSearch": 455,
+    "scrollWidth": 1440
+  },
+  "phone": {
+    "topbar": [
+      {
+        "name": "展开目录",
+        "x": 6,
+        "width": 52,
+        "height": 44
+      },
+      {
+        "name": "布局",
+        "x": 276,
+        "width": 52,
+        "height": 44
+      },
+      {
+        "name": "搜索文档",
+        "x": 332,
+        "width": 52,
+        "height": 44
+      }
+    ],
+    "layout": "阅读布局\n写作布局\n研究布局\n校订布局\n专注阅读\n阅读设置",
+    "settings": {
+      "x": 17,
+      "y": 259.5,
+      "width": 356,
+      "height": 325
+    },
+    "focusAfterSettings": "布局",
+    "searchClose": "Esc",
+    "empty": "未找到文档",
+    "escapeFromNoMatches": "dialog open, query \"\"",
+    "scrollBeforeSearch": 455,
+    "commandFocus": "BODY",
+    "scrollAfterSearch": 455,
+    "scrollWidth": 390
+  },
+  "narrow": {
+    "topbar": [
+      {
+        "name": "展开目录",
+        "x": 6,
+        "width": 52,
+        "height": 44
+      },
+      {
+        "name": "布局",
+        "x": 206,
+        "width": 52,
+        "height": 44
+      },
+      {
+        "name": "搜索文档",
+        "x": 262,
+        "width": 52,
+        "height": 44
+      }
+    ],
+    "layout": "阅读布局\n写作布局\n研究布局\n校订布局\n专注阅读\n阅读设置",
+    "settings": {
+      "x": 17,
+      "y": 197.5,
+      "width": 286,
+      "height": 325
+    },
+    "focusAfterSettings": "布局",
+    "searchClose": "Esc",
+    "empty": "未找到文档",
+    "escapeFromNoMatches": "dialog open, query \"\"",
+    "scrollBeforeSearch": 455,
+    "commandFocus": "BODY",
+    "scrollAfterSearch": 455,
+    "scrollWidth": 320
+  }
+}

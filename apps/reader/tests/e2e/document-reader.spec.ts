@@ -250,9 +250,8 @@ test("preserves phone-size controls and monochrome reading with reduced motion",
     await expect(focused).toHaveCSS("outline-style", "solid");
     await expect(focused).toHaveCSS("outline-width", "2px");
 
-    await layout.tap();
-    await page.getByRole("menuitem", { name: "阅读设置" }).tap();
-    const settings = page.getByRole("dialog", { name: "阅读设置" });
+    await page.getByRole("banner").getByRole("button", { name: "设置", exact: true }).tap();
+    const settings = page.getByRole("dialog", { name: "应用设置" });
     await settings.getByText("墨水屏", { exact: true }).tap();
     await expect(settings.getByRole("checkbox", { name: "墨水屏" })).toBeChecked();
     await settings.getByRole("button", { name: "保存设置" }).tap();
@@ -274,4 +273,113 @@ test("opens a relative Markdown link through the existing document identity", as
   await page.getByRole("link", { name: "回到河岸" }).click();
   await expect(page.getByRole("heading", { name: "河岸清晨", level: 1 })).toBeVisible();
   await expect(page).toHaveURL(/\/documents\/doc_[a-f0-9]+$/);
+});
+
+test("opens phone tools beside the current passage and follows a contents link into reading", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await createNote(
+    page,
+    "InlineToolPassage.md",
+    Array.from(
+      { length: 40 },
+      (_, n) => `## 河道调查第 ${n} 站\n\n沿岸核对水位，记录当地植被和地形。\n`,
+    ).join("\n"),
+  );
+  const passage = page.getByRole("heading", { name: "河道调查第 20 站", exact: true });
+  await passage.evaluate((el) => {
+    const viewport = el.closest("main")!;
+    viewport.scrollTop += el.getBoundingClientRect().top - 190;
+  });
+  const before = (await passage.boundingBox())!.y;
+  await openDocumentTool(page, "AI");
+  const pane = page.getByRole("region", { name: "文档辅助区", exact: true });
+  await expect(pane).toBeInViewport({ ratio: 1 });
+  await expect(passage).toBeInViewport({ ratio: 1 });
+  expect((await passage.boundingBox())!.y).toBeGreaterThanOrEqual(
+    (await pane.boundingBox())!.y + (await pane.boundingBox())!.height,
+  );
+  await openDocumentTool(page, "引用");
+  await expect(pane).toBeInViewport({ ratio: 1 });
+  await closeDocumentTool(page);
+  await expect
+    .poll(async () => Math.abs((await passage.boundingBox())!.y - before))
+    .toBeLessThan(8);
+  await openDocumentTool(page, "文档目录");
+  const contents = page.getByRole("navigation", { name: "文档目录" });
+  await contents.getByRole("link", { name: "河道调查第 35 站", exact: true }).press("Enter");
+  const target = page.getByRole("heading", { name: "河道调查第 35 站", exact: true });
+  await expect(target).toBeInViewport({ ratio: 1 });
+  await expect(target).toBeFocused();
+  await expect(contents).toBeHidden();
+});
+
+test("balances a two-line Chinese document title on the desktop reading column", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const title = "从河口到山麓：沿溪调查的记事与方法";
+  await createNote(
+    page,
+    "BalancedFieldTitle.md",
+    `---\ntitle: ${title}\n---\n\n清晨从河口出发。\n`,
+  );
+  const widths = await page.getByRole("heading", { level: 1, name: title }).evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return Array.from(range.getClientRects(), (rect) => rect.width);
+  });
+  expect(widths).toHaveLength(2);
+  expect(Math.min(...widths) / Math.max(...widths)).toBeGreaterThan(0.55);
+});
+
+test("offers the whole desktop outline canvas for writing and fits short reference lists", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(page, "WritableOutlineCanvas.md", "# 观察记录\n\n雨后沿岸测量。\n");
+  await page.getByRole("button", { name: "文档更多" }).click();
+  await page.getByRole("menuitem", { name: "添加提纲" }).click();
+  const editor = page.getByRole("textbox", { name: "Markdown 提纲" });
+  await expect(editor).toBeFocused();
+  const pane = page.getByRole("region", { name: "文档辅助区" });
+  const box = (await pane.boundingBox())!;
+  await page.getByRole("tab", { name: "提纲", exact: true }).focus();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 45);
+  await expect(editor).toBeFocused();
+  await page.keyboard.insertText("水位测点");
+  await openDocumentTool(page, "引用");
+  await expect(page.getByRole("heading", { name: "引用本篇" })).toBeVisible();
+  expect((await pane.boundingBox())!.height).toBeLessThan(300);
+  await openDocumentTool(page, "提纲");
+  await expect(editor).toContainText("水位测点");
+});
+
+test("opens a long desktop contents list at the current section and returns keyboard focus to the chosen heading", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(
+    page,
+    "ContentsCurrentSection.md",
+    Array.from(
+      { length: 64 },
+      (_, n) => `## 测量站 ${n}\n\n${"沿途补记水温与风向。".repeat(12)}\n`,
+    ).join("\n"),
+  );
+  const current = page.getByRole("heading", { name: "测量站 44", exact: true });
+  await current.evaluate((el) => {
+    const main = el.closest("main")!;
+    main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top - 41;
+  });
+  await openDocumentTool(page, "文档目录");
+  const nav = page.getByRole("navigation", { name: "文档目录" });
+  const selected = nav.getByRole("link", { name: "测量站 44", exact: true });
+  await expect(selected).toHaveAttribute("aria-current", "location");
+  await expect(selected).toBeInViewport({ ratio: 1 });
+  const chosen = nav.getByRole("link", { name: "测量站 48", exact: true });
+  await chosen.press("Enter");
+  await expect(page.getByRole("heading", { name: "测量站 48", exact: true })).toBeFocused();
+  await expect(chosen).toHaveAttribute("aria-current", "location");
 });

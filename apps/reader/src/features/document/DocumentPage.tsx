@@ -20,13 +20,16 @@ import { contextSelection } from "../reading/contextSelection";
 import { isEditingTarget, useReaderLayout } from "../reading/readingFocus";
 import {
   isRepeatedSemanticBlock,
+  renderedBlock,
   semanticBlocks,
   showSemanticBlock,
   visibleSemanticBlock,
 } from "../reading/semanticFocus";
 import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
+import { DocumentContents, headingAtReadingPosition } from "./DocumentContents";
 import { DocumentReferencesPanel } from "./DocumentReferencesPanel";
+import { placeInlineTool } from "./inlineTool";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
 import type { OutlineSession } from "./OutlineCanvas";
@@ -188,6 +191,7 @@ function DocumentWorkspace({
     : normalTool?.layout === preferences.layout && normalTool.selection === layoutSelection
       ? normalTool.tool
       : defaultTool;
+  const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
   const toolAnchor = useRef<ReturnType<typeof captureReaderAnchor>>(undefined);
   const toolPane = useRef<HTMLElement>(null);
   const openToolButton = useRef<HTMLButtonElement>(null);
@@ -202,7 +206,10 @@ function DocumentWorkspace({
     source: string;
     scrollTop: number;
     opener: HTMLElement | undefined;
+    passage: string | undefined;
   }>(undefined);
+  const [contentsInitial, setContentsInitial] = useState<string>();
+  const contentsDestination = useRef<HTMLElement | null>(null);
   const moveToTool = useRef(false);
   const returnFromTool = useRef(false);
   const chooseTool = useCallback(
@@ -217,6 +224,7 @@ function DocumentWorkspace({
     if (next === tool) return;
     if (isDocumentTab(next)) setLastTab(next);
     const viewport = canvas.current?.closest("main");
+    if (next === "contents" && viewport) setContentsInitial(headingAtReadingPosition(viewport));
     toolAnchor.current =
       viewport && modeRef.current === "read"
         ? captureReaderAnchor(viewport, analysis.blocks)
@@ -232,6 +240,10 @@ function DocumentWorkspace({
           anchor: toolAnchor.current,
           source: reading.source,
           scrollTop: viewport.scrollTop,
+          passage:
+            savedSelection.current?.range.startContainer.parentElement?.closest<HTMLElement>(
+              "[data-block-id]",
+            )?.dataset.blockId ?? toolAnchor.current?.blockId,
           opener:
             active instanceof HTMLElement && toolbar.current?.contains(active) ? active : undefined,
         };
@@ -241,7 +253,6 @@ function DocumentWorkspace({
   }
   const outline = useQuery({ ...outlineQuery(workspace, documentId), enabled: outlineEnabled });
   const canvas = useRef<HTMLDivElement>(null);
-  const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
   const savedEditorSelection = useRef<{ source: string; anchor: number; head: number }>(undefined);
   const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
   const restoringEditor = useRef(false);
@@ -269,6 +280,16 @@ function DocumentWorkspace({
     return () => observer.disconnect();
   }, []);
 
+  const toolOpen = Boolean(tool);
+  useLayoutEffect(() => {
+    const pane = toolPane.current;
+    const surface = canvas.current;
+    const passage = inlineVisit.current?.passage;
+    if (!toolOpen || mode !== "read" || !pane || !surface || !passage) return;
+    const block = renderedBlock(surface, passage);
+    if (block) return placeInlineTool(pane, block);
+  }, [toolOpen, mode, analysis]);
+
   useLayoutEffect(() => {
     const viewport = canvas.current?.closest("main");
     const anchor = toolAnchor.current;
@@ -292,6 +313,13 @@ function DocumentWorkspace({
       const visit = inlineVisit.current;
       inlineVisit.current = undefined;
       returnFromTool.current = false;
+      const destination = contentsDestination.current;
+      contentsDestination.current = null;
+      if (destination?.isConnected) {
+        destination.focus({ preventScroll: true });
+        destination.scrollIntoView({ block: "start" });
+        return;
+      }
       (visit?.opener?.isConnected ? visit.opener : openToolButton.current)?.focus({
         preventScroll: true,
       });
@@ -308,7 +336,7 @@ function DocumentWorkspace({
         return;
       }
     }
-    if (anchor && modeRef.current === "read") {
+    if (anchor && modeRef.current === "read" && !(tool && inlineVisit.current)) {
       return restoreReaderAnchor(viewport, analysis.blocks, anchor, true);
     }
   }, [tool, analysis.blocks, reading.source]);
@@ -843,21 +871,26 @@ function DocumentWorkspace({
             </Tabs>
           </div>
           {tool === "contents" && (
-            <nav className={styles.contents} aria-label="文档目录">
-              {analysis.headings.map((heading) => (
-                <a
-                  key={heading.id}
-                  href={`#${encodeURIComponent(heading.id)}`}
-                  style={{ paddingInlineStart: Math.max(heading.level - 2, 0) * 12 + 8 }}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    window.document.getElementById(heading.id)?.scrollIntoView({ block: "start" });
-                  }}
-                >
-                  {heading.label}
-                </a>
-              ))}
-            </nav>
+            <DocumentContents
+              headings={analysis.headings}
+              initial={contentsInitial}
+              onChoose={(id) => {
+                const target = window.document.getElementById(id);
+                if (!target) return;
+                target.tabIndex = -1;
+                if (
+                  toolPane.current &&
+                  getComputedStyle(toolPane.current).getPropertyValue("--inline-tool").trim() ===
+                    "1"
+                ) {
+                  contentsDestination.current = target;
+                  setTool(undefined);
+                } else {
+                  target.focus({ preventScroll: true });
+                  target.scrollIntoView({ block: "start" });
+                }
+              }}
+            />
           )}
           {tool === "metadata" && (
             <MetadataPanel

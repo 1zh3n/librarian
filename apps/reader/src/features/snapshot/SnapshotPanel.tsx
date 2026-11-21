@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { CreateSnapshot, DocumentSummary, SnapshotLink } from "../../api/client";
+import { Disclosure } from "../../ui/Disclosure";
 import { Button, Form, Label, TextArea, TextField } from "../../ui/primitives";
 import { DocumentChecklist } from "../workspace/DocumentChecklist";
 import { Choice, Field } from "../workspace/ManagementFields";
@@ -29,6 +30,7 @@ export function SnapshotPanel({
   const [attachmentInput, setAttachmentInput] = useState("");
   const [expiry, setExpiry] = useState("");
   const [commit, setCommit] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [expiryError, setExpiryError] = useState(false);
   const [addresses, setAddresses] = useState<SnapshotLink[]>([]);
   const create = useMutation({
@@ -55,6 +57,7 @@ export function SnapshotPanel({
             if (!documentIds.length || create.isPending) return;
             const expiresAt = expiry ? Math.floor(new Date(expiry).getTime() / 1_000) : null;
             if (expiresAt !== null && !(expiresAt > Date.now() / 1_000)) {
+              setExpanded(true);
               setExpiryError(true);
               return;
             }
@@ -81,30 +84,46 @@ export function SnapshotPanel({
             <Choice label="地址类型" value={kind} entries={kinds} onChange={setKind} />
             <Choice label="访问范围" value={audience} entries={audiences} onChange={setAudience} />
           </div>
-          <div className={styles.fields}>
-            <Field
-              label="地址到期时间（可选）"
-              type="datetime-local"
-              value={expiry}
-              onChange={(value) => {
-                setExpiry(value);
-                setExpiryError(false);
-              }}
-            />
-            {kind === "release" && (
-              <Field label="提交 ID（可选）" value={commit} onChange={setCommit} />
-            )}
-          </div>
           <DocumentChecklist documents={documents} selected={selected} onChange={setSelected} />
-          <TextField className={styles.field} value={attachmentInput} onChange={setAttachmentInput}>
-            <Label>附件路径（可选，每行一项）</Label>
-            <TextArea rows={2} className={styles.input} />
-          </TextField>
-          {expiryError && (
-            <p role="alert" className={styles.status}>
-              到期时间必须晚于现在。
-            </p>
-          )}
+          <Disclosure isExpanded={expanded} onExpandedChange={setExpanded}>
+            <Disclosure.Heading>
+              <Disclosure.Trigger>
+                {kind === "release" ? "版本、有效期与附件" : "有效期与附件"}
+                <Disclosure.Indicator />
+              </Disclosure.Trigger>
+            </Disclosure.Heading>
+            <Disclosure.Content>
+              <Disclosure.Body className={styles.form}>
+                <div className={styles.fields}>
+                  <Field
+                    label="地址到期时间（可选）"
+                    type="datetime-local"
+                    value={expiry}
+                    onChange={(value) => {
+                      setExpiry(value);
+                      setExpiryError(false);
+                    }}
+                  />
+                  {kind === "release" && (
+                    <Field label="提交 ID（可选）" value={commit} onChange={setCommit} />
+                  )}
+                </div>
+                <TextField
+                  className={styles.field}
+                  value={attachmentInput}
+                  onChange={setAttachmentInput}
+                >
+                  <Label>附件路径（可选，每行一项）</Label>
+                  <TextArea rows={2} className={styles.input} />
+                </TextField>
+                {expiryError && (
+                  <p role="alert" className={styles.status}>
+                    到期时间必须晚于现在。
+                  </p>
+                )}
+              </Disclosure.Body>
+            </Disclosure.Content>
+          </Disclosure>
           {create.isError && (
             <p role="alert" className={styles.status}>
               {create.error instanceof ApiError && create.error.status === 409

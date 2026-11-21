@@ -34,6 +34,12 @@ for (const account of [
     await page.setViewportSize({ width: 360, height: 800 });
     await signIn(page, account.username, account.password);
     const search = page.getByRole("button", { name: "搜索文档" });
+    const settings = page.getByRole("banner").getByRole("button", { name: "设置", exact: true });
+    await settings.click();
+    const preferences = page.getByRole("dialog", { name: "应用设置" });
+    await expect(preferences).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(settings).toBeFocused();
     await search.click();
     const palette = page.getByRole("dialog", { name: "快速打开与全文搜索" });
     const input = palette.getByRole("searchbox");
@@ -61,6 +67,27 @@ for (const account of [
     await expect(search).toBeFocused();
   });
 }
+
+test("topbar actions and settings fit a phone with double-size text", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, "reader", "reader-test-password");
+  await page.getByRole("article").waitFor();
+  await page.locator("html").evaluate((root) => (root.style.fontSize = "200%"));
+  const settings = page.getByRole("banner").getByRole("button", { name: "设置", exact: true });
+  await expect(settings).toBeInViewport({ ratio: 1 });
+  expect(await page.locator("html").evaluate((root) => root.scrollWidth)).toBe(390);
+  await settings.click();
+  const dialog = page.getByRole("dialog", { name: "应用设置" });
+  for (const name of ["外观", "阅读与布局", "快捷键"]) {
+    const tab = dialog.getByRole("tab", { name, exact: true });
+    await tab.click();
+    await expect(tab).toBeInViewport({ ratio: 1 });
+    const save = dialog.getByRole("button", { name: "保存设置" });
+    await save.scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport({ ratio: 1 });
+    expect(await dialog.evaluate((node) => node.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
 
 test("switches to a long space name at 125% zoom on a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -205,6 +232,13 @@ test("manages a local account and applies Workspace membership through Reader", 
     ).json()) as Workspace[];
     expect(removed.some(({ id }) => id === workspace.id)).toBe(false);
     await memberPage.goto("/");
+    const preferences = memberPage
+      .getByRole("banner")
+      .getByRole("button", { name: "设置", exact: true });
+    await preferences.click();
+    await expect(memberPage.getByRole("dialog", { name: "应用设置" })).toBeVisible();
+    await memberPage.keyboard.press("Escape");
+    await expect(preferences).toBeFocused();
     await openCommand(memberPage, "修改密码");
     await expect(memberPage.getByRole("heading", { name: "修改密码" })).toBeVisible();
     await expect(memberPage.getByRole("form", { name: "新建账号" })).toHaveCount(0);

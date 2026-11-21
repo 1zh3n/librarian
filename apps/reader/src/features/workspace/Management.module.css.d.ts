@@ -11,6 +11,9 @@ declare const styles: {
   readonly option: string;
   readonly primary: string;
   readonly secondary: string;
+  readonly taskList: string;
+  readonly task: string;
+  readonly scopeFilter: string;
   readonly checklist: string;
   readonly checkbox: string;
   readonly checkboxMark: string;

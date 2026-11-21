@@ -1,0 +1,131 @@
+{
+  "desktop": {
+    "topbar": [
+      {
+        "name": "收起目录",
+        "x": 18,
+        "width": 52,
+        "height": 40
+      },
+      {
+        "name": "布局",
+        "x": 1258,
+        "width": 52,
+        "height": 40
+      },
+      {
+        "name": "搜索文档",
+        "x": 1314,
+        "width": 52,
+        "height": 40
+      },
+      {
+        "name": "设置",
+        "x": 1370,
+        "width": 52,
+        "height": 40
+      }
+    ],
+    "layout": "阅读布局\n写作布局\n研究布局\n校订布局\n专注阅读",
+    "settings": {
+      "x": 417,
+      "y": 287.5,
+      "width": 606,
+      "height": 325
+    },
+    "focusAfterSettings": "设置",
+    "searchClose": "关闭",
+    "empty": "未找到文档",
+    "escapeFromNoMatches": "closed",
+    "scrollBeforeSearch": 455,
+    "commandFocus": "ARTICLE",
+    "scrollAfterSearch": 455,
+    "scrollWidth": 1440
+  },
+  "phone": {
+    "topbar": [
+      {
+        "name": "展开目录",
+        "x": 6,
+        "width": 44,
+        "height": 44
+      },
+      {
+        "name": "布局",
+        "x": 244,
+        "width": 44,
+        "height": 44
+      },
+      {
+        "name": "搜索文档",
+        "x": 292,
+        "width": 44,
+        "height": 44
+      },
+      {
+        "name": "设置",
+        "x": 340,
+        "width": 44,
+        "height": 44
+      }
+    ],
+    "layout": "阅读布局\n写作布局\n研究布局\n校订布局\n专注阅读",
+    "settings": {
+      "x": 16.59375,
+      "y": 259.90625,
+      "width": 356.8125,
+      "height": 324.1875
+    },
+    "focusAfterSettings": "设置",
+    "searchClose": "关闭",
+    "empty": "未找到文档",
+    "escapeFromNoMatches": "closed",
+    "scrollBeforeSearch": 455,
+    "commandFocus": "ARTICLE",
+    "scrollAfterSearch": 455,
+    "scrollWidth": 390
+  },
+  "narrow": {
+    "topbar": [
+      {
+        "name": "展开目录",
+        "x": 6,
+        "width": 44,
+        "height": 44
+      },
+      {
+        "name": "布局",
+        "x": 174,
+        "width": 44,
+        "height": 44
+      },
+      {
+        "name": "搜索文档",
+        "x": 222,
+        "width": 44,
+        "height": 44
+      },
+      {
+        "name": "设置",
+        "x": 270,
+        "width": 44,
+        "height": 44
+      }
+    ],
+    "layout": "阅读布局\n写作布局\n研究布局\n校订布局\n专注阅读",
+    "settings": {
+      "x": 13.796875,
+      "y": 200.703125,
+      "width": 292.40625,
+      "height": 318.59375
+    },
+    "focusAfterSettings": "设置",
+    "searchClose": "关闭",
+    "empty": "未找到文档",
+    "escapeFromNoMatches": "closed",
+    "scrollBeforeSearch": 455,
+    "commandFocus": "ARTICLE",
+    "scrollAfterSearch": 455,
+    "scrollWidth": 320
+  }
+}

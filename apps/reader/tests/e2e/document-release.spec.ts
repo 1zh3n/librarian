@@ -55,6 +55,7 @@ test("shows the deployment path when no backup target is configured", async ({ p
   const workspace = await workspaceAsAdmin(page);
   await page.goto(`/workspaces/${workspace.id}/manage`);
   await page.getByRole("tab", { name: "备份与发布" }).click();
+  await page.getByRole("tab", { name: "Git 备份", exact: true }).click();
   const panel = page.getByRole("region", { name: "GitHub 备份" });
   await expect(panel).toContainText("尚未配置备份目标");
   await expect(panel).toContainText(".librarian/backup-targets.json");
@@ -66,6 +67,7 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
   const { commitId } = await deliver(page, workspace.id, "browser-backup");
   await page.goto(`/workspaces/${workspace.id}/manage`);
   await page.getByRole("tab", { name: "备份与发布" }).click();
+  await page.getByRole("tab", { name: "Git 备份", exact: true }).click();
 
   const panel = page.getByRole("region", { name: "Git 备份" });
   await expect(panel).toContainText("备份目标已配置");
@@ -145,6 +147,7 @@ test("publishes the explicitly selected Git version and documents to the configu
   const { note, commitId } = await deliver(page, workspace.id, "browser-publication");
   await page.goto(`/workspaces/${workspace.id}/manage`);
   await page.getByRole("tab", { name: "备份与发布" }).click();
+  await page.getByRole("tab", { name: "站点发布", exact: true }).click();
   const panel = page.getByRole("region", { name: "Zola 发布" });
   await panel.getByRole("button", { name: /发布目标/ }).click();
   await page.getByRole("option", { name: "本地博客" }).click();
@@ -194,6 +197,7 @@ test("shows the document scope of a pending publication before explicit confirma
 
   await page.goto(`/workspaces/${workspace.id}/manage`);
   await page.getByRole("tab", { name: "备份与发布" }).click();
+  await page.getByRole("tab", { name: "站点发布", exact: true }).click();
   const record = page
     .getByRole("list", { name: "发布记录" })
     .getByRole("listitem")
@@ -214,4 +218,83 @@ test("shows the document scope of a pending publication before explicit confirma
     "href",
     /\/browser-mcp-report\/$/,
   );
+});
+
+async function seedCollection(page: Page, count: number) {
+  await workspaceAsAdmin(page);
+  const origin = new URL(page.url()).origin;
+  const created = await page.request.post("/api/v1/workspaces", {
+    headers: { origin },
+    data: { name: `水系走查-${randomUUID()}`, origin: "native" },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const workspace = (await created.json()) as Workspace;
+  const base = `/api/v1/workspaces/${workspace.id}`;
+  const notes: DocumentSummary[] = [];
+  for (let i = 1; i <= count; i++) {
+    const title = `第${String(i).padStart(2, "0")}章 · 沿江村落的水系与生活记录`;
+    const response = await page.request.post(`${base}/documents`, {
+      headers: { origin },
+      data: {
+        path: `沿江/${title}.md`,
+        markdown: `# ${title}\n\n渡口走访记录。\n`,
+        baseRevision: null,
+      },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    notes.push((await response.json()).document);
+  }
+  return { workspace, notes, base, origin };
+}
+
+test("opens sharing directly and keeps the scope when filtering a collection", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { workspace, notes } = await seedCollection(page, 7);
+  await page.goto(`/workspaces/${workspace.id}/manage#release`);
+  const form = page.getByRole("form", { name: "创建阅读地址" });
+  await expect(page.getByRole("region", { name: "Zola 发布" })).toBeHidden();
+  await expect(form.getByRole("group", { name: "文档范围" })).toBeInViewport();
+  await expect(form.getByLabel("地址到期时间（可选）")).toBeHidden();
+  const filter = form.getByRole("textbox", { name: "筛选文档" });
+  await filter.fill("第01章");
+  await form.getByText(notes[0]!.path, { exact: true }).click();
+  await filter.fill("没有这一篇");
+  await expect(form.getByText("没有匹配的文档")).toBeVisible();
+  await filter.fill("第07章");
+  await form.getByText(notes[6]!.path, { exact: true }).click();
+  await expect(form.getByText("已选 2 篇")).toBeVisible();
+  const request = page.waitForRequest(
+    (r) => r.method() === "POST" && r.url().endsWith("/snapshots"),
+  );
+  await form.getByRole("button", { name: "创建阅读地址" }).click();
+  expect((await request).postDataJSON().documentIds).toEqual([notes[0]!.id, notes[6]!.id]);
+  await expect(page.getByRole("link", { name: "打开阅读地址" })).toBeVisible();
+  await page.getByRole("tab", { name: "站点发布" }).click();
+  await expect(page.getByRole("region", { name: "Zola 发布" })).toBeVisible();
+  await page.getByRole("tab", { name: "阅读地址" }).click();
+  await expect(form.getByText("已选 2 篇")).toBeVisible();
+});
+
+test("starts a long shared collection in the article and focuses the chosen chapter", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { notes, base, origin } = await seedCollection(page, 16);
+  const response = await page.request.post(`${base}/snapshots`, {
+    headers: { origin },
+    data: { kind: "current", audience: "members", documentIds: notes.map((n) => n.id) },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  await page.goto((await response.json()).url);
+  const article = page.getByRole("article");
+  await expect(article.getByText("渡口走访记录。")).toBeInViewport();
+  const directory = page.getByRole("button", { name: /文档目录.*16/ });
+  await directory.press("Enter");
+  const nav = page.getByRole("navigation", { name: "阅读地址中的文档" });
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+  await nav.getByRole("link", { name: notes[15]!.title }).press("Enter");
+  const heading = article.getByRole("heading", { level: 1, name: notes[15]!.title });
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport();
+  await expect(directory).toHaveAttribute("aria-expanded", "false");
 });

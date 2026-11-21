@@ -1,0 +1,150 @@
+{
+  "desktop": {
+    "title": {
+      "x": 455,
+      "y": 155,
+      "width": 756,
+      "height": 121
+    },
+    "first": {
+      "x": 455,
+      "y": 292,
+      "width": 735,
+      "height": 66
+    },
+    "titleLines": [
+      401,
+      452
+    ],
+    "deepBefore": {
+      "x": 455,
+      "y": 210,
+      "width": 756,
+      "height": 36
+    },
+    "afterEditing": {
+      "x": 455,
+      "y": 210,
+      "width": 756,
+      "height": 36
+    },
+    "deepWithAI": {
+      "x": 288,
+      "y": 210,
+      "width": 713,
+      "height": 36
+    },
+    "pane": {
+      "x": 1041,
+      "y": 97,
+      "width": 336,
+      "height": 766
+    },
+    "referencesPane": {
+      "x": 1041,
+      "y": 97,
+      "width": 336,
+      "height": 205
+    },
+    "outlineEditor": {
+      "x": 1058,
+      "y": 159,
+      "width": 302,
+      "height": 687
+    },
+    "afterClose": {
+      "x": 455,
+      "y": 210,
+      "width": 756,
+      "height": 36
+    },
+    "currentSection": [
+      "第10站 · 河湾"
+    ],
+    "contentsTarget": {
+      "x": 288,
+      "y": 97,
+      "width": 713,
+      "height": 36
+    },
+    "contentsOpen": true,
+    "contentsFocused": {
+      "tag": "H2",
+      "text": "第15站 · 北岸"
+    }
+  },
+  "phone": {
+    "title": {
+      "x": 16,
+      "y": 127,
+      "width": 358,
+      "height": 69
+    },
+    "first": {
+      "x": 16,
+      "y": 212,
+      "width": 358,
+      "height": 132
+    },
+    "titleLines": [
+      228,
+      257
+    ],
+    "deepBefore": {
+      "x": 16,
+      "y": 210,
+      "width": 358,
+      "height": 36
+    },
+    "afterEditing": {
+      "x": 16,
+      "y": 210,
+      "width": 358,
+      "height": 36
+    },
+    "deepWithAI": {
+      "x": 16,
+      "y": 454,
+      "width": 358,
+      "height": 36
+    },
+    "pane": {
+      "x": 16,
+      "y": 101,
+      "width": 358,
+      "height": 193
+    },
+    "referencesPane": {
+      "x": 16,
+      "y": 101,
+      "width": 358,
+      "height": 213
+    },
+    "outlineEditor": {
+      "x": 33,
+      "y": 163,
+      "width": 324,
+      "height": 108
+    },
+    "afterClose": {
+      "x": 16,
+      "y": 210,
+      "width": 358,
+      "height": 36
+    },
+    "currentSection": [
+      "第10站 · 河湾"
+    ],
+    "contentsTarget": {
+      "x": 16,
+      "y": 105,
+      "width": 358,
+      "height": 36
+    },
+    "contentsOpen": false,
+    "contentsFocused": {
+      "tag": "H2",
+      "text": "第15站 · 北岸"
+    }
+  }
+}

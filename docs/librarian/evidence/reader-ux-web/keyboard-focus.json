@@ -1,0 +1,103 @@
+[
+  {
+    "source": "#workspace-navigation >> internal:role=button[name=/空间/] >> nth=0",
+    "key": "Enter"
+  },
+  {
+    "source": "internal:role=row[name=\"记录\"s]",
+    "key": "Shift+F10"
+  },
+  {
+    "target": "internal:role=menu[name=\"目录操作\"i] >> internal:role=menuitem",
+    "assertion": "to.be.focused",
+    "result": "focused",
+    "pass": true
+  },
+  {
+    "key": "ArrowDown"
+  },
+  {
+    "key": "Enter"
+  },
+  {
+    "target": "internal:role=dialog[name=\"新建文档\"i] >> internal:role=textbox[name=\"目录（可选）\"i]",
+    "assertion": "to.have.value",
+    "result": "研究/观测",
+    "pass": true
+  },
+  {
+    "key": "Escape"
+  },
+  {
+    "target": "internal:role=row[name=\"记录\"s]",
+    "assertion": "to.be.focused",
+    "result": "focused",
+    "pass": true
+  },
+  {
+    "source": "internal:role=row[name=\"观测\"s]",
+    "key": "ContextMenu"
+  },
+  {
+    "target": "internal:role=menu[name=\"目录操作\"i] >> internal:role=menuitem",
+    "assertion": "to.be.focused",
+    "result": "focused",
+    "pass": true
+  },
+  {
+    "key": "ArrowDown"
+  },
+  {
+    "key": "Enter"
+  },
+  {
+    "target": "internal:role=dialog[name=\"新建文档\"i] >> internal:role=textbox[name=\"目录（可选）\"i]",
+    "assertion": "to.have.value",
+    "result": "研究/观测",
+    "pass": true
+  },
+  {
+    "key": "Escape"
+  },
+  {
+    "target": "internal:role=row[name=\"观测\"s]",
+    "assertion": "to.be.focused",
+    "result": "focused",
+    "pass": true
+  },
+  {
+    "target": "internal:role=dialog[name=\"新建文档\"i] >> internal:role=textbox[name=\"目录（可选）\"i]",
+    "assertion": "to.have.value",
+    "result": "研究/观测",
+    "pass": true
+  },
+  {
+    "target": "internal:role=dialog[name=\"新建文档\"i] >> internal:role=textbox[name=\"目录（可选）\"i]",
+    "assertion": "to.have.value",
+    "result": "",
+    "pass": true
+  },
+  {
+    "source": "internal:role=button[name=\"根目录更多\"i]",
+    "key": "Enter"
+  },
+  {
+    "source": "internal:role=menu[name=\"目录操作\"i] >> internal:role=menuitem",
+    "key": "Enter"
+  },
+  {
+    "target": "internal:role=dialog[name=\"新建文档\"i] >> internal:role=textbox[name=\"目录（可选）\"i]",
+    "assertion": "to.have.value",
+    "result": "",
+    "pass": true
+  },
+  {
+    "key": "Escape"
+  },
+  {
+    "target": "internal:role=button[name=\"根目录更多\"i]",
+    "assertion": "to.be.focused",
+    "result": "focused",
+    "pass": true
+  }
+]

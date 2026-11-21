@@ -98,9 +98,8 @@ test("reader shortcuts leave active editors alone and invalid blocks clear safel
 
 test("device preferences survive reload", async ({ page }) => {
   await createNote(page, "Preferences.md", "设备设置测试");
-  await page.getByRole("button", { name: "布局" }).click();
-  await page.getByRole("menuitem", { name: "阅读设置" }).click();
-  const settings = page.getByRole("dialog", { name: "阅读设置" });
+  await page.getByRole("banner").getByRole("button", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "应用设置" });
   await settings.getByRole("button", { name: /主题/ }).click();
   await page.getByRole("option", { name: "深色" }).click();
   const eink = settings.getByRole("checkbox", { name: "墨水屏" });
@@ -118,9 +117,8 @@ test("device preferences survive reload", async ({ page }) => {
 
 test("settings tabs preserve drafts and save values from inactive tabs", async ({ page }) => {
   await createNote(page, "SettingsTabs.md", "设备设置分组");
-  await page.getByRole("button", { name: "布局" }).click();
-  await page.getByRole("menuitem", { name: "阅读设置" }).click();
-  const settings = page.getByRole("dialog", { name: "阅读设置" });
+  await page.getByRole("banner").getByRole("button", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "应用设置" });
   const appearance = settings.getByRole("tab", { name: "外观" });
   const reading = settings.getByRole("tab", { name: "阅读与布局" });
   const shortcuts = settings.getByRole("tab", { name: "快捷键" });
@@ -290,4 +288,105 @@ test("inserting an identical block earlier never moves semantic focus to the wro
   await page.getByRole("textbox", { name: "Markdown 正文" }).press("Escape");
   await expect(reader.getByText("重复。", { exact: true })).toHaveCount(3);
   await expect(anchored).toHaveCount(0);
+});
+
+test("search dismissal and the settings command restore the original reading position and focus", async ({
+  page,
+}) => {
+  await createNote(page, "SearchResume.md", markdown);
+  const reader = page.getByRole("article");
+  const main = page.getByRole("main");
+  await reader.focus();
+  await main.evaluate((node) => (node.scrollTop = 430));
+
+  const palette = page.getByRole("dialog", { name: "快速打开与全文搜索" });
+  await reader.press("Control+k");
+  const input = palette.getByRole("searchbox");
+  await input.fill("没有这份湿地记录");
+  await expect(palette.getByText("未找到文档")).toBeVisible();
+  await input.press("Escape");
+  await expect(palette).toBeHidden();
+  await expect(reader).toBeFocused();
+  expect(await main.evaluate((node) => node.scrollTop)).toBe(430);
+
+  await reader.press("Control+k");
+  await input.fill("设置");
+  await palette.getByRole("option", { name: "设置", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "应用设置" });
+  await expect(settings.getByRole("tab", { name: "外观" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  await expect(reader).toBeFocused();
+  expect(await main.evaluate((node) => node.scrollTop)).toBe(430);
+});
+
+test("topbar settings keep an edit draft and leave layout presets together", async ({ page }) => {
+  await createNote(page, "SettingsReturn.md", "文稿正文。");
+  const bar = page.getByRole("banner");
+  await bar.getByRole("button", { name: "布局", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(4);
+  await expect(menu.getByRole("menuitem", { name: /设置/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("article").press("Alt+e");
+  const editor = page.getByRole("textbox", { name: "Markdown 正文" });
+  await editor.press("Control+End");
+  await page.keyboard.insertText("保留编辑位置。");
+  const button = bar.getByRole("button", { name: "设置", exact: true });
+  await button.click();
+  const settings = page.getByRole("dialog", { name: "应用设置" });
+  await settings.getByRole("button", { name: "取消" }).click();
+  await expect(button).toBeFocused();
+  const reader = page.getByRole("article");
+  await expect(reader).toContainText("保留编辑位置。");
+  await reader.press("Alt+e");
+  await expect(editor).toContainText("保留编辑位置。");
+  await editor.press("Control+z");
+  await expect(editor).not.toContainText("保留编辑位置。");
+});
+
+test("settings retry a failed initial load before exposing a draft of the existing preferences", async ({
+  page,
+}) => {
+  const { origin } = await createNote(page, "SettingsInitialRead.md", "已有设备偏好。");
+  await expect(page.getByRole("article")).toContainText("已有设备偏好");
+  const device = await page.evaluate(() => localStorage.getItem("librarian.device"));
+  const endpoint = `/api/v1/settings/devices/${device}`;
+  const current = (await (await page.request.get(endpoint)).json()) as DevicePreferences;
+  const saved = await page.request.put(endpoint, {
+    headers: { origin },
+    data: { ...current, fontSize: 23 },
+  });
+  expect(saved.ok()).toBe(true);
+
+  let release = () => {};
+  const initial = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    `**${endpoint}`,
+    async (route) => {
+      await initial;
+      await route.fulfill({ status: 503 });
+    },
+    { times: 1 },
+  );
+  await page.reload();
+  const button = page.getByRole("banner").getByRole("button", { name: "设置", exact: true });
+  await button.click();
+  const dialog = page.getByRole("dialog", { name: "应用设置" });
+  try {
+    await expect(dialog.getByRole("status")).toContainText("正在读取设备设置");
+    await expect(dialog.getByRole("button", { name: "保存设置" })).toHaveCount(0);
+  } finally {
+    release();
+  }
+  await expect(dialog.getByRole("alert")).toContainText("无法读取设备设置");
+  await dialog.getByRole("button", { name: "重试" }).click();
+  await dialog.getByRole("tab", { name: "阅读与布局" }).click();
+  await expect(dialog.getByLabel("字号", { exact: true })).toHaveValue("23");
+  await dialog.getByRole("button", { name: "保存设置" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(button).toBeFocused();
 });

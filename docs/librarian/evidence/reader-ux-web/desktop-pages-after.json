@@ -1,0 +1,121 @@
+{
+  "general": {
+    "headings": [
+      [
+        "田野笔记",
+        111
+      ],
+      [
+        "空间设置",
+        266
+      ],
+      [
+        "移动或重命名",
+        470
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "members": {
+    "headings": [
+      [
+        "田野笔记",
+        111
+      ],
+      [
+        "空间成员",
+        266
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "delivery": {
+    "headings": [
+      [
+        "田野笔记",
+        111
+      ],
+      [
+        "导入文件",
+        266
+      ],
+      [
+        "项目自动导入",
+        572
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "release": {
+    "headings": [
+      [
+        "田野笔记",
+        111
+      ],
+      [
+        "阅读地址",
+        340
+      ],
+      [
+        "有效期与附件",
+        795
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "accounts": {
+    "headings": [
+      [
+        "账号管理",
+        111
+      ],
+      [
+        "修改密码",
+        215
+      ],
+      [
+        "新建账号",
+        453
+      ],
+      [
+        "已有账号",
+        691
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "create": {
+    "headings": [
+      [
+        "新建空间",
+        111
+      ],
+      [
+        "高级选项",
+        286
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "ai": {
+    "headings": [
+      [
+        "Workspace AI",
+        111
+      ]
+    ],
+    "viewport": 1440,
+    "overflow": 0
+  },
+  "snapshot": {
+    "y": 165.75,
+    "visibleLinks": 0,
+    "height": 900
+  }
+}

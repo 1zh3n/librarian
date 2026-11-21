@@ -134,12 +134,21 @@ export function CommandPalette({
       <Modal className={styles.modal}>
         <Dialog aria-label={workspace ? "快速打开与全文搜索" : "命令"} className={styles.dialog}>
           <Autocomplete inputValue={text} onInputChange={setText} disableAutoFocusFirst>
-            <div className={styles.toolbar}>
+            <div
+              className={styles.toolbar}
+              onKeyDownCapture={(event) => {
+                if (event.key !== "Escape") return;
+                event.stopPropagation();
+                if (event.nativeEvent.isComposing) return;
+                event.preventDefault();
+                onClose();
+              }}
+            >
               <SearchField aria-label={inputLabel} className={styles.field}>
                 <span className={styles.searchIcon} aria-hidden="true" />
                 <Input
                   ref={input}
-                  placeholder={inputLabel}
+                  placeholder={workspace ? "搜索文档或命令" : inputLabel}
                   className={styles.input}
                   maxLength={256}
                 />
@@ -151,7 +160,7 @@ export function CommandPalette({
                   </ToggleButton>
                 )}
                 <Button aria-label="关闭搜索" className={styles.close} onPress={onClose}>
-                  Esc
+                  关闭
                 </Button>
               </div>
             </div>

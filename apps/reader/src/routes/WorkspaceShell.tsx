@@ -89,19 +89,21 @@ export function WorkspaceShell() {
   const viewport = useRef<HTMLElement>(null);
   const layout = useRef<HTMLDivElement>(null);
   const navigationPanel = usePanelRef();
-  const { preferences, save } = useDevicePreferences(Boolean(workspaces.data));
+  const { preferences, settingsQuery, save } = useDevicePreferences(Boolean(workspaces.data));
   const focus = useReadingFocus(viewport, layout, documentId);
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
   const [navigationOverride, setNavigationOverride] = useState<boolean>();
   const [layoutSelection, setLayoutSelection] = useState(0);
   const [search, setSearch] = useState(false);
   const [settings, setSettings] = useState(false);
+  const dialogOrigin = useRef<Element | null>(null);
   const [settingsError, setSettingsError] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [createDocumentFor, setCreateDocumentFor] = useState<{
     workspace: string;
     folder: string;
+    origin: Element;
   }>();
   const [createdDocument, setCreatedDocument] = useState<string>();
   const [creationNotice, setCreationNotice] = useState<string>();
@@ -137,13 +139,13 @@ export function WorkspaceShell() {
   const canCreate = Boolean(workspace?.canWrite);
 
   const showCreateDocument = useCallback(
-    (folder = activeFolder) => {
+    (folder: string, origin: Element) => {
       if (canCreate) {
         setCreationNotice(undefined);
-        setCreateDocumentFor({ workspace: selected, folder });
+        setCreateDocumentFor({ workspace: selected, folder, origin });
       }
     },
-    [activeFolder, canCreate, selected],
+    [canCreate, selected],
   );
 
   async function openCreatedDocument(snapshot: DocumentSnapshot) {
@@ -209,10 +211,12 @@ export function WorkspaceShell() {
       if (
         !event.isComposing &&
         !isEditingTarget(event.target) &&
+        !(event.target instanceof Element && event.target.closest("[role=dialog]")) &&
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === "k"
       ) {
         event.preventDefault();
+        dialogOrigin.current = document.activeElement;
         setSearch(true);
       }
     }
@@ -276,7 +280,7 @@ export function WorkspaceShell() {
   const focusLabel = focus.active ? "退出专注阅读" : "专注阅读";
   const commands = [
     ...(documentId ? [{ id: "focus", title: focusLabel, run: focus.toggle }] : []),
-    { id: "settings", title: "阅读设置", run: () => setSettings(true) },
+    { id: "settings", title: "设置", run: () => setSettings(true) },
     ...(session.data
       ? [
           {
@@ -378,13 +382,6 @@ export function WorkspaceShell() {
                           {focusLabel}
                         </MenuItem>
                       )}
-                      <MenuItem
-                        id="settings"
-                        className={styles.spaceOption}
-                        onAction={() => setSettings(true)}
-                      >
-                        阅读设置
-                      </MenuItem>
                     </Menu>
                   </Popover>
                 </MenuTrigger>
@@ -393,9 +390,23 @@ export function WorkspaceShell() {
                 aria-label={workspace ? "搜索文档" : "命令"}
                 aria-keyshortcuts="Control+K Meta+K"
                 className={styles.button}
-                onPress={() => setSearch(true)}
+                aria-haspopup="dialog"
+                onPress={(event) => {
+                  dialogOrigin.current = event.target;
+                  setSearch(true);
+                }}
               >
                 {workspace ? "搜索" : "命令"}
+              </Button>
+              <Button
+                className={styles.button}
+                aria-haspopup="dialog"
+                onPress={(event) => {
+                  dialogOrigin.current = event.target;
+                  setSettings(true);
+                }}
+              >
+                设置
               </Button>
             </div>
           )}
@@ -482,11 +493,6 @@ export function WorkspaceShell() {
                     <Tooltip className={styles.tooltip}>空间设置</Tooltip>
                   </TooltipTrigger>
                 </div>
-                {canCreate && (
-                  <Button className={styles.newDocument} onPress={() => showCreateDocument()}>
-                    <span aria-hidden="true">＋</span> 新建文档
-                  </Button>
-                )}
                 {resource.data && (
                   <SpaceTree
                     key={selected}
@@ -552,9 +558,12 @@ export function WorkspaceShell() {
               ) : (
                 <div className={styles.state}>
                   <p>这个空间还没有文档</p>
-                  {canCreate && !navigationVisible && (
-                    <Button variant="primary" onPress={() => showCreateDocument()}>
-                      新建文档
+                  {canCreate && (
+                    <Button
+                      variant="primary"
+                      onPress={(event) => showCreateDocument("", event.target)}
+                    >
+                      新建第一篇文档
                     </Button>
                   )}
                 </div>
@@ -562,12 +571,19 @@ export function WorkspaceShell() {
             </main>
           </Panel>
         </Group>
-        {canCreate && createDocumentFor?.workspace === selected && (
+        {createDocumentFor?.workspace === selected && (
           <CreateDocumentDialog
             workspace={selected}
             folder={createDocumentFor.folder}
+            canCreate={canCreate}
             created={openCreatedDocument}
-            close={() => setCreateDocumentFor(undefined)}
+            close={() => {
+              const { origin } = createDocumentFor;
+              setCreateDocumentFor(undefined);
+              requestAnimationFrame(() => {
+                if (origin instanceof HTMLElement) origin.focus({ preventScroll: true });
+              });
+            }}
           />
         )}
         {settingsError && (
@@ -598,9 +614,17 @@ export function WorkspaceShell() {
         {settings && (
           <Suspense>
             <ReadingSettings
-              preferences={preferences}
+              preferences={settingsQuery.data}
+              loading={settingsQuery.isFetching}
+              retry={() => void settingsQuery.refetch()}
               save={save}
-              close={() => setSettings(false)}
+              close={() => {
+                setSettings(false);
+                const origin = dialogOrigin.current;
+                if (origin instanceof HTMLElement) {
+                  requestAnimationFrame(() => origin.focus({ preventScroll: true }));
+                }
+              }}
             />
           </Suspense>
         )}

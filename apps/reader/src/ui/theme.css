@@ -30,6 +30,21 @@
   --accent-foreground: var(--paper);
 }
 
+.button--primary {
+  color: var(--accent-foreground);
+  background: var(--accent);
+}
+
+.button--primary[data-hovered] {
+  background: color-mix(in srgb, var(--accent) 86%, var(--ink));
+}
+
+.button--primary[data-disabled] {
+  color: var(--ink-secondary);
+  background: var(--surface-muted);
+  opacity: 1;
+}
+
 @media (pointer: coarse) {
   .button {
     min-block-size: 44px;

@@ -1,4 +1,9 @@
 declare const styles: {
+  readonly directory: string;
+  readonly heading: string;
+  readonly more: string;
+  readonly moreIcon: string;
+  readonly tooltip: string;
   readonly tree: string;
   readonly row: string;
   readonly item: string;

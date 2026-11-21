@@ -196,6 +196,11 @@
   background: var(--surface-muted);
 }
 
+.navigation:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
 .workspaceBar {
   display: flex;
   align-items: center;
@@ -206,14 +211,6 @@
 .workspaceChooser {
   flex: 1;
   min-width: 0;
-}
-
-.newDocument {
-  width: calc(100% - 1rem);
-  min-height: 40px;
-  justify-content: flex-start;
-  margin: 0 0.5rem 0.4rem;
-  padding-inline: 0.75rem;
 }
 
 .workspace {
@@ -342,6 +339,11 @@
 }
 
 @media (max-width: 800px) {
+  .bar .button {
+    min-width: 44px;
+    padding-inline: clamp(4px, 2vw, 10px);
+  }
+
   .breadcrumbFolder {
     display: none;
   }

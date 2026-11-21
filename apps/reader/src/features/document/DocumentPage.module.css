@@ -8,6 +8,7 @@
 }
 
 .title {
+  text-wrap: balance;
   width: min(100%, var(--focus-measure, var(--measure)));
   margin: 0 0 1rem;
   font-family: var(--reading-font);
@@ -234,6 +235,7 @@
 }
 
 .canvas h1 {
+  text-wrap: balance;
   font-size: var(--reading-title-size);
   line-height: 1.16;
   letter-spacing: -0.035em;
@@ -292,6 +294,26 @@
   overflow: auto;
   border-inline-start: 1px solid var(--border);
   font-size: var(--ui-size);
+}
+
+.contentsTitle {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0.75rem;
+  display: flex;
+  block-size: 2.75rem;
+  align-items: center;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--ui-size);
+  font-weight: 600;
+}
+
+.contents a[aria-current="location"] {
+  box-shadow: inset 2px 0 var(--accent);
+  background: var(--surface-selected);
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .contents a {
@@ -521,12 +543,32 @@
   }
 
   .toolTabs {
+    max-block-size: calc(100dvh - 8.5rem);
+  }
+
+  .documentGrid:is([data-tool="outline"], [data-tool="ai"]) .toolTabs {
     block-size: min(48rem, calc(100dvh - 8.5rem));
     min-block-size: 14rem;
+  }
+
+  .outlineCanvas {
+    display: grid;
+    min-block-size: 100%;
+    max-block-size: none;
   }
 }
 
 @container reading-viewport (max-width: 849px) {
+  .toolPane[data-beside-passage] {
+    position: absolute;
+    inset-block-start: var(--passage-tool-top);
+    inset-inline: 0;
+  }
+
+  .canvas article > [data-tool-passage] {
+    margin-block-start: calc(var(--passage-margin) + var(--passage-tool-space));
+  }
+
   .documentGrid:not([data-tool]) {
     padding-block-start: var(--focus-tool-inset, 0px);
   }

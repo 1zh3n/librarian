@@ -75,25 +75,53 @@ export function WorkspaceManagementRoute() {
     delivery,
     ...(canRelease ? [release] : []),
   ];
-  const requested = hash === "space" || hash === "directory" ? general.id : hash;
+  const releaseActions = [
+    ...(workspace.canWrite
+      ? [
+          {
+            id: "release",
+            title: "阅读地址",
+            panel: <SnapshotPanel workspace={workspaceId} documents={documents.data ?? []} />,
+          },
+        ]
+      : []),
+    ...(workspace.canManage
+      ? [
+          {
+            id: "release-site",
+            title: "站点发布",
+            panel: <PublicationPanel workspace={workspaceId} documents={documents.data ?? []} />,
+          },
+          {
+            id: "release-backup",
+            title: "Git 备份",
+            panel: <BackupPanel workspace={workspaceId} />,
+          },
+        ]
+      : []),
+  ];
+  const activeAction = releaseActions.find(({ id }) => id === hash) ?? releaseActions[0];
+  const requested =
+    hash === "space" || hash === "directory"
+      ? general.id
+      : releaseActions.some(({ id }) => id === hash)
+        ? release.id
+        : hash;
+  const openTab = (key: React.Key) => {
+    void navigate({
+      to: "/workspaces/$workspaceId/manage",
+      params: { workspaceId },
+      hash: String(key),
+      hashScrollIntoView: false,
+      resetScroll: false,
+    });
+  };
   const selected =
     tabs.find(({ id }) => id === requested)?.id ?? (workspace.canManage ? general.id : delivery.id);
   return (
     <div className={styles.page}>
       <h1>{workspace.name}</h1>
-      <Tabs
-        key={workspaceId}
-        selectedKey={selected}
-        onSelectionChange={(key) =>
-          void navigate({
-            to: "/workspaces/$workspaceId/manage",
-            params: { workspaceId },
-            hash: String(key),
-            hashScrollIntoView: false,
-            resetScroll: false,
-          })
-        }
-      >
+      <Tabs key={workspaceId} selectedKey={selected} onSelectionChange={openTab}>
         <Tabs.List aria-label="空间设置" className={styles.tabList}>
           {tabs.map(({ id, title }) => (
             <Tabs.Tab key={id} id={id} className={styles.tab}>
@@ -124,16 +152,25 @@ export function WorkspaceManagementRoute() {
           <DeliveryPanel workspace={workspaceId} writable={workspace.canWrite} />
           {workspace.canManage && <DeliveryTokens workspace={workspaceId} />}
         </Tabs.Panel>
-        {canRelease && (
+        {activeAction && (
           <Tabs.Panel id={release.id} shouldForceMount className={styles.group}>
-            {workspace.canManage && (
-              <>
-                <BackupPanel workspace={workspaceId} />
-                <PublicationPanel workspace={workspaceId} documents={documents.data ?? []} />
-              </>
-            )}
-            {workspace.canWrite && (
-              <SnapshotPanel workspace={workspaceId} documents={documents.data ?? []} />
+            {releaseActions.length === 1 ? (
+              activeAction.panel
+            ) : (
+              <Tabs selectedKey={activeAction.id} onSelectionChange={openTab}>
+                <Tabs.List aria-label="发布任务" className={styles.taskList}>
+                  {releaseActions.map(({ id, title }) => (
+                    <Tabs.Tab key={id} id={id} className={styles.task}>
+                      {title}
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+                {releaseActions.map(({ id, panel }) => (
+                  <Tabs.Panel key={id} id={id} shouldForceMount className={styles.group}>
+                    {panel}
+                  </Tabs.Panel>
+                ))}
+              </Tabs>
             )}
           </Tabs.Panel>
         )}

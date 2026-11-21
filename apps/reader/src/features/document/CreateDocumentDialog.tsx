@@ -1,6 +1,7 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
+import { workspaceKeys } from "../../api/queries";
 import type { DocumentSnapshot } from "../../api/client";
 import {
   Button,
@@ -18,14 +19,17 @@ import styles from "./CreateDocumentDialog.module.css";
 export function CreateDocumentDialog({
   workspace,
   folder,
+  canCreate,
   close,
   created,
 }: {
   workspace: string;
   folder: string;
+  canCreate: boolean;
   close: () => void;
   created: (document: DocumentSnapshot) => void;
 }) {
+  const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [directory, setDirectory] = useState(folder);
   const nameField = useRef<HTMLInputElement>(null);
@@ -39,8 +43,24 @@ export function CreateDocumentDialog({
       return api.createDocument(workspace, { path, markdown: "", baseRevision: null });
     },
     onSuccess: created,
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 403) {
+        void queryClient.invalidateQueries({ queryKey: workspaceKeys.all, exact: true });
+      }
+    },
   });
   const error = create.error;
+  const canSubmit = canCreate && Boolean(filename) && !invalidName && !create.isPending;
+  let message = "";
+  if (!canCreate || (error instanceof ApiError && error.status === 403)) {
+    message = "写入权限已变更，请联系空间管理员恢复权限后重试。";
+  } else if (invalidName) {
+    message = "请在名称中使用文件名，在下方填写目录。";
+  } else if (error instanceof ApiError && error.status === 409) {
+    message = "该目录已有同名文档，请更换名称。";
+  } else if (error) {
+    message = "无法创建文档，请核对目录和权限后重试。";
+  }
 
   return (
     <ModalOverlay
@@ -57,7 +77,7 @@ export function CreateDocumentDialog({
             className={styles.form}
             onSubmit={(event) => {
               event.preventDefault();
-              if (filename && !invalidName && !create.isPending) create.mutate();
+              if (canSubmit) create.mutate();
             }}
           >
             <TextField className={styles.field} value={name} onChange={setName} isRequired>
@@ -68,24 +88,16 @@ export function CreateDocumentDialog({
               <Label>目录（可选）</Label>
               <Input placeholder="例如 研究/样本" />
             </TextField>
-            {(invalidName || error) && (
+            {message && (
               <p className={styles.error} role="alert">
-                {invalidName
-                  ? "请在名称中使用文件名，在下方填写目录。"
-                  : error instanceof ApiError && error.status === 409
-                    ? "该目录已有同名文档，请更换名称。"
-                    : "无法创建文档，请核对目录和权限后重试。"}
+                {message}
               </p>
             )}
             <div className={styles.actions}>
               <Button isDisabled={create.isPending} onPress={close}>
                 取消
               </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                isDisabled={!filename || invalidName || create.isPending}
-              >
+              <Button type="submit" variant="primary" isDisabled={!canSubmit}>
                 {create.isPending ? "正在创建…" : "创建文档"}
               </Button>
             </div>

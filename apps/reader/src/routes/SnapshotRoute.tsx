@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { Snapshot } from "../api/client";
 import documentStyles from "../features/document/DocumentPage.module.css";
@@ -9,6 +9,7 @@ import { offlineAvailable } from "../features/offline/readerOffline";
 import { analyzeMarkdown } from "../markdown/analyze";
 import { ReaderSurface } from "../markdown/ReaderSurface";
 import { relativeDocumentPath } from "../markdown/relativePath";
+import { Disclosure } from "../ui/Disclosure";
 import styles from "./SnapshotRoute.module.css";
 
 const route = getRouteApi("/r/$snapshotId");
@@ -22,6 +23,19 @@ export function SnapshotRoute() {
     staleTime: 0,
     networkMode: "always",
   });
+  const main = useRef<HTMLElement>(null);
+  const selectedChapter = useRef<string | null>(null);
+  const currentId = result.data?.snapshot.document.id;
+  const focusChapter = () => {
+    const heading = main.current?.querySelector("h1");
+    if (!heading) return;
+    heading.tabIndex = -1;
+    heading.focus();
+    selectedChapter.current = null;
+  };
+  useEffect(() => {
+    if (currentId && selectedChapter.current === currentId) focusChapter();
+  }, [currentId]);
   const { refetch } = result;
   useEffect(() => {
     if (!offlineAvailable()) return;
@@ -37,7 +51,7 @@ export function SnapshotRoute() {
   })}`;
 
   return (
-    <main className={documentStyles.page}>
+    <main ref={main} className={documentStyles.page}>
       <meta name="referrer" content="no-referrer" />
       {result.isPending ? (
         <output className={documentStyles.message}>正在打开阅读地址…</output>
@@ -51,13 +65,30 @@ export function SnapshotRoute() {
           阅读地址不可用
         </p>
       ) : (
-        <SnapshotReader snapshot={result.data.snapshot} offline={result.data.offline} />
+        <SnapshotReader
+          key={currentId}
+          snapshot={result.data.snapshot}
+          offline={result.data.offline}
+          onChoose={(id) => {
+            selectedChapter.current = id;
+            if (id === currentId) focusChapter();
+          }}
+        />
       )}
     </main>
   );
 }
 
-function SnapshotReader({ snapshot, offline }: { snapshot: Snapshot; offline: boolean }) {
+function SnapshotReader({
+  snapshot,
+  offline,
+  onChoose,
+}: {
+  snapshot: Snapshot;
+  offline: boolean;
+  onChoose: (id: string) => void;
+}) {
+  const [directoryOpen, setDirectoryOpen] = useState(false);
   const { id, document, documents, attachmentPaths, kind } = snapshot;
   const analysis = useMemo(() => analyzeMarkdown(document.markdown, document.id), [document]);
   const resolveLink = useCallback(
@@ -95,19 +126,46 @@ function SnapshotReader({ snapshot, offline }: { snapshot: Snapshot; offline: bo
         <p className={styles.kind}>{kind === "release" ? "固定版本" : "当前地址"}</p>
         {kind === "release" && <OfflineSnapshotControl key={id} id={id} offline={offline} />}
         {documents.length > 1 && (
-          <nav aria-label="阅读地址中的文档" className={styles.navigation}>
-            {documents.map((item) => (
-              <Link
-                key={item.id}
-                to="/r/$snapshotId"
-                params={{ snapshotId: id }}
-                search={{ documentId: item.id }}
-                aria-current={item.id === document.id ? "page" : false}
-              >
-                {item.title}
-              </Link>
-            ))}
-          </nav>
+          <Disclosure
+            isExpanded={directoryOpen}
+            onExpandedChange={setDirectoryOpen}
+            className={styles.directory}
+          >
+            <Disclosure.Heading>
+              <Disclosure.Trigger className={styles.directoryTrigger}>
+                文档目录 · {documents.length} 篇 <Disclosure.Indicator />
+              </Disclosure.Trigger>
+            </Disclosure.Heading>
+            <Disclosure.Content>
+              <Disclosure.Body>
+                <nav aria-label="阅读地址中的文档" className={styles.navigation}>
+                  {documents.map((item) => (
+                    <Link
+                      key={item.id}
+                      to="/r/$snapshotId"
+                      params={{ snapshotId: id }}
+                      search={{ documentId: item.id }}
+                      onClick={(event) => {
+                        if (
+                          event.button !== 0 ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey
+                        )
+                          return;
+                        setDirectoryOpen(false);
+                        onChoose(item.id);
+                      }}
+                      aria-current={item.id === document.id ? "page" : false}
+                    >
+                      {item.title}
+                    </Link>
+                  ))}
+                </nav>
+              </Disclosure.Body>
+            </Disclosure.Content>
+          </Disclosure>
         )}
         {!titleIsFirstHeading && <h1 className={documentStyles.title}>{document.title}</h1>}
       </header>

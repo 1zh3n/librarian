@@ -14,6 +14,7 @@ declare const styles: {
   readonly tabPanel: string;
   readonly canvas: string;
   readonly contents: string;
+  readonly contentsTitle: string;
   readonly outlineCanvas: string;
   readonly metadata: string;
   readonly referenceHeading: string;
