@@ -59,3 +59,10 @@ DELETE /api/v1/mcp/grants/{id}   authenticated, own grant, same origin -> 204
 - 实体手机中文输入、读屏和墨水屏。
 
 CI 的 `CI` workflow 当前在 GitHub 仓库中被手动禁用，因此本次推送没有新的远端 CI 运行；本地等价检查已通过。
+
+## 设置布局调整
+
+- 保持应用/空间两层设置，不新增设置页面。
+- 弹窗固定高度 `min(82dvh, 46rem)`，`scrollbar-gutter: stable`，标签栏 sticky，内容在弹窗内部滚动。
+- AI 设置顺序调整为：我的模型 → 连接配置（可折叠）→ 全局 AI 与执行器（可折叠）。
+- 模型能力来自供应商模型目录的 per-model 元数据，不是硬编码默认值；只显示供应商实际提供的字段，摘要可收起，展开显示精确值。
