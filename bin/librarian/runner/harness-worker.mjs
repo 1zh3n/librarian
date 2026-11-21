@@ -24,14 +24,14 @@ const SYSTEM_PROMPT = [
 const PROBE_PROMPT = "Reply with OK.";
 const pending = new Map();
 let sequence = 0;
-parentPort.on("message", ({id, value}) => {
+parentPort.on("message", ({ id, value }) => {
   pending.get(id)?.(value);
   pending.delete(id);
 });
 function request(kind, data) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const id = ++sequence;
-    pending.set(id,resolve);
+    pending.set(id, resolve);
     parentPort.postMessage({ kind, id, ...data });
   });
 }
@@ -41,7 +41,7 @@ async function execute({ provider, selection, ca, taskKind, mode, tools, prompt 
   globalThis.fetch = messagesTransport(provider, selection, ca);
   const connection = resolveAdapterOptions({
     baseURL: provider.messagesUrl.slice(0, -"/messages".length),
-    models: [{ id: selection.modelId, inputModalities:["text"] }],
+    models: [{ id: selection.modelId, inputModalities: ["text"] }],
   });
   const ctx = new Context();
   const plugins = [];
@@ -49,17 +49,43 @@ async function execute({ provider, selection, ca, taskKind, mode, tools, prompt 
   let handle;
   let rounds = 0;
   let final = false;
+  let credentialEcho = false;
+  let possiblePrefix = "";
+  function checkOutput(value) {
+    if (typeof value === "string" && value.includes(provider.apiKey)) {
+      credentialEcho = true;
+      throw new TaskError("PRIVATE_PROVIDER_OUTPUT");
+    }
+    if (value && typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        checkOutput(key);
+        checkOutput(item);
+      }
+    }
+  }
+  async function visibleDelta(delta) {
+    const text = possiblePrefix + delta;
+    checkOutput(text);
+    // Hold only the suffix that could become the provider key in the next delta.
+    let retained = Math.min(text.length, provider.apiKey.length - 1);
+    while (retained && !text.endsWith(provider.apiKey.slice(0, retained))) retained--;
+    const visible = text.slice(0, text.length - retained);
+    possiblePrefix = text.slice(text.length - retained);
+    if (visible) await request("text", { text: visible });
+  }
 
   class ManagedAdapter extends DeepSeekAdapter {
     async prepareCall(...args) {
+      if (credentialEcho) throw new TaskError("PRIVATE_PROVIDER_OUTPUT");
       const call = await super.prepareCall(...args);
       return {
         ...call,
         async *stream(options) {
           if (++rounds > 8 || (probe && rounds > 1)) throw new TaskError("ROUND_LIMIT");
           for await (const chunk of call.stream(options)) {
-            if ((final || probe) && chunk.type === "block-start" && chunk.blockType === "tool-call") throw new TaskError("UNEXPECTED_TOOL");
-            if (final && chunk.type === "text-delta" && chunk.text) await request("text", { text:chunk.text });
+            if ((final || probe) && chunk.type === "block-start" && chunk.blockType === "tool-call")
+              throw new TaskError("UNEXPECTED_TOOL");
+            if (final && chunk.type === "text-delta" && chunk.text) await visibleDelta(chunk.text);
             yield chunk;
           }
         },
@@ -69,51 +95,92 @@ async function execute({ provider, selection, ca, taskKind, mode, tools, prompt 
 
   try {
     for (const [plugin, options] of [
-      [LlmRuntime], [SessionStore], [SessionProjection],
-      [SystemPrompt, { personaPrefix: probe ? "Connectivity test." : SYSTEM_PROMPT, includeHarnessIdentity:false, includeRuntimeContext:false }],
-      [ToolRuntime], [NativeToolExecutor], [AgentRegistry], [AgentLoop, { agents:[], maxParallelToolCalls:1 }],
+      [LlmRuntime],
+      [SessionStore],
+      [SessionProjection],
+      [
+        SystemPrompt,
+        {
+          personaPrefix: probe ? "Connectivity test." : SYSTEM_PROMPT,
+          includeHarnessIdentity: false,
+          includeRuntimeContext: false,
+        },
+      ],
+      [ToolRuntime],
+      [NativeToolExecutor],
+      [AgentRegistry],
+      [AgentLoop, { agents: [], maxParallelToolCalls: 1 }],
     ]) {
       const fiber = ctx.plugin(plugin, options);
       await fiber;
       plugins.push(fiber);
     }
     const userId = randomUUID();
-    ctx.llm.registerAdapter(["deepseek-official"], new ManagedAdapter({
-      options: () => connection,
-      resolveAuth: async () => ({ headers:{} }),
-      resolveUserId: () => userId,
-      prepareExtensions: async () => ({fields:{}, accept:async () => {}}),
-    }));
+    ctx.llm.registerAdapter(
+      ["deepseek-official"],
+      new ManagedAdapter({
+        options: () => connection,
+        resolveAuth: async () => ({ headers: {} }),
+        resolveUserId: () => userId,
+        prepareExtensions: async () => ({ fields: {}, accept: async () => {} }),
+      }),
+    );
     handle = await ctx.agents.create({
       sessionId: randomUUID(),
-      agentOptions: { provider:"deepseek-official", model:selection.modelId, maxTokens:probe ? 64 : 8192 },
+      agentOptions: {
+        provider: "deepseek-official",
+        model: selection.modelId,
+        maxTokens: probe ? 64 : 8192,
+      },
       setup(agentCtx) {
         for (const definition of tools) {
-          unregister.push(agentCtx.tools.register(defineTool({
-            ...definition,
-            execute: args => request("tool", { name:definition.name,args }),
-            output:{schema:{type:"json"},render:(_args,result) => [{type:"text",text:JSON.stringify(result)}]},
-          })));
+          unregister.push(
+            agentCtx.tools.register(
+              defineTool({
+                ...definition,
+                execute(args) {
+                  checkOutput(args);
+                  if (credentialEcho) throw new TaskError("PRIVATE_PROVIDER_OUTPUT");
+                  return request("tool", { name: definition.name, args });
+                },
+                output: {
+                  schema: { type: "json" },
+                  render: (_args, result) => [{ type: "text", text: JSON.stringify(result) }],
+                },
+              }),
+            ),
+          );
         }
       },
     });
     const { agent } = handle;
     async function turn(text) {
-      agent.followup(createUserMessage({ content:[{type:"text",text}],source:{kind:"user"} }));
+      agent.followup(
+        createUserMessage({ content: [{ type: "text", text }], source: { kind: "user" } }),
+      );
       await agent.whenIdle();
       const events = agent.session.snapshotEvents();
-      const end = events.findLast(e => e.type === "turn/end")?.data.reason;
+      const end = events.findLast((e) => e.type === "turn/end")?.data.reason;
       if (end?.kind !== "completed") throw new TaskError(end?.error?.code ?? "INCOMPLETE");
-      return events.findLast(e => e.type === "assistant/message")?.data.message.content
-        .filter(b => b.type === "text").map(b => b.text).join("");
+      return events
+        .findLast((e) => e.type === "assistant/message")
+        ?.data.message.content.filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("");
     }
     let answer = await turn(probe ? PROBE_PROMPT : prompt);
     if (!probe && mode === "chat") {
       for (const remove of unregister) remove();
       final = true;
-      answer = await turn("Now answer the current question using the gathered evidence. Return only the user-visible answer.");
+      answer = await turn(
+        "Now answer the current question using the gathered evidence. Return only the user-visible answer.",
+      );
     }
-    if (!answer?.trim() || Buffer.byteLength(answer) > 256 * 1024) throw new TaskError("INVALID_ANSWER");
+    if (!answer?.trim() || Buffer.byteLength(answer) > 256 * 1024)
+      throw new TaskError("INVALID_ANSWER");
+    checkOutput(answer);
+    if (credentialEcho) throw new TaskError("PRIVATE_PROVIDER_OUTPUT");
+    if (possiblePrefix) await request("text", { text: possiblePrefix });
     return probe ? null : answer;
   } finally {
     await handle?.dispose();
@@ -123,14 +190,30 @@ async function execute({ provider, selection, ca, taskKind, mode, tools, prompt 
 
 try {
   const answer = await execute(workerData);
-  parentPort.postMessage({kind:"done",answer});
+  parentPort.postMessage({ kind: "done", answer });
 } catch (error) {
   // Only enum values cross the worker boundary. SDK errors can include full provider bodies.
-  const known = ["AUTH","RATE_LIMIT","TIMEOUT","INVALID_REQUEST","EMPTY_RESPONSE","MALFORMED_RESPONSE",
-    "STREAM_CLOSED","UNSUPPORTED_CONTENT","INCOMPLETE","INVALID_ANSWER","UNKNOWN","TRANSPORT","SERVER"];
-  const code = /^HTTP_3\d\d$/.test(error.code) ? "REDIRECT"
-    : known.includes(error.code) ? error.code : "INCOMPATIBLE";
-  parentPort.postMessage({kind:"failure",code});
+  const known = [
+    "AUTH",
+    "RATE_LIMIT",
+    "TIMEOUT",
+    "INVALID_REQUEST",
+    "EMPTY_RESPONSE",
+    "MALFORMED_RESPONSE",
+    "STREAM_CLOSED",
+    "UNSUPPORTED_CONTENT",
+    "INCOMPLETE",
+    "INVALID_ANSWER",
+    "UNKNOWN",
+    "TRANSPORT",
+    "SERVER",
+  ];
+  const code = /^HTTP_3\d\d$/.test(error.code)
+    ? "REDIRECT"
+    : known.includes(error.code)
+      ? error.code
+      : "INCOMPATIBLE";
+  parentPort.postMessage({ kind: "failure", code });
 } finally {
   parentPort.close();
 }
