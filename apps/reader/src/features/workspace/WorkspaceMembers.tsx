@@ -21,18 +21,27 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
     queryKey: key,
     queryFn: ({ signal }) => api.listWorkspaceMembers(workspace, signal),
   });
-  const [username, setUsername] = useState("");
-  const [role, setRole] = useState<Role>("read");
+  const [draft, setDraft] = useState<{ username: string; role: Role }>({
+    username: "",
+    role: "read",
+  });
+  const name = draft.username.trim();
+  const existing = members.data?.find((member) => member.username === name);
+  const changed = Boolean(name) && !existing?.isOwner && existing?.role !== draft.role;
   const mutation = useMutation({
     mutationFn: ({ name, next }: { name: string; next: Role | null }) =>
       next === null
         ? api.removeWorkspaceMember(workspace, name)
         : api.setWorkspaceMember(workspace, name, { role: next }),
-    onSuccess: async (result) => {
+    onSuccess: async (result, submitted) => {
       await client.cancelQueries({ queryKey: key, exact: true });
       client.setQueryData(key, result);
-      setUsername("");
-      setRole("read");
+      setDraft((latest) =>
+        latest.username.trim() === submitted.name &&
+        (submitted.next === null || latest.role === submitted.next)
+          ? { username: "", role: "read" }
+          : latest,
+      );
     },
   });
   const memberError =
@@ -55,23 +64,31 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
             className={styles.form}
             onSubmit={(event) => {
               event.preventDefault();
-              if (!mutation.isPending && username.trim()) {
-                mutation.mutate({ name: username.trim(), next: role });
+              if (!mutation.isPending && changed) {
+                mutation.mutate({ name, next: draft.role });
               }
             }}
           >
             <div className={styles.fields}>
-              <Field label="成员用户名" value={username} onChange={setUsername} required />
-              <Select label="权限" value={role} entries={roles} onChange={setRole} />
+              <Field
+                label="成员用户名"
+                value={draft.username}
+                onChange={(username) => setDraft({ ...draft, username })}
+                required
+              />
+              <Select
+                label="权限"
+                value={draft.role}
+                entries={roles}
+                onChange={(role) => setDraft({ ...draft, role })}
+              />
             </div>
             <Button
               type="submit"
               variant="primary"
               className={styles.formAction}
               loading={mutation.isPending && mutation.variables.next !== null}
-              isDisabled={
-                !username.trim() || (mutation.isPending && mutation.variables.next === null)
-              }
+              isDisabled={!changed || mutation.isPending}
             >
               {mutation.isPending && mutation.variables.next !== null
                 ? "正在保存成员…"
@@ -83,7 +100,7 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
               {memberError}
             </Feedback>
           )}
-          {mutation.isSuccess && (
+          {mutation.isSuccess && !name && (
             <Feedback tone="success" className={styles.status}>
               {mutation.variables.next === null ? "已移除成员" : "成员权限已保存"}
             </Feedback>
@@ -105,8 +122,7 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
                         isDisabled={mutation.isPending}
                         onPress={() => {
                           mutation.reset();
-                          setUsername(member.username);
-                          setRole(member.role);
+                          setDraft({ username: member.username, role: member.role });
                         }}
                       >
                         编辑权限
