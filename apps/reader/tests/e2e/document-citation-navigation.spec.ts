@@ -185,7 +185,18 @@ test("Back from a same-document citation keeps the selection whose save was pend
   await checkFollowupAfterSave(page, "同篇保存", true);
 });
 
-async function checkFollowupAfterSave(page: Page, title: string, sameDocument: boolean) {
+test("a same-document citation opens during composition and Back keeps a pending edit selection", async ({
+  page,
+}) => {
+  await checkFollowupAfterSave(page, "输入法同篇保存", true, true);
+});
+
+async function checkFollowupAfterSave(
+  page: Page,
+  title: string,
+  sameDocument: boolean,
+  composing = false,
+) {
   const note = await openAnswer(page, `${title}-${crypto.randomUUID()}`, sameDocument);
   const destination = await note.link.getAttribute("href");
   if (!destination) throw new Error("Missing citation destination");
@@ -212,7 +223,14 @@ async function checkFollowupAfterSave(page: Page, title: string, sameDocument: b
     for (const _ of selected) await editor.press("Shift+ArrowLeft");
     await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(selected);
     await saving;
+    if (composing) await editor.dispatchEvent("compositionstart");
     await note.link.press("Enter");
+    if (composing) {
+      await expect(page).toHaveURL(destination);
+      await expect(editor).toBeVisible();
+      await editor.dispatchEvent("compositionend");
+      await expect(page.getByRole("article")).toBeVisible();
+    }
   } finally {
     releaseSave();
   }

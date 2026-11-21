@@ -46,10 +46,12 @@ import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
+type EditorSelection = { source: string; anchor: number; head: number; blockId?: string };
+type DocumentVisit = SourceVisit & { composingSelection?: EditorSelection };
 type SourceNavigation = {
   citationDraft: CitationDraft | undefined;
-  visit: SourceVisit | undefined;
-  onSourceVisit: (sourceId: string, capture: () => SourceVisit) => void;
+  visit: DocumentVisit | undefined;
+  onSourceVisit: (sourceId: string, capture: () => DocumentVisit) => void;
 };
 
 function unavailableDocument(error: unknown) {
@@ -277,12 +279,7 @@ function DocumentWorkspace({
     !outlineRequested;
   const sourceRevision = citation?.outline ? outlineSnapshot?.revision : snapshot.revision;
   const canvas = useRef<HTMLDivElement>(null);
-  const savedEditorSelection = useRef<{
-    source: string;
-    anchor: number;
-    head: number;
-    blockId?: string;
-  }>(undefined);
+  const savedEditorSelection = useRef<EditorSelection>(undefined);
   const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
   const restoringEditor = useRef(false);
 
@@ -392,10 +389,16 @@ function DocumentWorkspace({
     };
     onSourceVisit(transcript.sourceId, () => {
       const confirmed = body.saves.confirmed();
+      const saved = confirmed.markdown === source;
       return {
         ...visit,
         revision: confirmed.revision,
-        selection: confirmed.markdown === source ? selection : undefined,
+        selection: saved ? selection : undefined,
+        ...(!saved &&
+          selection &&
+          body.editor.isComposing() && {
+            composingSelection: { source, anchor: selection.from, head: selection.to },
+          }),
       };
     });
   }
@@ -416,13 +419,15 @@ function DocumentWorkspace({
             head: range.to,
             ...(range.blockId && { blockId: range.blockId }),
           }
-        : undefined;
+        : returnVisit.composingSelection?.source === body.editor.source()
+          ? returnVisit.composingSelection
+          : undefined;
     inlineVisit.current = returnVisit.inline && {
       ...returnVisit.inline,
       revision: returnVisit.revision,
       opener: undefined,
     };
-  }, [returnVisit, snapshot.revision, snapshot.markdown]);
+  }, [body, returnVisit, snapshot.revision, snapshot.markdown]);
 
   useEffect(() => {
     const viewport = canvas.current?.closest("main");
@@ -588,14 +593,21 @@ function DocumentWorkspace({
             action === "PUSH" &&
             nextLocation.state.readerCitation &&
             nextLocation.state.readerCitationOrigin === currentLocation.state.__TSR_key;
-          if (currentLocation.pathname === nextLocation.pathname && !opensCitation) return false;
-          await flush();
-          const blocked = isDirty() && !window.confirm("还有未保存的内容。确定离开文档？");
+          const sameDocument = currentLocation.pathname === nextLocation.pathname;
+          if (sameDocument) {
+            // The source view keeps the editor mounted until the IME commits.
+            if (!opensCitation || body.editor.isComposing() || !body.saves.isDirty()) return false;
+            await body.saves.flush();
+          } else {
+            await flush();
+          }
+          const unsaved = sameDocument ? body.saves.isDirty() : isDirty();
+          const blocked = unsaved && !window.confirm("还有未保存的内容。确定离开文档？");
           if (blocked) navigationCancelled(nextLocation.pathname);
           return blocked;
         },
       }),
-    [history, isDirty, flush, navigationCancelled],
+    [body, history, isDirty, flush, navigationCancelled],
   );
 
   const writeOutline = async (draft: MarkdownWrite) => {
