@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode, RefObject } from "react";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import styles from "./ReaderDock.module.css";
 
@@ -11,6 +11,7 @@ export function ReaderDock({
   onWidthChange,
   onCollapse,
   navigation,
+  onNavigationContextMenu,
   children,
 }: {
   layoutRef: RefObject<HTMLDivElement | null>;
@@ -20,6 +21,7 @@ export function ReaderDock({
   onWidthChange: (width: number) => void;
   onCollapse: () => void;
   navigation: ReactNode;
+  onNavigationContextMenu: (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) => void;
   children: ReactNode;
 }) {
   const panelRef = usePanelRef();
@@ -63,6 +65,8 @@ export function ReaderDock({
     >
       <Panel
         id="navigation-panel"
+        onContextMenu={navigationVisible ? onNavigationContextMenu : undefined}
+        onKeyDownCapture={navigationVisible ? onNavigationContextMenu : undefined}
         panelRef={panelRef}
         collapsible
         collapsedSize={0}

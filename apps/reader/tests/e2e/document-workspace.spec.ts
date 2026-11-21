@@ -95,11 +95,11 @@ function capturePointer(page: Page, x: number, y: number, path: string) {
   });
 }
 
-test("opens workspace actions at the sidebar controls, panel edges and reading surface", async ({
+test("opens directory actions at sidebar controls and inside the panel edges", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openTreeSample(page, "整页右键验收");
+  await openTreeSample(page, "目录右键验收");
   const original = page.url();
   const aside = page.locator("#workspace-navigation");
   const chooser = aside.getByRole("button", { name: /空间/ }).first();
@@ -110,13 +110,6 @@ test("opens workspace actions at the sidebar controls, panel edges and reading s
     const { x, y, width, height } = await box(item);
     return { x: Math.floor(x + width / 2), y: Math.floor(y + height / 2) };
   };
-  const paragraph = page.getByRole("article").getByText("阅读中的原文。");
-  const text = await paragraph.evaluate((element) => {
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const { x, y, width, height } = range.getBoundingClientRect();
-    return { x: Math.floor(x + width / 2), y: Math.floor(y + height / 2) };
-  });
   const hits = [
     { label: "空间切换", ...(await center(chooser)) },
     { label: "空间设置", ...(await center(settings)) },
@@ -124,15 +117,6 @@ test("opens workspace actions at the sidebar controls, panel edges and reading s
     { label: "目录标题", ...(await center(aside.getByText("目录", { exact: true }))) },
     { label: "侧栏最下方", x: 1, y: sidebar.y + sidebar.height - 1 },
     { label: "侧栏右边线", x: sidebar.x + sidebar.width - 1, y: sidebar.y + 65 },
-    {
-      label: "侧栏与正文分隔线",
-      ...(await center(page.getByRole("separator", { name: "调整空间目录宽度" }))),
-    },
-    { label: "顶栏留白", x: 280, y: 8 },
-    { label: "顶栏搜索", ...(await center(topSearch)) },
-    { label: "正文文字", ...text },
-    { label: "正文行尾", ...(await center(paragraph)) },
-    { label: "工作区右下角", x: 1439, y: 899 },
   ];
   const menu = page.getByRole("menu");
   const measurements: {
@@ -154,7 +138,7 @@ test("opens workspace actions at the sidebar controls, panel edges and reading s
       const gapY = Math.min(Math.abs(bounds.y - hit.y), Math.abs(bounds.y + bounds.height - hit.y));
       expect(gapX).toBeLessThanOrEqual(4);
       expect(gapY).toBeLessThanOrEqual(4);
-      if (hit.label === "空间切换" || hit.label === "工作区右下角") {
+      if (hit.label === "空间切换" || hit.label === "侧栏最下方") {
         await capturePointer(page, hit.x, hit.y, testInfo.outputPath(hit.label + ".png"));
       }
       await create.click();
@@ -167,7 +151,9 @@ test("opens workspace actions at the sidebar controls, panel edges and reading s
   }
   await writeFile(testInfo.outputPath("coordinates.json"), JSON.stringify(measurements, null, 2));
   await topSearch.press("Shift+F10");
-  await menu.getByRole("menuitem", { name: /搜索文档/ }).press("Enter");
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await topSearch.click();
   const palette = page.getByRole("dialog", { name: "快速打开与全文搜索" });
   await expect(palette.getByRole("searchbox")).toBeFocused();
   await palette.getByRole("button", { name: "关闭搜索" }).click({ button: "right" });
@@ -181,16 +167,66 @@ test("opens workspace actions at the sidebar controls, panel edges and reading s
   await expect(page.getByRole("tablist", { name: "空间设置" })).toBeVisible();
 });
 
+test("keeps both paper margins, the divider and the toolbar outside directory actions", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openTreeSample(page, "纸面右键边界");
+  const main = page.getByRole("main");
+  const editor = page.getByRole("textbox", { name: "Markdown 正文" });
+  const menu = page.getByRole("menu");
+  const row = page.getByRole("row", { name: "在读", exact: true });
+  const column = await box(main.locator("[data-reading-measure]"));
+  const area = await box(main);
+  const y = Math.round(area.y + area.height / 2);
+  const margins = [
+    { x: Math.floor((area.x + column.x) / 2), y },
+    { x: Math.ceil((column.x + column.width + area.x + area.width) / 2), y },
+  ];
+  const nativeEvents = await page.evaluateHandle(() => {
+    const events: boolean[] = [];
+    window.addEventListener("contextmenu", (event) => events.push(event.defaultPrevented));
+    return events;
+  });
+  const nativeClick = async (point: { x: number; y: number }) => {
+    const before = (await nativeEvents.jsonValue()).length;
+    await page.mouse.click(point.x, point.y, { button: "right" });
+    expect((await nativeEvents.jsonValue()).slice(before)).toEqual([false]);
+    await expect(menu).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  };
+  await row.click({ button: "right" });
+  await expect(menu).toBeVisible();
+  // Crossing from an open directory menu to the page dismisses the old menu.
+  for (const point of margins) await nativeClick(point);
+  const divider = await box(page.getByRole("separator", { name: "调整空间目录宽度" }));
+  await nativeClick({ x: divider.x + divider.width / 2, y });
+  await nativeClick({ x: area.x + 40, y: 8 });
+  for (const point of margins) {
+    await page.getByRole("article").getByText("阅读中的原文。").click();
+    await expect(editor).toBeFocused();
+    await nativeClick(point);
+    if (await editor.isVisible()) await editor.press("Escape");
+  }
+  await page.getByRole("button", { name: "收起目录" }).click();
+  await expect(page.locator("#workspace-navigation")).toBeHidden();
+  await nativeClick({ x: 12, y });
+  await capturePointer(page, 12, y, info.outputPath("paper-margin.png"));
+});
+
 test("a second right click moves the menu directly to the next target", async ({ page }) => {
   await openTreeSample(page, "连续右键验收");
   const row = page.getByRole("row", { name: "观测", exact: true });
   const rect = await box(row);
   const menu = page.getByRole("menu");
-  await page.mouse.click(800, 600, { button: "right" });
+  await page.getByRole("row", { name: "记录", exact: true }).click({ button: "right" });
   await expect(menu).toBeVisible();
   const y = Math.floor(rect.y + rect.height / 2);
   for (const fraction of [0.75, 0.2]) {
     const x = Math.floor(rect.x + rect.width * fraction);
+    expect(
+      await row.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), { x, y }),
+    ).toBe(true);
     await page.mouse.click(x, y, { button: "right" });
     await expect(async () => {
       const bounds = await box(menu.locator(".."));
@@ -205,23 +241,22 @@ test("a second right click moves the menu directly to the next target", async ({
   await expect(row).toBeFocused();
 });
 
-test("offers account commands when the requested workspace is unavailable", async ({ page }) => {
+test("uses the toolbar for commands when the directory is unavailable", async ({ page }) => {
   await openFieldWorkspace(page);
   await page.goto("/workspaces/missing-workspace-id");
   await expect(page.getByText("此空间不可用")).toBeVisible();
   await page.mouse.click(300, 12, { button: "right" });
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem", { name: /命令/ })).toBeVisible({ timeout: 1800 });
-  await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
-  await menu.getByRole("menuitem", { name: /命令/ }).press("Enter");
+  await expect(menu).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "命令", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "命令" }).getByRole("searchbox")).toBeFocused();
 
   await page.goto("/workspaces/new");
   const form = page.getByRole("form", { name: "新建空间" });
   await expect(form).toBeVisible();
   await page.mouse.click(900, 700, { button: "right" });
-  await expect(menu.getByRole("menuitem", { name: /查找命令/ })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
+  await expect(menu).toHaveCount(0);
   await page.keyboard.press("Escape");
   const name = form.getByRole("textbox", { name: "空间名称" });
   await name.fill("保留名称");
