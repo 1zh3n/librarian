@@ -511,6 +511,222 @@ fn distinguishes_encrypted_and_image_only_pdf() {
 }
 
 #[tokio::test]
+async fn omits_expired_material_excerpt_from_next_request() {
+    // Emulate an already-completed turn in an upgraded installation. The next
+    // request still goes through real authentication, dispatch and claim history.
+    let mut f = Site::open().await;
+    let token = "synthetic-history-worker";
+    fs::write(
+        f.root.path().join(".librarian/runner-token.sha256"),
+        silverbullet_server_common::revision::sha256_hex(token.as_bytes()),
+    )
+    .unwrap();
+    let base = f.conversation().await;
+    let m = f
+        .upload(
+            &base,
+            "notes.txt",
+            "text/plain",
+            b"private historical material".to_vec(),
+        )
+        .await;
+    let id = m["id"].as_str().unwrap();
+    f.ready(&base, id).await;
+    let turns = base.replace("/materials", "/turns");
+    let send = |n, ids: Value| {
+        json!({"mode":"chat","prompt":format!("round {n}"),"clientTurnId":format!("test-{n}"),"materialIds":ids}).to_string().into_bytes()
+    };
+    let claims = "/ai/runner/claims";
+    for n in 1..=2 {
+        let ids = if n == 1 { json!([id]) } else { json!([]) };
+        let turn = f
+            .request(&f.token, "POST", &turns, "application/json", send(n, ids))
+            .await;
+        assert_eq!(turn.0, 202, "{}", turn.1);
+        let claim = f
+            .request(token, "POST", claims, "application/json", b"{}".to_vec())
+            .await
+            .1;
+        let lease = claim["leaseId"].as_str().unwrap();
+        if n == 1 {
+            let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3"))
+                .unwrap();
+            db.execute(
+                "INSERT INTO ai_material_reads(operation_id,material_id) VALUES (?1,?2)",
+                [claim["operationId"].as_str().unwrap(), id],
+            )
+            .unwrap();
+        } else {
+            assert_eq!(
+                claim["input"]["history"][0]["answer"],
+                "historical excerpt 1"
+            );
+        }
+        let (s, v) = f
+            .request(
+                token,
+                "PUT",
+                &format!("{claims}/{lease}/result"),
+                "application/json",
+                json!({"answer":format!("historical excerpt {n}"),"edits":[],"sourceIds":[]})
+                    .to_string()
+                    .into_bytes(),
+            )
+            .await;
+        assert_eq!(s, 200, "{v}");
+    }
+    rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3"))
+        .unwrap()
+        .execute("UPDATE ai_materials SET expires_at=0 WHERE id=?", [id])
+        .unwrap();
+    f.reopen();
+    assert_eq!(
+        f.request(
+            &f.token,
+            "POST",
+            &turns,
+            "application/json",
+            send(3, json!([]))
+        )
+        .await
+        .0,
+        202
+    );
+    let claim = f
+        .request(token, "POST", claims, "application/json", b"{}".to_vec())
+        .await
+        .1;
+    assert_eq!(claim["input"]["history"], json!([]));
+    assert!(!claim.to_string().contains("historical excerpt"));
+    let history = f.get(&turns).await;
+    assert!(history.to_string().contains("historical excerpt 1"));
+    assert!(history.to_string().contains("historical excerpt 2"));
+}
+
+#[path = "fixtures/ai-materials/setup.rs"]
+mod managed;
+
+impl Site {
+    async fn runner(&self, method: &str, path: &str, body: Value) -> (u16, Value) {
+        let res = self
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(format!("/api/v1/ai/runner/v2/{path}"))
+                    .header("authorization", format!("Bearer {}", managed::RUNNER))
+                    .header("x-librarian-runner-id", managed::INSTANCE)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status().as_u16();
+        let bytes = to_bytes(res.into_body(), 1_000_000).await.unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+}
+
+#[tokio::test]
+async fn cites_only_material_segments_actually_read() {
+    let mut f = Site::open().await;
+    fs::write(
+        f.root.path().join(".librarian/ai-test-loopback"),
+        "127.0.0.1:9",
+    )
+    .unwrap();
+    managed::configure(f.root.path()).unwrap();
+    f.reopen();
+    let base = f.conversation().await;
+    let mut ids = vec![];
+    for (name, bytes) in [
+        (
+            "one.pdf",
+            include_bytes!("fixtures/ai-materials/budget.pdf").as_slice(),
+        ),
+        (
+            "two.docx",
+            include_bytes!("fixtures/ai-materials/meeting.docx").as_slice(),
+        ),
+        ("unselected.txt", b"private".as_slice()),
+    ] {
+        let m = f
+            .upload(&base, name, "application/octet-stream", bytes.to_vec())
+            .await;
+        let id = m["id"].as_str().unwrap();
+        f.ready(&base, id).await;
+        ids.push(id.to_owned());
+    }
+    let (status,turn)=f.request(&f.token,"POST",&base.replace("/materials","/turns"),"application/json",
+        json!({"mode":"chat","prompt":"比较数字","clientTurnId":"numbers","materialIds":&ids[..2]}).to_string().into_bytes()).await;
+    assert_eq!(status, 202, "{turn}");
+    let (status, claim) = f.runner("POST", "claims", json!({})).await;
+    assert_eq!(status, 200, "{claim}");
+    let input = &claim["input"]["materials"];
+    assert_eq!(input.as_array().unwrap().len(), 2);
+    assert!(!claim.to_string().contains("预算为七十"));
+    let lease = claim["leaseId"].as_str().unwrap();
+    let prefix = format!("claims/{lease}");
+    let unselected = format!("{prefix}/materials/{}/segments", ids[2]);
+    assert_eq!(f.runner("GET", &unselected, Value::Null).await.0, 404);
+    let mut sources = Vec::new();
+    for (index, keyword, original) in [
+        (0, "%E9%A2%84%E7%AE%97", "预算为七十。"),
+        (1, "%E5%A4%8D%E6%A0%B8", "复核数字为四十二。"),
+    ] {
+        let path = format!("{prefix}/materials/{}/segments", ids[index]);
+        let (s, catalog) = f
+            .runner("GET", &format!("{path}?q={keyword}"), Value::Null)
+            .await;
+        assert_eq!(s, 200, "{catalog}");
+        assert_eq!(catalog["items"].as_array().unwrap().len(), 1);
+        let item = &catalog["items"][0];
+        assert!(item.get("text").is_none());
+        let sid = item["segmentId"].as_str().unwrap();
+        let forged = json!({"answer":"invalid","sourceIds":[sid],"edits":[]});
+        assert_eq!(
+            f.runner("PUT", &format!("{prefix}/result"), forged).await.0,
+            422
+        );
+        let (s, read) = f.runner("GET", &format!("{path}/{sid}"), Value::Null).await;
+        assert_eq!(s, 200, "{read}");
+        assert_eq!(read["text"], original);
+        assert_eq!(read["source"]["kind"], "material");
+        assert_eq!(read["source"]["materialId"], ids[index]);
+        assert_eq!(
+            read["source"][if index == 0 { "page" } else { "paragraphStart" }],
+            2
+        );
+        assert!(read["source"].get("documentId").is_none());
+        sources.push(read["source"]["id"].as_str().unwrap().to_owned());
+    }
+    let (s, receipt) = f
+        .runner(
+            "PUT",
+            &format!("{prefix}/result"),
+            json!({"answer":"已核对。","sourceIds":sources,"edits":[]}),
+        )
+        .await;
+    assert_eq!(s, 200, "{receipt}");
+    assert_eq!(receipt["sources"].as_array().unwrap().len(), 2);
+    assert_ne!(
+        f.runner(
+            "GET",
+            &format!("{prefix}/materials/{}/segments", ids[0]),
+            Value::Null
+        )
+        .await
+        .0,
+        200
+    );
+}
+
+#[tokio::test]
 async fn recovers_interrupted_job_and_rechecks_workspace_membership_on_every_read() {
     let mut f = Site::open().await;
     let base = f.conversation().await;
@@ -563,6 +779,67 @@ async fn recovers_interrupted_job_and_rechecks_workspace_membership_on_every_rea
             404
         );
     }
+}
+
+#[tokio::test]
+async fn enforces_the_shared_document_and_material_lease_budget() {
+    let mut f = Site::open().await;
+    fs::write(
+        f.root.path().join(".librarian/ai-test-loopback"),
+        "127.0.0.1:9",
+    )
+    .unwrap();
+    managed::configure(f.root.path()).unwrap();
+    f.reopen();
+    let doc = f
+        .request(
+            &f.token,
+            "POST",
+            &format!("/workspaces/{}/documents", f.workspace),
+            "application/json",
+            json!({"path":"source.md","baseRevision":null,"markdown":"a".repeat(248*1024)})
+                .to_string()
+                .into_bytes(),
+        )
+        .await;
+    assert_eq!(doc.0, 201);
+    let base = f.conversation().await;
+    let m = f
+        .upload(&base, "long.txt", "text/plain", vec![b'a'; 8193])
+        .await;
+    let id = m["id"].as_str().unwrap();
+    f.ready(&base, id).await;
+    let turn = f
+        .request(
+            &f.token,
+            "POST",
+            &base.replace("/materials", "/turns"),
+            "application/json",
+            json!({"mode":"chat","clientTurnId":"budget","prompt":"read","materialIds":[id]})
+                .to_string()
+                .into_bytes(),
+        )
+        .await;
+    assert_eq!(turn.0, 202);
+    let claim = f.runner("POST", "claims", json!({})).await;
+    assert_eq!(claim.0, 200);
+    let lease = claim.1["leaseId"].as_str().unwrap();
+    let doc = f
+        .runner(
+            "POST",
+            &format!("claims/{lease}/sources"),
+            json!({"documentId":doc.1["document"]["id"],"full":true}),
+        )
+        .await;
+    assert_eq!(doc.0, 200);
+    let path = format!("claims/{lease}/materials/{id}/segments");
+    let first = f.runner("GET", &format!("{path}/s1"), Value::Null).await;
+    assert_eq!(first.0, 200);
+    assert_eq!(first.1["text"].as_str().unwrap().len(), 8192);
+    assert_eq!(f.runner("GET", &path, Value::Null).await.0, 200);
+    let extra = f.runner("GET", &format!("{path}/s2"), Value::Null).await;
+    assert_eq!(extra.0, 422);
+    assert_eq!(extra.1["code"], "source_limit");
 }
 
 #[test]
