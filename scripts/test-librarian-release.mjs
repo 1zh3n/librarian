@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { checkManagedBundle, checkRunnerInstall } from "./test-librarian-managed-package.mjs";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -92,8 +93,8 @@ async function request(origin, path, method, body, status, cookie) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-function initialize(dataRoot) {
-  command(librarian, [...accounts, "--data-root", dataRoot], { input: `${password}\n` });
+function initialize(dataRoot, binary = librarian) {
+  command(binary, [...accounts, "--data-root", dataRoot], { input: `${password}\n` });
 }
 
 async function aiRound(api, first, second) {
@@ -147,12 +148,25 @@ async function aiRound(api, first, second) {
   assert.notEqual(result.commitId, undone.commitId);
 }
 
+async function heartbeat(origin, file) {
+  await exec(join(distribution, "bin/node"), [join(distribution, "bin/librarian/runner/runner.mjs"), "--once"], {
+    cwd: work, timeout: 15_000,
+    env: { LIBRARIAN_URL: origin, LIBRARIAN_RUNNER_IDENTITY_FILE: file },
+  });
+  const api = await login(origin);
+  assert.equal((await api("/ai/settings")).runnerOnline, true);
+}
+
 try {
+  checkManagedBundle(distribution);
   initialize(root);
+  const identity = checkRunnerInstall(distribution, root, join(work, "clean units"));
+
   writeFileSync(join(root, ".librarian/runner-token.sha256"), createHash("sha256").update(runnerToken).digest("hex"));
   app = await launch(librarian, root);
   assert.equal((await fetch(`${app.origin}/sw.js`)).status, 200);
   assert.equal((await fetch(`${app.origin}/accounts`, { redirect: "manual" })).status, 200);
+  await heartbeat(app.origin, identity);
   const api = await login(app.origin);
   assert.equal((await api("/session")).username, "owner");
   assert.deepEqual(await api("/accounts"), [{ username: "owner", isAdmin: true, disabled: false }]);
@@ -238,6 +252,7 @@ try {
   command("tar", ["-C", root, "-czf", archive, "."]);
   command("tar", ["-C", restore, "-xzf", archive]);
   app = await launch(librarian, restore);
+  await heartbeat(app.origin, join(restore, ".librarian/managed-runner.json"));
   const restored = await login(app.origin);
   assert.equal((await restored(firstPath)).markdown, first.markdown);
   assert.equal((await readShare()).document.markdown, ship);
@@ -253,7 +268,10 @@ try {
     await app.stop();
     app = undefined;
     const oldRoot = join(work, "previous");
-    initialize(oldRoot);
+    const previous = resolve(process.env.LIBRARIAN_PREVIOUS_BINARY);
+    // Very early releases predate the standalone init command.
+    const initializer = /\binit\b/.test(command(previous, ["--help"]).toString()) ? previous : librarian;
+    initialize(oldRoot, initializer);
     const native = join(oldRoot, "spaces/legacy");
     mkdirSync(native, { recursive: true });
     writeFileSync(join(native, "Legacy.md"), note);
@@ -263,7 +281,7 @@ try {
         revisionsCommit: { quietSecs: 5, maxIntervalSecs: 5 },
       },
     }));
-    app = await launch(resolve(process.env.LIBRARIAN_PREVIOUS_BINARY), oldRoot);
+    app = await launch(previous, oldRoot);
     const oldApi = await login(app.origin);
     const oldSpace = (await oldApi("/workspaces"))[0];
     const oldDeliveryPath = `/workspaces/${oldSpace.id}/delivery-tokens`;
@@ -284,8 +302,13 @@ try {
     }
     assert.match(olderCommit, complete);
     await app.stop();
+    const beforeUpgrade = join(work, "before-upgrade.tar.gz");
+    command("tar", ["-czf", beforeUpgrade, "-C", oldRoot, "."]);
+    const upgradedIdentity = checkRunnerInstall(distribution, oldRoot, join(work, "upgrade units"));
     app = await launch(librarian, oldRoot);
+    await heartbeat(app.origin, upgradedIdentity);
     const upgraded = await login(app.origin);
+    assert.equal((await upgraded("/ai/settings")).dispatchMode, "legacy");
     assert.equal((await upgraded("/workspaces"))[0].id, oldSpace.id);
     assert.equal((await upgraded(`/documents/${oldDoc.id}`)).markdown, note);
     assert.equal((await upgraded(revisionRoute)).revisions[0].commitId, olderCommit);
@@ -310,7 +333,19 @@ try {
       assert.deepEqual(push(oldSpace.id, legacyDeliveryId, replacement.token), oldReceipt);
       console.log("Passed prior-schema delivery credential retirement and receipt preservation");
     }
-    console.log("Passed upgrade from the prior real binary, retaining Workspace and document identity");
+    await app.stop();
+    app = undefined;
+    const rollback = join(work, "rollback");
+    mkdirSync(rollback);
+    command("tar", ["-xzf", beforeUpgrade, "-C", rollback]);
+    app = await launch(previous, rollback);
+    const rolledBack = await login(app.origin);
+    assert.equal((await rolledBack("/workspaces"))[0].id, oldSpace.id);
+    assert.equal((await rolledBack(`/documents/${oldWritten.document.id}`)).markdown, note);
+    assert.equal((await rolledBack(revisionRoute)).revisions[0].commitId, olderCommit);
+    if (oldGrant) assert.equal((await rolledBack(oldDeliveryPath))[0].id, oldGrant.id);
+    console.log("Passed prior-binary upgrade and rollback from a pre-upgrade backup, with stable document ID and Git revision");
+    console.log(`Previous binary SHA-256 ${createHash("sha256").update(readFileSync(previous)).digest("hex")}`);
   } else {
     console.log("Previous-binary upgrade skipped. Set LIBRARIAN_PREVIOUS_BINARY to include it.");
   }
