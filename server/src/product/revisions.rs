@@ -20,8 +20,8 @@ use super::{
     auth::Account,
     contract::{ApiError, DocumentSnapshot, RestoreRevision},
     documents::{
-        body, check_file_path, check_storage_recovery, product_read, read_markdown, run, snapshot,
-        state, too_large, DocumentService, MARKDOWN_LIMIT,
+        body, check_file_path, check_storage_recovery, product_read, read_markdown, run, state,
+        too_large, DocumentService, MARKDOWN_LIMIT,
     },
 };
 
@@ -278,7 +278,7 @@ pub(super) async fn restore(
             )?;
             let revision = sha256_hex(restored.as_bytes());
             Ok(Json(Restored {
-                snapshot: snapshot(state, &workspace, document, path, restored, revision),
+                snapshot: service.snapshot(state, &workspace, document, path, restored, revision),
                 commit_id: receipt.commit_id,
             }))
         })

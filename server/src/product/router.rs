@@ -30,6 +30,7 @@ pub fn build_configured_product_router(
     spaces: super::space_adapter::NativeSpaces,
 ) -> Result<(Router, McpBridge), String> {
     let service = Arc::new(super::documents::DocumentService::open(root, spaces)?);
+    super::ai_materials::sweep(&service, true).map_err(|error| format!("{error:?}"))?;
     sweep(&service);
     let maintain = Arc::downgrade(&service);
     tokio::spawn(async move {
@@ -38,7 +39,14 @@ pub fn build_configured_product_router(
             let Some(service) = maintain.upgrade() else {
                 break;
             };
-            if let Err(error) = tokio::task::spawn_blocking(move || sweep(&service)).await {
+            if let Err(error) = tokio::task::spawn_blocking(move || {
+                if let Err(error) = super::ai_materials::sweep(&service, false) {
+                    tracing::warn!(?error, "Material maintenance deferred");
+                }
+                sweep(&service)
+            })
+            .await
+            {
                 tracing::warn!(%error, "Workspace maintenance did not complete");
             }
         }

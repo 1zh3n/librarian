@@ -306,7 +306,16 @@ async fn document_references_report_partial_when_unreadable_files_use_the_scan_b
 async fn outline_and_body_save_independently() {
     let f = Fixture::new(false);
     let workspace = f.workspace("Left").await;
-    let document = f.document(&workspace, "Empty.md").await;
+    let (status, mut created) = f
+        .request(
+            "POST",
+            &format!("/workspaces/{workspace}/documents"),
+            Some(&f.editor),
+            json!({"path":"New.md", "markdown":"原正文\r\n", "baseRevision":null}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let document = created["document"]["id"].as_str().unwrap().to_owned();
     let body_path = format!("/documents/{document}");
     let outline_path = format!("{body_path}/outline");
     let read = |path| f.request("GET", path, Some(&f.reader), Value::Null);
@@ -314,6 +323,15 @@ async fn outline_and_body_save_independently() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(outline, json!({"markdown":"","revision":null}));
     let (_, body) = read(&body_path).await;
+    assert_eq!(body, created);
+    assert_eq!(body["documentId"], document);
+    assert_eq!(body["path"], "New.md");
+    assert_eq!(
+        body["readerPath"],
+        format!("/workspaces/{workspace}/documents/{document}")
+    );
+    assert_eq!(body["readerUrl"], Value::Null);
+    assert_eq!(body["readerUrlError"], "reader_url_unavailable");
     let text = "\u{feff}提纲\r\n正文待补  \n";
     let write = |path, value| f.request("PUT", path, Some(&f.editor), value);
     let (status, outline) =
@@ -323,7 +341,8 @@ async fn outline_and_body_save_independently() {
     assert!(outline["revision"]
         .as_str()
         .is_some_and(|hash| hash.len() == 64));
-    assert_eq!(read(&body_path).await.1["revision"], body["revision"]);
+    created["document"]["outlineEnabled"] = json!(true);
+    assert_eq!(read(&body_path).await.1, created);
     let (status, saved_body) = write(
         &body_path,
         json!({"markdown":"正文\r\n","baseRevision":body["revision"]}),
@@ -331,9 +350,10 @@ async fn outline_and_body_save_independently() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(saved_body["document"]["outlineEnabled"], true);
+    assert_eq!(read(&body_path).await.1, saved_body);
     assert_eq!(read(&outline_path).await.1, outline);
     assert_eq!(
-        fs::read(f.root.path().join("spaces/left/Empty.outline.md")).unwrap(),
+        fs::read(f.root.path().join("spaces/left/New.outline.md")).unwrap(),
         text.as_bytes()
     );
     assert_eq!(

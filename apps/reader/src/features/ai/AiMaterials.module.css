@@ -1,0 +1,74 @@
+.materials,
+.list,
+.detail {
+  display: grid;
+  min-inline-size: 0;
+  gap: 0.25rem;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list:has(.row:nth-child(4)) {
+  max-block-size: min(30dvh, 18rem);
+  overflow: auto;
+}
+.row {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+  justify-content: space-between;
+  border-block-start: 1px solid var(--border);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-block-size: 2rem;
+  overflow-wrap: anywhere;
+}
+.check[data-focus-visible] {
+  outline: 2px solid var(--accent);
+}
+.hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.hint {
+  color: var(--ink-secondary);
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+}
+.remove {
+  flex: none;
+}
+.citation {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.citation button {
+  max-inline-size: 100%;
+  white-space: normal;
+  text-align: start;
+  height: auto;
+  min-block-size: 2rem;
+}
+.citation blockquote {
+  margin: 0.375rem 0;
+  padding-inline-start: 0.5rem;
+  border-inline-start: 2px solid var(--border-strong);
+  white-space: pre-wrap;
+}
+@media (pointer: coarse) {
+  .check,
+  .remove,
+  .citation button {
+    min-block-size: 2.75rem;
+  }
+}

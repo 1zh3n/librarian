@@ -43,6 +43,7 @@ pub fn initialize_data_root(root: &Path, username: &str, password: &str) -> Resu
 }
 
 pub struct NativeSpaces {
+    pub grants: Arc<crate::auth::mcp::grants::GrantStore>,
     pub manager: Arc<MultiManager>,
     pub users: Arc<UserStore>,
     pub authenticator: Arc<Authenticator>,
@@ -104,6 +105,9 @@ impl NativeSpaces {
         let manager = MultiManager::boot(root.to_owned(), deps, users.usernames())?;
         Ok(Self {
             _data_lock: data_lock,
+            grants: Arc::new(
+                crate::auth::mcp::grants::GrantStore::load(root).map_err(|e| e.to_string())?,
+            ),
             manager,
             users,
             authenticator,

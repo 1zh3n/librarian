@@ -10,9 +10,34 @@ export type DocumentHistory = components["schemas"]["DocumentHistory"];
 export type VersionDiff = components["schemas"]["VersionDiff"];
 export type RestoredDocument = components["schemas"]["RestoredDocument"];
 export type DevicePreferences = components["schemas"]["DevicePreferences"];
+export type AiDiscoveryInput = components["schemas"]["DraftAiDiscovery"];
+export type AiSettingsView = components["schemas"]["AiSettingsView"];
+export type AiConnection = components["schemas"]["AiConnection"];
+export type ModelSelection = components["schemas"]["ModelSelection"];
+export type ThinkingSelection = components["schemas"]["ThinkingSelection"];
+export type CreateAiConnection = components["schemas"]["CreateAiConnection"];
+export type UpdateAiConnection = components["schemas"]["UpdateAiConnection"];
+export type ManagedActivation = components["schemas"]["ManagedActivation"];
+export type AiProbeInput = components["schemas"]["AiProbeInput"];
+export type AiProbe = components["schemas"]["AiProbe"];
+export type AiDiscovery = components["schemas"]["AiDiscovery"];
+export type DiscoveredModel = components["schemas"]["DiscoveredModel"];
+export type ConversationScope = components["schemas"]["ConversationScope"];
+export type ConversationView = components["schemas"]["ConversationView"];
+export type CreateTurn = components["schemas"]["CreateTurn"];
+export type TurnView = components["schemas"]["TurnView"];
+export type ConversationPage = components["schemas"]["ConversationPage"];
+export type TurnPage = components["schemas"]["TurnPage"];
+export type AiMaterialSource = components["schemas"]["AiMaterialSource"];
+export type AiMaterialView = components["schemas"]["AiMaterialView"];
+export type AiSegmentLocation = components["schemas"]["AiSegmentLocation"];
+export type AiMaterialSegment = components["schemas"]["AiMaterialSegment"];
 export type AiTask = components["schemas"]["AiTask"];
 export type AiContext = components["schemas"]["AiContext"];
 export type AiOperation = components["schemas"]["AiOperation"];
+export type DocumentMemberLink = components["schemas"]["DocumentMemberLink"];
+export type WorkspaceImportRequest = components["schemas"]["WorkspaceImportRequest"];
+export type WorkspaceImportReceipt = components["schemas"]["WorkspaceImportReceipt"];
 export type MutationReceipt = components["schemas"]["MutationReceipt"];
 type AiOperationDiff = components["schemas"]["AiOperationDiff"];
 type AiConfirm = components["schemas"]["AiConfirmRequest"];
@@ -82,11 +107,21 @@ async function request<T>(
       | RestoreRevision
       | DevicePreferences
       | AiTask
+      | components["schemas"]["AiDiscoveryInput"]
+      | ConversationScope
+      | CreateTurn
+      | CreateAiConnection
+      | UpdateAiConnection
+      | ManagedActivation
+      | AiProbeInput
+      | { selection: ModelSelection | null }
+      | { enabled: boolean }
       | AiConfirm
       | CreateWorkspace
       | UpdateWorkspace
       | RenameWorkspacePath
       | DeliveryInput
+      | WorkspaceImportRequest
       | NewDeliveryToken
       | CreateSnapshot
       | SaveBackupSettings
@@ -132,6 +167,164 @@ const documentPath = (document: string) => `/documents/${encodeURIComponent(docu
 const operationPath = (id: string) => `/ai/operations/${encodeURIComponent(id)}`;
 const accountPath = (username: string) => `/accounts/${encodeURIComponent(username)}`;
 const membersPath = (workspace: string) => `${workspacePath(workspace)}/members`;
+
+export function discoverAiModels(
+  input: components["schemas"]["AiDiscoveryInput"],
+  signal?: AbortSignal,
+): Promise<AiDiscovery> {
+  return request<AiDiscovery>("/ai/settings/discover", signal, { method: "POST", body: input });
+}
+
+export function getAiSettings(signal?: AbortSignal) {
+  return request<AiSettingsView>("/ai/settings", signal);
+}
+
+export function createAiConnection(input: CreateAiConnection) {
+  return request<{ id: string; version: number }>("/ai/settings/connections", undefined, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function updateAiConnection(id: string, input: UpdateAiConnection) {
+  return request<void>(`/ai/settings/connections/${encodeURIComponent(id)}`, undefined, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export function removeAiConnection(id: string, expectedVersion: number) {
+  return request<void>(
+    `/ai/settings/connections/${encodeURIComponent(id)}?expectedVersion=${expectedVersion}`,
+    undefined,
+    { method: "DELETE" },
+  );
+}
+
+export function setAiPreference(selection: ModelSelection | null) {
+  return request<void>("/ai/settings/preference", undefined, {
+    method: "PUT",
+    body: { selection },
+  });
+}
+
+export function setAiDefault(selection: ModelSelection) {
+  return request<void>("/ai/settings/default", undefined, { method: "PUT", body: { selection } });
+}
+
+export function setAiGlobalEnabled(enabled: boolean) {
+  return request<void>("/ai/settings/global-enabled", undefined, {
+    method: "PUT",
+    body: { enabled },
+  });
+}
+
+export function activateManagedAi(input: ManagedActivation) {
+  return request<{ activationId: string }>("/ai/settings/managed-activation", undefined, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function startAiProbe(connectionId: string, input: AiProbeInput) {
+  return request<AiProbe>(
+    `/ai/settings/connections/${encodeURIComponent(connectionId)}/probe`,
+    undefined,
+    { method: "POST", body: input },
+  );
+}
+
+export function getAiProbe(id: string, signal?: AbortSignal) {
+  return request<AiProbe>(`/ai/settings/probes/${encodeURIComponent(id)}`, signal);
+}
+
+const conversationPath = (id: string) => `/ai/conversations/${encodeURIComponent(id)}`;
+const materialsPath = (id: string) => `${conversationPath(id)}/materials`;
+
+export function listConversations(scope: ConversationScope, cursor?: string, signal?: AbortSignal) {
+  const q = new URLSearchParams({ workspaceId: scope.workspaceId });
+  if (scope.documentId) q.set("documentId", scope.documentId);
+  if (cursor) q.set("cursor", cursor);
+  return request<ConversationPage>(`/ai/conversations?${q}`, signal);
+}
+
+export function createConversation(scope: ConversationScope) {
+  return request<ConversationView>("/ai/conversations", undefined, { method: "POST", body: scope });
+}
+
+export function getConversation(id: string, signal?: AbortSignal) {
+  return request<ConversationView>(conversationPath(id), signal);
+}
+
+export function deleteConversation(id: string) {
+  return request<void>(conversationPath(id), undefined, { method: "DELETE" });
+}
+
+export function listTurns(id: string, cursor?: string, signal?: AbortSignal) {
+  return request<TurnPage>(
+    `${conversationPath(id)}/turns${cursor ? "?" + new URLSearchParams({ cursor }) : ""}`,
+    signal,
+  );
+}
+
+export function createTurn(id: string, input: CreateTurn) {
+  return request<TurnView>(`${conversationPath(id)}/turns`, undefined, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function cancelTurn(id: string, turnId: string) {
+  return request<TurnView>(
+    `${conversationPath(id)}/turns/${encodeURIComponent(turnId)}/cancel`,
+    undefined,
+    { method: "POST" },
+  );
+}
+
+export function listAiMaterials(id: string, signal?: AbortSignal) {
+  return request<AiMaterialView[]>(materialsPath(id), signal);
+}
+
+export async function uploadAiMaterial(id: string, file: File, signal?: AbortSignal) {
+  const ext = file.name.split(".").at(-1)?.toLowerCase();
+  const types: Record<string, string> = {
+    txt: "text/plain",
+    md: "text/markdown",
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  };
+  const response = await fetch(
+    `/api/v1${materialsPath(id)}?${new URLSearchParams({ name: file.name })}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": types[ext ?? ""] ?? file.type },
+      body: file,
+      signal: signal ?? null,
+      credentials: "same-origin",
+    },
+  );
+  if (!response.ok) throw await responseError(response);
+  return (await response.json()) as AiMaterialView;
+}
+
+export function removeAiMaterial(id: string, material: string) {
+  return request<void>(`${materialsPath(id)}/${encodeURIComponent(material)}`, undefined, {
+    method: "DELETE",
+  });
+}
+
+export function readAiMaterialSegment(
+  id: string,
+  material: string,
+  segment: string,
+  signal?: AbortSignal,
+) {
+  return request<AiMaterialSegment>(
+    `${materialsPath(id)}/${encodeURIComponent(material)}/segments/${encodeURIComponent(segment)}`,
+    signal,
+  );
+}
 
 export const api = {
   getSession(signal?: AbortSignal) {
@@ -186,6 +379,18 @@ export const api = {
       method: "POST",
       body,
     });
+  },
+  importWorkspaceFiles(workspace: string, body: WorkspaceImportRequest, signal?: AbortSignal) {
+    return request<WorkspaceImportReceipt>(`${workspacePath(workspace)}/imports`, signal, {
+      method: "POST",
+      body,
+    });
+  },
+  getWorkspaceImport(workspace: string, operationId: string, signal?: AbortSignal) {
+    return request<WorkspaceImportReceipt>(
+      `${workspacePath(workspace)}/imports/${encodeURIComponent(operationId)}`,
+      signal,
+    );
   },
   createDelivery(workspace: string, body: DeliveryInput) {
     return request<DeliveryReceipt>(`${workspacePath(workspace)}/deliveries`, undefined, {
@@ -364,6 +569,12 @@ export const api = {
   },
   confirmAiOperation(id: string, confirmationId: string) {
     return request<AiOperation>(`${operationPath(id)}/confirm`, undefined, {
+      method: "POST",
+      body: { confirmationId },
+    });
+  },
+  cancelAiConfirmation(id: string, confirmationId: string) {
+    return request<AiOperation>(`${operationPath(id)}/cancel`, undefined, {
       method: "POST",
       body: { confirmationId },
     });

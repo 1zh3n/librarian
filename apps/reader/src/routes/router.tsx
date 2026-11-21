@@ -33,6 +33,10 @@ const document = createRoute({
 const workspaceAi = createRoute({
   getParentRoute: () => root,
   path: "/workspaces/$workspaceId/ai",
+  validateSearch: (search: Record<string, unknown>): { operationId?: string } =>
+    typeof search.operationId === "string" && search.operationId
+      ? { operationId: search.operationId }
+      : {},
   component: lazyRouteComponent(() => import("./WorkspaceAiRoute"), "WorkspaceAiRoute"),
 });
 

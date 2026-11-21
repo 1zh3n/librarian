@@ -1,22 +1,31 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, ApiError } from "../../api/client";
+import { api, ApiError, cancelTurn, getAiSettings } from "../../api/client";
 import type { AiContext, AiOperation, AiTask, DocumentSummary } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
-import { Button, ToggleButton } from "../../ui/Button";
-import { Form, TextAreaField } from "../../ui/Forms";
+import { Button } from "../../ui/Button";
+import { Form, Select, TextAreaField } from "../../ui/Forms";
 import { Feedback } from "../../ui/Feedback";
 import type { CitationDraft } from "../document/citationHistory";
+import { AiMaterials, MaterialCitation, useMaterialSelection } from "./AiMaterials";
+import { AiOperationReceipt } from "./AiOperationReceipt";
+import { AiAnswer } from "./AiAnswer";
+import { useAiConversation } from "./useAiConversation";
 import { citationHash } from "../document/sourceVisit";
 import type { AiTranscriptVisit } from "../document/sourceVisit";
 import { ContextUnavailable, explicitReferences, referenceContext } from "./aiContext";
 import { followOperation, isActiveOperation } from "./operationEvents";
 import styles from "./AiPanel.module.css";
 
-type Turn = { prompt: string; operation: AiOperation };
+type Turn = {
+  prompt: string;
+  operation: AiOperation;
+  conversationId?: string;
+  turnId?: string;
+  historyTruncated?: boolean;
+};
 type Connection = "connected" | "retrying" | "unavailable";
-type Action = { kind: "confirm" | "undo"; operation: AiOperation };
 
 const statuses: Partial<Record<AiOperation["status"], string>> = {
   queued: "正在等待执行器…",
@@ -58,25 +67,90 @@ export function AiPanel({
     setPromptState(value);
   }
   const [local, setLocal] = useState<Turn[]>([]);
+  const chat = useAiConversation(workspace, documentId, active, returnVisit?.conversation);
+  const [deleting, setDeleting] = useState(false);
+  const config = useQuery({
+    queryKey: ["ai", "settings", chat.username],
+    queryFn: ({ signal }) => getAiSettings(signal),
+    enabled: active && Boolean(chat.username),
+    staleTime: 15_000,
+    refetchInterval: (query) =>
+      active && query.state.data?.dispatchMode === "managed" ? 15_000 : false,
+  });
+  const {
+    selected: selectedMaterials,
+    setSelected: setSelectedMaterials,
+    restoring,
+  } = useMaterialSelection(
+    chat.username,
+    config.data?.dispatchMode === "legacy" ? undefined : chat.id,
+    returnVisit?.conversation,
+  );
+  const [uploadPending, setMaterialsPending] = useState(false);
+  const materialsPending = uploadPending || restoring;
   const history = useQuery({
     queryKey: [...workspaceKeys.workspace(workspace), "ai", "operations", documentId ?? null],
     queryFn: ({ signal }) => api.listAiOperations(workspace, documentId, signal),
     staleTime: 0,
-    enabled: active,
+    enabled: active && !chat.id && chat.selection !== "new",
   });
   const byId = new Map<string, Turn>();
-  for (const operation of history.data ?? [])
-    byId.set(operation.id, { operation, prompt: returnVisit?.questions.get(operation.id) ?? "" });
-  for (const turn of local) byId.set(turn.operation.id, turn);
+  if (!chat.id && chat.selection !== "new") {
+    for (const operation of history.data ?? [])
+      byId.set(operation.id, { operation, prompt: returnVisit?.questions.get(operation.id) ?? "" });
+  }
+  for (const t of chat.allTurns)
+    byId.set(t.operationId, {
+      operation: t.operation,
+      prompt: t.prompt,
+      turnId: t.id,
+      conversationId: t.conversationId,
+      historyTruncated: t.historyTruncated,
+    });
+  for (const turn of local) {
+    if (turn.conversationId !== chat.id) continue;
+    const server = byId.get(turn.operation.id);
+    if (!server || !isActiveOperation(turn.operation) || isActiveOperation(server.operation)) {
+      byId.set(turn.operation.id, {
+        ...server,
+        ...turn,
+        prompt: turn.prompt || server?.prompt || "",
+      });
+    }
+  }
   const turns = Array.from(byId.values());
   const hasTurns = turns.length > 0;
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [action, setAction] = useState<Action>();
-  const [actionError, setActionError] = useState<{ id: string; message: string }>();
   const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
   const refreshedCommits = useRef(new Set<string>());
   const transcript = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    function revealComposer() {
+      const group = composer.current;
+      if (!group || (viewport?.width ?? window.innerWidth) > 800) return;
+      const input = group.querySelector("textarea");
+      if (!input || document.activeElement !== input) return;
+      const controls = [input, group.querySelector("button:not([disabled])")].filter(
+        (el): el is HTMLElement => el instanceof HTMLElement,
+      );
+      const obscured = controls.some((el) => {
+        const bounds = el.getBoundingClientRect();
+        return !el.contains(
+          document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2),
+        );
+      });
+      if (obscured) group.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+    window.addEventListener("resize", revealComposer);
+    viewport?.addEventListener("resize", revealComposer);
+    return () => {
+      window.removeEventListener("resize", revealComposer);
+      viewport?.removeEventListener("resize", revealComposer);
+    };
+  }, []);
   const tail = useRef(!returnVisit);
   const sourceLink = useRef<HTMLAnchorElement>(null);
   const restoredLink = useRef<AiTranscriptVisit>(undefined);
@@ -88,9 +162,22 @@ export function AiPanel({
     if (!active || !returnVisit || !hasSource || restoredLink.current === returnVisit) return;
     const log = transcript.current;
     if (!log || !sourceLink.current) return;
-    log.scrollTop = returnVisit.scrollTop;
-    sourceLink.current.focus({ preventScroll: true });
-    restoredLink.current = returnVisit;
+    const link = sourceLink.current;
+    const restore = () => {
+      log.scrollTop = returnVisit.scrollTop;
+      link.focus({ preventScroll: true });
+      if (Math.abs(log.scrollTop - returnVisit.scrollTop) <= 1) {
+        restoredLink.current = returnVisit;
+        observer.disconnect();
+      }
+    };
+    const observer = new ResizeObserver(restore);
+    if (log.firstElementChild) observer.observe(log.firstElementChild);
+    const frame = requestAnimationFrame(restore);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [active, returnVisit, hasSource]);
   const references = explicitReferences(prompt, documents);
   const referenceError = references.missing.length
@@ -98,8 +185,14 @@ export function AiPanel({
     : references.documents.length > 24
       ? "每次请求最多引用 24 份文件。"
       : "";
+  const missingModel = config.data?.dispatchMode === "managed" && !config.data.effectiveSelection;
+  const offline = config.data?.dispatchMode === "managed" && !config.data.runnerOnline;
   const disabled =
     submitting ||
+    materialsPending ||
+    missingModel ||
+    offline ||
+    config.data?.globalEnabled === false ||
     turns.some(({ operation }) => isActiveOperation(operation) && !unavailable.has(operation.id));
   const markUnavailable = useCallback((id: string) => {
     setUnavailable((previous) => new Set(previous).add(id));
@@ -128,6 +221,7 @@ export function AiPanel({
     [client, workspace],
   );
 
+  const updateOperation = chat.updateOperation;
   const update = useCallback(
     (operation: AiOperation) => {
       if (operation.workspaceId !== workspace || operation.documentId !== (documentId ?? null))
@@ -137,16 +231,17 @@ export function AiPanel({
           ? previous.map((turn) =>
               turn.operation.id === operation.id ? { ...turn, operation } : turn,
             )
-          : [...previous, { operation, prompt: "" }],
+          : [...previous, { operation, prompt: "", ...(chat.id && { conversationId: chat.id }) }],
       );
+      updateOperation(operation);
       refresh(operation.commitId, operation.undoCommitId);
     },
-    [documentId, refresh, workspace],
+    [chat.id, documentId, refresh, updateOperation, workspace],
   );
 
-  async function submit(mode: AiTask["mode"]) {
-    const value = prompt.trim();
-    if (!value || disabled || referenceError) return;
+  async function submit(mode: AiTask["mode"], retry?: Turn) {
+    const value = (retry?.prompt ?? prompt).trim();
+    if (!value || disabled || (!retry && referenceError)) return;
     if (new TextEncoder().encode(value).length > 16_384) {
       setSubmitError("提示词过长，请缩短后重试。");
       return;
@@ -154,58 +249,42 @@ export function AiPanel({
     setSubmitError("");
     setSubmitting(true);
     try {
-      const context = references.documents.length
-        ? referenceContext(references.documents)
-        : await resolveContext?.();
-      const operation = await api.createAiOperation({
-        workspaceId: workspace,
-        ...(documentId && { documentId }),
+      const context = retry
+        ? undefined
+        : references.documents.length
+          ? referenceContext(references.documents)
+          : await resolveContext?.();
+      const turn = await chat.send({
         mode,
         prompt: value,
         ...(context?.length && { context }),
+        ...(retry?.turnId && { retryOfTurnId: retry.turnId }),
+        ...(selectedMaterials.length && { materialIds: selectedMaterials }),
       });
       tail.current = true;
-      setLocal((previous) => [...previous, { prompt: value, operation }]);
-      setPrompt("");
+      setLocal((previous) => [
+        ...previous,
+        {
+          prompt: value,
+          operation: turn.operation,
+          conversationId: turn.conversationId,
+          turnId: turn.id,
+          historyTruncated: turn.historyTruncated,
+        },
+      ]);
+      if (!retry) setPrompt("");
     } catch (error) {
       setSubmitError(
-        error instanceof ContextUnavailable ? error.message : "无法提交 AI 请求，请重试。",
+        error instanceof ContextUnavailable
+          ? error.message
+          : error instanceof ApiError && error.code === "runner_offline"
+            ? "执行器离线，恢复连接后请重试。"
+            : error instanceof ApiError && error.code === "managed_activation_required"
+              ? "请先启用受管 AI，再发送参考材料。"
+              : "无法提交 AI 请求，请重试。",
       );
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function applyAction(next: Action) {
-    const { operation, kind } = next;
-    setAction(next);
-    setActionError(undefined);
-    try {
-      if (kind === "confirm" && operation.confirmation) {
-        update(await api.confirmAiOperation(operation.id, operation.confirmation.id));
-      } else if (kind === "undo") {
-        const receipt = await api.undoAiOperation(operation.id);
-        update({ ...operation, undoCommitId: receipt.commitId });
-      }
-    } catch (error) {
-      setActionError({
-        id: operation.id,
-        message:
-          error instanceof ApiError && error.status === 409
-            ? "文件版本已更新，请检查当前内容。"
-            : kind === "confirm"
-              ? "无法确认操作，请重试。"
-              : "无法撤销操作，请重试。",
-      });
-      if (kind === "confirm") {
-        try {
-          update(await api.getAiOperation(operation.id));
-        } catch {
-          // Preserve the last known operation; the action error remains available.
-        }
-      }
-    } finally {
-      setAction(undefined);
     }
   }
 
@@ -214,8 +293,87 @@ export function AiPanel({
       id={id}
       className={styles.panel}
       data-document-ai={Boolean(documentId) || undefined}
-      aria-label={documentId ? "文档 AI" : "Workspace AI"}
+      aria-label={documentId ? "文档 AI" : "工作区 AI"}
     >
+      <div className={styles.actions}>
+        {chat.conversations.length > 0 && (
+          <Select
+            label="会话"
+            value={chat.id ?? (chat.selection === "new" ? "new" : "recent")}
+            entries={[
+              ...chat.conversations.map((c) => ({
+                value: c.id,
+                label: new Date(c.createdAt).toLocaleString(),
+              })),
+              { value: "recent", label: "最近操作" },
+              ...(chat.selection === "new" ? [{ value: "new", label: "新对话" }] : []),
+            ]}
+            onChange={(value) => {
+              chat.pick(value);
+              setLocal([]);
+              setSelectedMaterials([]);
+              setDeleting(false);
+              setPrompt("");
+            }}
+          />
+        )}
+        <Button
+          className={styles.button}
+          isDisabled={submitting}
+          onPress={() => {
+            chat.pick("new");
+            setLocal([]);
+            setSelectedMaterials([]);
+            setDeleting(false);
+            setPrompt("");
+          }}
+        >
+          新对话
+        </Button>
+        {chat.id && (
+          <Button className={styles.button} onPress={() => setDeleting(true)}>
+            删除会话
+          </Button>
+        )}
+        {chat.listing.hasNextPage && (
+          <Button className={styles.button} onPress={() => void chat.listing.fetchNextPage()}>
+            更多会话
+          </Button>
+        )}
+      </div>
+      {deleting && (
+        <fieldset aria-label="删除会话">
+          <p>删除本次对话和材料？已保存的文档版本仍可在历史中查看。</p>
+          <Button className={styles.button} onPress={() => setDeleting(false)}>
+            取消
+          </Button>
+          <Button
+            className={styles.button}
+            onPress={() =>
+              void chat.remove().then(
+                () => {
+                  setLocal([]);
+                  setPrompt("");
+                  setSelectedMaterials([]);
+                  setDeleting(false);
+                },
+                () => setSubmitError("删除会话失败，请重试。"),
+              )
+            }
+          >
+            确认删除会话
+          </Button>
+        </fieldset>
+      )}
+      {config.data?.globalEnabled === false && <Feedback>管理员已停用 AI。</Feedback>}
+      {missingModel && <Feedback>当前没有可用模型，请联系管理员检查 AI 连接。</Feedback>}
+      {!missingModel && offline && <Feedback>执行器离线，恢复连接后可以继续提问。</Feedback>}
+      {!missingModel && config.data?.fallbackReason && (
+        <Feedback>
+          原模型或思考设置已失效，当前使用{config.data.effectiveSelection?.modelId ?? "可用设置"}。
+        </Feedback>
+      )}
+      {chat.turnsQuery.isError && <Feedback tone="error">无法读取对话记录。</Feedback>}
       {!hasTurns && history.isError && <Feedback tone="error">无法读取 AI 操作记录。</Feedback>}
       {hasTurns && (
         <div
@@ -227,93 +385,134 @@ export function AiPanel({
           }}
         >
           <div className={styles.turns}>
-            {turns.map(({ prompt: question, operation }) => (
-              <div className={styles.turn} key={operation.id}>
-                {question && <p className={styles.question}>{question}</p>}
-                {isActiveOperation(operation) ? (
-                  <OperationProgress
-                    operation={operation}
-                    update={update}
-                    unavailable={markUnavailable}
-                  />
-                ) : statuses[operation.status] ? (
-                  <Feedback tone="error">{statuses[operation.status]}</Feedback>
-                ) : null}
-                {operation.answer && <p className={styles.answer}>{operation.answer}</p>}
-                {operation.sources.length > 0 && (
-                  <ul className={styles.sources} aria-label="引用来源">
-                    {operation.sources.map((source) => (
-                      <li key={source.id}>
-                        <Link
-                          to="/workspaces/$workspaceId/documents/$documentId"
-                          params={{ workspaceId: workspace, documentId: source.documentId }}
-                          hash={citationHash(source)}
-                          state={(origin) => ({
-                            readerCitation: source.id,
-                            readerCitationOrigin: origin.__TSR_key,
-                          })}
-                          hashScrollIntoView={false}
-                          title={source.revision}
-                          ref={returnVisit?.sourceId === source.id ? sourceLink : undefined}
-                          onClick={(event) => {
-                            if (
-                              event.defaultPrevented ||
-                              event.button !== 0 ||
-                              event.ctrlKey ||
-                              event.metaKey ||
-                              event.altKey ||
-                              event.shiftKey
-                            )
-                              return;
-                            onSourceVisit?.({
-                              sourceId: source.id,
-                              scrollTop: transcript.current?.scrollTop ?? 0,
-                              draft: prompt,
-                              questions: new Map(
-                                turns
-                                  .filter((turn) => turn.prompt)
-                                  .map((turn) => [turn.operation.id, turn.prompt]),
-                              ),
-                            });
-                          }}
-                        >
-                          {source.path}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {operation.confirmation && (
-                  <section className={styles.changeList} aria-label="待确认的操作">
-                    <p>以下文件需要确认后才能更改。</p>
-                    <ul>
-                      {operation.confirmation.paths.map((path) => (
-                        <li key={path}>{path}</li>
+            {turns.map((turn) => {
+              const { prompt: question, operation } = turn;
+              return (
+                <div className={styles.turn} key={operation.id}>
+                  {operation.selection && (
+                    <small>
+                      {operation.selection.modelId} ·{" "}
+                      {operation.selection.thinking.mode === "effort"
+                        ? operation.selection.thinking.level
+                        : operation.selection.thinking.mode === "off"
+                          ? "关闭思考"
+                          : "供应商默认"}
+                    </small>
+                  )}
+                  {question && <p className={styles.question}>{question}</p>}
+                  {isActiveOperation(operation) ? (
+                    <OperationProgress
+                      operation={operation}
+                      update={update}
+                      unavailable={markUnavailable}
+                    />
+                  ) : statuses[operation.status] ? (
+                    <Feedback tone="error">{statuses[operation.status]}</Feedback>
+                  ) : null}
+                  {turn.historyTruncated && <Feedback>较早的对话已超出本轮上下文范围。</Feedback>}
+                  {turn.turnId && chat.id && isActiveOperation(operation) && (
+                    <Button
+                      className={styles.button}
+                      onPress={() =>
+                        void cancelTurn(chat.id!, turn.turnId!).then(
+                          (t) => {
+                            update(t.operation);
+                            chat.refresh();
+                          },
+                          () => setSubmitError("停止失败，请重试。"),
+                        )
+                      }
+                    >
+                      停止
+                    </Button>
+                  )}
+                  {turn.turnId && ["failed", "conflict", "canceled"].includes(operation.status) && (
+                    <Button
+                      className={styles.button}
+                      isDisabled={disabled}
+                      onPress={() => void submit(operation.mode, turn)}
+                    >
+                      重试本轮
+                    </Button>
+                  )}
+                  {operation.answer && <AiAnswer id={operation.id} answer={operation.answer} />}
+                  {operation.sources.length > 0 && (
+                    <ul className={styles.sources} aria-label="引用来源">
+                      {operation.sources.map((source) => (
+                        <li key={source.id}>
+                          {"kind" in source ? (
+                            <MaterialCitation
+                              conversationId={chat.id ?? source.conversationId}
+                              source={source}
+                            />
+                          ) : (
+                            <Link
+                              to="/workspaces/$workspaceId/documents/$documentId"
+                              params={{ workspaceId: workspace, documentId: source.documentId }}
+                              hash={citationHash(source)}
+                              state={(origin) => ({
+                                readerCitation: source.id,
+                                readerCitationOrigin: origin.__TSR_key,
+                              })}
+                              hashScrollIntoView={false}
+                              title={source.revision}
+                              ref={returnVisit?.sourceId === source.id ? sourceLink : undefined}
+                              onClick={(event) => {
+                                if (
+                                  event.defaultPrevented ||
+                                  event.button !== 0 ||
+                                  event.ctrlKey ||
+                                  event.metaKey ||
+                                  event.altKey ||
+                                  event.shiftKey
+                                )
+                                  return;
+                                onSourceVisit?.({
+                                  sourceId: source.id,
+                                  scrollTop: transcript.current?.scrollTop ?? 0,
+                                  draft: prompt,
+                                  ...(chat.username && {
+                                    conversation: {
+                                      username: chat.username,
+                                      id: chat.id ?? "recent",
+                                      ...(chat.id &&
+                                        selectedMaterials.length > 0 && {
+                                          materialIds: [...selectedMaterials],
+                                        }),
+                                    },
+                                  }),
+                                  questions: new Map(
+                                    turns
+                                      .filter((turn) => turn.prompt)
+                                      .map((turn) => [turn.operation.id, turn.prompt]),
+                                  ),
+                                });
+                              }}
+                            >
+                              {source.path}
+                            </Link>
+                          )}
+                        </li>
                       ))}
                     </ul>
-                    {writable && (
-                      <Button
-                        className={styles.button}
-                        isDisabled={Boolean(action)}
-                        onPress={() => void applyAction({ kind: "confirm", operation })}
-                      >
-                        确认操作
-                      </Button>
-                    )}
-                  </section>
-                )}
-                {operation.commitId && (
-                  <OperationChanges
+                  )}
+                  <AiOperationReceipt
                     operation={operation}
-                    canUndo={writable && !action}
-                    undo={() => void applyAction({ kind: "undo", operation })}
+                    writable={writable}
+                    update={update}
+                    afterCancel={() => composer.current?.querySelector("textarea")?.focus()}
                   />
-                )}
-                {actionError?.id === operation.id && (
-                  <Feedback tone="error">{actionError.message}</Feedback>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
+            {chat.turnsQuery.hasNextPage && (
+              <Button
+                className={styles.button}
+                onPress={() => void chat.turnsQuery.fetchNextPage()}
+              >
+                更多轮次
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -325,44 +524,54 @@ export function AiPanel({
           void submit("chat");
         }}
       >
-        <TextAreaField
-          aria-label="提示词"
-          value={prompt}
-          onChange={setPrompt}
-          disabled={submitting}
-          inputClassName={styles.prompt}
-          placeholder="输入提示词，使用 @ 引用文件或目录"
-          rows={2}
-          maxLength={16_384}
-        />
-
-        {references.documents.length > 0 && (
-          <ul className={styles.references} aria-label="指定的上下文">
-            {references.documents.slice(0, 24).map(({ id: document, path }) => (
-              <li key={document}>@{path}</li>
-            ))}
-          </ul>
+        {config.data?.dispatchMode === "managed" && (
+          <AiMaterials
+            conversationId={chat.id}
+            ensureConversation={chat.ensureConversation}
+            selected={selectedMaterials}
+            onMaterialsChange={setSelectedMaterials}
+            onPendingChange={setMaterialsPending}
+          />
         )}
-        {(referenceError || submitError) && (
-          <Feedback tone="error">{referenceError || submitError}</Feedback>
-        )}
-        <div className={styles.actions}>
-          <Button
-            className={styles.button}
-            type="submit"
-            isDisabled={disabled || !prompt.trim() || Boolean(referenceError)}
-          >
-            询问
-          </Button>
-          {writable && (
+        <div className={styles.composer} ref={composer}>
+          <TextAreaField
+            aria-label="提示词"
+            value={prompt}
+            onChange={setPrompt}
+            disabled={submitting}
+            inputClassName={styles.prompt}
+            placeholder="输入提示词，使用 @ 引用文件或目录"
+            rows={2}
+            maxLength={16_384}
+          />
+          {references.documents.length > 0 && (
+            <ul className={styles.references} aria-label="指定的上下文">
+              {references.documents.slice(0, 24).map(({ id: document, path }) => (
+                <li key={document}>@{path}</li>
+              ))}
+            </ul>
+          )}
+          {(referenceError || submitError) && (
+            <Feedback tone="error">{referenceError || submitError}</Feedback>
+          )}
+          <div className={styles.actions}>
             <Button
               className={styles.button}
+              type="submit"
               isDisabled={disabled || !prompt.trim() || Boolean(referenceError)}
-              onPress={() => void submit("edit")}
             >
-              修改
+              询问
             </Button>
-          )}
+            {writable && (
+              <Button
+                className={styles.button}
+                isDisabled={disabled || !prompt.trim() || Boolean(referenceError)}
+                onPress={() => void submit("edit")}
+              >
+                修改
+              </Button>
+            )}
+          </div>
         </div>
       </Form>
     </section>
@@ -408,74 +617,13 @@ function OperationProgress({
   );
   return (
     <>
-      <Feedback tone="status" className={styles.status}>
-        {progress || statuses[status]}
-      </Feedback>
+      <Feedback className={styles.status}>{progress || statuses[status]}</Feedback>
       {connection !== "connected" && (
-        <Feedback tone="status" className={styles.status}>
+        <Feedback className={styles.status}>
           {connection === "retrying" ? "连接中断，正在重新连接…" : "无法继续读取此操作。"}
         </Feedback>
       )}
       {preview && <p className={styles.answer}>{preview}</p>}
-    </>
-  );
-}
-
-function OperationChanges({
-  operation,
-  canUndo,
-  undo,
-}: {
-  operation: AiOperation;
-  canUndo: boolean;
-  undo: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [path, setPath] = useState("");
-  const diff = useQuery({
-    queryKey: [...workspaceKeys.workspace(operation.workspaceId), "ai", operation.id, "diff", path],
-    queryFn: ({ signal }) => api.getAiOperationDiff(operation.id, path, signal),
-    enabled: Boolean(expanded && path),
-    select: (result) => result.diff,
-  });
-  return (
-    <>
-      <Feedback tone="status">已修改 {operation.changes.length} 个文件</Feedback>
-      <div className={styles.actions}>
-        <ToggleButton className={styles.button} isSelected={expanded} onChange={setExpanded}>
-          查看改动
-        </ToggleButton>
-        {!operation.undoCommitId && (
-          <Button className={styles.button} isDisabled={!canUndo} onPress={undo}>
-            撤销
-          </Button>
-        )}
-      </div>
-      {operation.undoCommitId && <Feedback tone="success">已撤销并保存为新版本</Feedback>}
-      {expanded && (
-        <section className={styles.changeList} aria-label="AI 改动">
-          <ul>
-            {operation.changes.map((file) => (
-              <li key={file.path}>
-                <ToggleButton
-                  className={styles.button}
-                  isSelected={path === file.path}
-                  onChange={(selected) => setPath(selected ? file.path : "")}
-                >
-                  {file.path}
-                </ToggleButton>
-              </li>
-            ))}
-          </ul>
-          {path && diff.isPending && <Feedback tone="status">正在读取差异…</Feedback>}
-          {path && diff.isError && <Feedback tone="error">无法读取版本差异。</Feedback>}
-          {diff.data && (
-            <pre className={styles.diff} aria-label="版本差异">
-              {diff.data}
-            </pre>
-          )}
-        </section>
-      )}
     </>
   );
 }

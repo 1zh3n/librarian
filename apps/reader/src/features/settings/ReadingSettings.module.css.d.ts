@@ -2,6 +2,7 @@ declare const styles: {
   readonly overlay: string;
   readonly modal: string;
   readonly dialog: string;
+  readonly device: string;
   readonly fields: string;
   readonly field: string;
   readonly input: string;
@@ -13,5 +14,11 @@ declare const styles: {
   readonly tab: string;
   readonly panel: string;
   readonly shortcuts: string;
+  readonly aiPanel: string;
+  readonly catalog: string;
+  readonly detail: string;
+  readonly controls: string;
+  readonly section: string;
+  readonly refresh: string;
 };
 export default styles;

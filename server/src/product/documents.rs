@@ -34,14 +34,19 @@ pub(super) const MARKDOWN_LIMIT: usize = 4 * 1024 * 1024;
 const METADATA_LIMIT: usize = 32 * 1024;
 
 pub(crate) struct DocumentService {
+    pub(super) reader_links: super::reader_links::ReaderLinks,
     pub(crate) spaces: NativeSpaces,
     pub(super) metadata: Metadata,
+    pub(super) ai_discovery: super::ai_settings::AiDiscoveryService,
 }
 
 impl DocumentService {
     pub(crate) fn open(root: &Path, spaces: NativeSpaces) -> Result<Self, String> {
+        let metadata = Metadata::open(root)?;
         Ok(Self {
-            metadata: Metadata::open(root)?,
+            reader_links: super::reader_links::ReaderLinks::load(&metadata)?,
+            ai_discovery: super::ai_settings::AiDiscoveryService::open(&metadata)?,
+            metadata,
             spaces,
         })
     }
@@ -159,6 +164,26 @@ impl DocumentService {
         Ok(summary(state, workspace, id, path, title))
     }
 
+    pub(super) fn snapshot(
+        &self,
+        state: &ServerState,
+        workspace: &str,
+        id: String,
+        path: String,
+        markdown: String,
+        revision: String,
+    ) -> DocumentSnapshot {
+        let title = title_from_front_matter(markdown.as_bytes());
+        DocumentSnapshot {
+            link: self.reader_links.document(workspace, &id),
+            document_id: id.clone(),
+            path: path.clone(),
+            document: summary(state, workspace, id, path, title),
+            markdown,
+            revision,
+        }
+    }
+
     pub(super) fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
         let (workspace, _) = self.metadata.document_path(id)?;
         let (instance, _) = self.scope(account, &workspace, false)?;
@@ -167,14 +192,7 @@ impl DocumentService {
         let path = self.path_in(&workspace, id)?;
         let markdown = read_markdown(state, &path)?;
         let revision = sha256_hex(markdown.as_bytes());
-        Ok(snapshot(
-            state,
-            &workspace,
-            id.to_owned(),
-            path,
-            markdown,
-            revision,
-        ))
+        Ok(self.snapshot(state, &workspace, id.to_owned(), path, markdown, revision))
     }
 
     fn create(
@@ -199,7 +217,7 @@ impl DocumentService {
         let (markdown, revision) =
             save_locked(state, &path, request.content.markdown, None, actor)?;
         let id = self.metadata.document_id(workspace, &path)?;
-        Ok(snapshot(state, workspace, id, path, markdown, revision))
+        Ok(self.snapshot(state, workspace, id, path, markdown, revision))
     }
 
     fn edit(
@@ -219,14 +237,7 @@ impl DocumentService {
         let path = self.path_in(&workspace, id)?;
         let (markdown, revision) =
             save_locked(state, &path, request.markdown, Some(&expected), actor)?;
-        Ok(snapshot(
-            state,
-            &workspace,
-            id.to_owned(),
-            path,
-            markdown,
-            revision,
-        ))
+        Ok(self.snapshot(state, &workspace, id.to_owned(), path, markdown, revision))
     }
 
     pub(super) fn get_outline(
@@ -425,22 +436,6 @@ pub(super) fn note_file_write(
     );
 }
 
-pub(super) fn snapshot(
-    state: &ServerState,
-    workspace: &str,
-    id: String,
-    path: String,
-    markdown: String,
-    revision: String,
-) -> DocumentSnapshot {
-    let title = title_from_front_matter(markdown.as_bytes());
-    DocumentSnapshot {
-        document: summary(state, workspace, id, path, title),
-        markdown,
-        revision,
-    }
-}
-
 fn summary(
     state: &ServerState,
     workspace: &str,
@@ -529,9 +524,14 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
             get(super::settings::get_preferences).put(super::settings::save_preferences),
         )
         .merge(super::ai::routes())
+        .merge(super::ai_settings::routes())
         .merge(super::accounts::routes())
+        .merge(super::ai_configuration::routes())
+        .merge(super::ai_probes::routes())
         .merge(super::workspace::routes())
+        .merge(super::ai_materials::routes())
         .merge(super::delivery::routes())
+        .merge(super::imports::routes())
         .merge(super::snapshots::routes())
         .merge(super::session::routes())
         .merge(super::publication::routes())

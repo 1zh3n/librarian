@@ -85,7 +85,8 @@
   font-size: 0.8125rem;
 }
 
-.form {
+.form,
+.composer {
   display: grid;
   gap: 0.375rem;
 }
@@ -141,8 +142,7 @@
   color: var(--ink-secondary);
 }
 
-.references,
-.changeList ul {
+.references {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
@@ -161,6 +161,26 @@
   padding: 0.125rem 0.375rem;
   border-radius: var(--radius);
   background: var(--surface-muted);
+}
+
+.changeList ul {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.375rem;
+  padding-inline: 0;
+  list-style: none;
+}
+.changeList li,
+.changeList p {
+  overflow-wrap: anywhere;
+}
+.changeList a {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+}
+.changeList .button {
+  min-height: 2.75rem;
 }
 
 .changeList {

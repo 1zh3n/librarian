@@ -13,10 +13,7 @@ use silverbullet_server::{
     auth::{
         cookie::set_cookie_value,
         is_secure_request,
-        mcp::{
-            cimd::CimdFetcher, clients::ClientRegistry, grants::GrantStore, wall_clock,
-            McpOAuthState,
-        },
+        mcp::{cimd::CimdFetcher, clients::ClientRegistry, wall_clock, McpOAuthState},
         request_host, request_origin, scoped_auth_cookie_name, CodeStore, CookieOptions,
         LoginManager,
     },
@@ -45,7 +42,7 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
     let session = spaces.session;
     let password_limits = spaces.password_limits.clone();
     let clients = Arc::new(ClientRegistry::load(root).map_err(|err| err.to_string())?);
-    let grants = Arc::new(GrantStore::load(root).map_err(|err| err.to_string())?);
+    let grants = spaces.grants.clone();
     let host = Arc::new(
         MultiHost::new(spaces.manager.clone(), spaces.users.clone())
             .with_oauth(spaces.authenticator.clone(), grants.clone())
@@ -173,6 +170,24 @@ impl ToolSet for ProductTools {
                 "workspace_list", "List workspaces", "List the workspaces accessible under the current grant.",
                 json!({}), &[], true,
             ),
+            tool("workspace_upload_files","Upload files","Write a file group into a directory. Existing files require an explicit revision.",
+                json!({"workspaceId":workspace,"operationId":operation,"targetDirectory":{"type":"string"},
+                 "files":{"type":"array","minItems":1,"maxItems":64,"items":{"type":"object","required":["path","contentBase64"],"additionalProperties":false,"properties":{"path":{"type":"string"},"contentBase64":{"type":"string","contentEncoding":"base64"}}}},
+                 "updates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","baseRevision"],"properties":{"path":{"type":"string"},"baseRevision":revision}}}}),
+                &["workspaceId","targetDirectory","operationId","files"],false),
+            tool("workspace_apply_edits","Apply document edits","Commit a conditional Markdown batch in one version.",
+                json!({"workspaceId":workspace,"operationId":operation,"edits":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","additionalProperties":false,
+                    "oneOf":[{"required":["path"]},{"required":["documentId"]}],"required":["baseRevision","markdown"],"properties":{"path":{"type":"string"},"documentId":document,"baseRevision":{"type":["string","null"]},"markdown":markdown}}}}),
+                &["workspaceId","operationId","edits"],false),
+            tool("workspace_request_reorganization","Request move or deletion","Preview the change for confirmation in Reader.",
+                json!({"workspaceId":workspace,"operationId":operation,"request":{"oneOf":[
+                    {"type":"object","additionalProperties":false,"required":["kind","from","to"],"properties":{"kind":{"const":"move"},"from":{"type":"string"},"to":{"type":"string"}}},
+                    {"type":"object","additionalProperties":false,"required":["kind","documentIds"],"properties":{"kind":{"const":"delete"},"documentIds":{"type":"array","items":document}}}]}}),
+                &["workspaceId","operationId","request"],false),
+            tool("workspace_get_operation","Get operation","Read a receipt under the original grant.",
+                json!({"workspaceId":workspace,"operationId":operation}),&["workspaceId","operationId"],true),
+            tool("workspace_undo_operation","Undo operation","Conditionally reverse the committed operation under its original grant.",
+                json!({"workspaceId":workspace,"operationId":operation}),&["workspaceId","operationId"],false),
             tool(
                 "workspace_publish", "Deliver documents", "Import documents and attachments into a granted Workspace. Identical content and manifest reuse the same receipt.",
                 json!({"workspaceId": workspace, "delivery": {
@@ -260,25 +275,10 @@ impl ToolSet for ProductTools {
     }
 
     async fn call(&self, caller: &Caller, name: &str, args: Value) -> ToolResult {
-        let CallerCredential::Grant {
-            spaces,
-            credential_version,
-            ..
-        } = &caller.credential
-        else {
+        let CallerCredential::Grant { grant_id, .. } = &caller.credential else {
             return error_result("A current OAuth grant is required");
         };
-        match self
-            .0
-            .call(
-                &caller.username,
-                spaces,
-                credential_version.as_deref(),
-                name,
-                args,
-            )
-            .await
-        {
+        match self.0.call(&caller.username, grant_id, name, args).await {
             Ok(result) => json_result(result),
             Err(error) => {
                 let mut result = json_result(error);

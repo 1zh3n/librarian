@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 export function Tabs({
   label,
   value,
+  disabled = false,
   onChange,
   items,
   className,
@@ -13,6 +14,7 @@ export function Tabs({
 }: {
   label: string;
   value: string;
+  disabled?: boolean;
   onChange: (id: string) => void;
   items: readonly { id: string; label: string; content?: ReactNode }[];
   className?: string;
@@ -23,6 +25,7 @@ export function Tabs({
   return (
     <HeroTabs
       className={className ?? ""}
+      isDisabled={disabled}
       selectedKey={value}
       onSelectionChange={(id) => onChange(String(id))}
     >

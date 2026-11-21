@@ -185,7 +185,7 @@ test(
         await ui.expect(citations.getByRole("link")).toHaveCount(1);
         await ui
           .expect(citations.getByRole("link", { name: second.path }))
-          .toHaveAttribute("href", `/workspaces/${workspace.id}/documents/${second.id}`);
+          .toHaveAttribute("href", `/workspaces/${workspace.id}/documents/${second.id}#reader-source?revision=${original.revision}`);
       }
     });
 

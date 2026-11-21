@@ -1,3 +1,4 @@
+import { AiSettings } from "./AiSettings";
 import { Dialog } from "../../ui/Dialog";
 import { useState } from "react";
 import { Button } from "../../ui/Button";
@@ -25,60 +26,114 @@ type SettingsActions = {
 export function ReadingSettings({
   preferences,
   loading,
+  account,
+  isAdmin,
   retry,
   save,
   close,
 }: SettingsActions & {
   preferences: DevicePreferences | undefined;
   loading: boolean;
+  account: string | undefined;
+  isAdmin: boolean | undefined;
   retry: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState("appearance");
+  const [visitedAi, setVisitedAi] = useState(false);
   return (
     <Dialog title="应用设置" busy={saving} onClose={close} classes={styles}>
-      {preferences ? (
-        <fieldset disabled={saving} aria-label="设备偏好">
-          <PreferencesForm
-            preferences={preferences}
-            saving={saving}
-            setSaving={setSaving}
-            save={save}
-            close={close}
-          />
-        </fieldset>
-      ) : (
-        <div className={styles.fields}>
-          {loading ? (
-            <Feedback>正在读取设备设置…</Feedback>
-          ) : (
-            <Feedback tone="error" className={styles.error}>
-              无法读取设备设置。
-            </Feedback>
-          )}
+      <Tabs
+        value={tab}
+        disabled={saving}
+        onChange={(id) => {
+          setTab(id);
+          if (id === "ai") setVisitedAi(true);
+        }}
+        label="应用设置"
+        listClassName={styles.tabList}
+        tabClassName={styles.tab}
+        items={[
+          { id: "appearance", label: "外观" },
+          { id: "reading", label: "阅读与布局" },
+          { id: "shortcuts", label: "快捷键" },
+          { id: "ai", label: "AI" },
+        ]}
+      >
+        {preferences ? (
+          <fieldset
+            className={styles.device}
+            hidden={tab === "ai"}
+            disabled={saving}
+            aria-label="设备偏好"
+          >
+            <PreferencesForm
+              preferences={preferences}
+              saving={saving}
+              setSaving={setSaving}
+              setTab={setTab}
+              save={save}
+              close={close}
+            />
+          </fieldset>
+        ) : (
+          tab !== "ai" && (
+            <TabPanel id={tab} className={styles.fields}>
+              {loading ? (
+                <Feedback>正在读取设备设置…</Feedback>
+              ) : (
+                <Feedback tone="error" className={styles.error}>
+                  无法读取设备设置。
+                </Feedback>
+              )}
+              <div className={styles.actions}>
+                <Button className={styles.button} onPress={close}>
+                  关闭
+                </Button>
+                {!loading && (
+                  <Button className={styles.button} onPress={retry}>
+                    重试
+                  </Button>
+                )}
+              </div>
+            </TabPanel>
+          )
+        )}
+        <TabPanel id="ai" keepMounted className={styles.aiPanel}>
+          {visitedAi &&
+            (account && isAdmin !== undefined ? (
+              <AiSettings
+                key={account}
+                username={account}
+                isAdmin={isAdmin}
+                active={tab === "ai"}
+                busy={saving}
+                setBusy={setSaving}
+              />
+            ) : (
+              <Feedback>暂时无法确认账号权限。</Feedback>
+            ))}
           <div className={styles.actions}>
-            <Button className={styles.button} onPress={close}>
+            <Button className={styles.button} isDisabled={saving} onPress={close}>
               关闭
             </Button>
-            {!loading && (
-              <Button className={styles.button} onPress={retry}>
-                重试
-              </Button>
-            )}
           </div>
-        </div>
-      )}
+        </TabPanel>
+      </Tabs>
     </Dialog>
   );
 }
 
 function PreferencesForm({
   preferences,
+  setTab,
   saving,
   setSaving,
   save,
   close,
 }: SettingsActions & {
   preferences: DevicePreferences;
+  setTab: (tab: string) => void;
   saving: boolean;
   setSaving: (saving: boolean) => void;
 }) {
@@ -86,7 +141,6 @@ function PreferencesForm({
   const [font, setFont] = useState(preferences.font);
   const [eink, setEink] = useState(preferences.eink);
   const [reduceMotion, setReduceMotion] = useState(preferences.reduceMotion);
-  const [tab, setTab] = useState("appearance");
   const [error, setError] = useState(false);
   return (
     <Form
@@ -123,141 +177,128 @@ function PreferencesForm({
           .finally(() => setSaving(false));
       }}
     >
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        label="应用设置"
-        listClassName={styles.tabList}
-        tabClassName={styles.tab}
-        items={[
-          { id: "appearance", label: "外观" },
-          { id: "reading", label: "阅读与布局" },
-          { id: "shortcuts", label: "快捷键" },
-        ]}
-      >
-        <TabPanel id="appearance" keepMounted className={styles.panel}>
-          <Select
-            label="主题"
-            value={theme}
-            disabled={saving}
-            onChange={setTheme}
-            entries={themes}
-            className={styles.field}
-          />
-          <Select
-            label="字体"
-            value={font}
-            disabled={saving}
-            onChange={setFont}
-            entries={fonts}
-            className={styles.field}
-          />
-          <Checkbox className={styles.checkbox} disabled={saving} checked={eink} onChange={setEink}>
-            墨水屏
-          </Checkbox>
-          <Checkbox
-            className={styles.checkbox}
-            disabled={saving}
-            checked={reduceMotion}
-            onChange={setReduceMotion}
-          >
-            减少动画
-          </Checkbox>
-        </TabPanel>
-        <TabPanel id="reading" keepMounted className={styles.panel}>
-          <Field
-            label="字号"
-            className={styles.field}
-            name="fontSize"
-            type="number"
-            required
-            validationBehavior="native"
-            defaultValue={String(preferences.fontSize)}
-            inputClassName={styles.input}
-            min={16}
-            max={28}
-            step={1}
-          />
-          <Field
-            label="行高"
-            className={styles.field}
-            name="lineHeight"
-            type="number"
-            required
-            validationBehavior="native"
-            defaultValue={String(preferences.lineHeight)}
-            inputClassName={styles.input}
-            min={1.4}
-            max={2.4}
-            step={0.01}
-          />
-          <Field
-            label="每行汉字数"
-            className={styles.field}
-            name="measure"
-            type="number"
-            required
-            validationBehavior="native"
-            defaultValue={String(preferences.measure)}
-            inputClassName={styles.input}
-            min={28}
-            max={56}
-            step={1}
-          />
-          <Field
-            label="空间目录宽度"
-            className={styles.field}
-            name="sidebarWidth"
-            type="number"
-            required
-            validationBehavior="native"
-            defaultValue={String(preferences.sidebarWidth)}
-            inputClassName={styles.input}
-            min={176}
-            max={360}
-            step={1}
-          />
-          <Field
-            label="文档工具宽度"
-            className={styles.field}
-            name="toolsWidth"
-            type="number"
-            required
-            validationBehavior="native"
-            defaultValue={String(preferences.toolsWidth)}
-            inputClassName={styles.input}
-            min={200}
-            max={480}
-            step={1}
-          />
-        </TabPanel>
-        <TabPanel id="shortcuts" keepMounted className={styles.panel}>
-          <Field
-            label="专注快捷键"
-            className={styles.field}
-            name="focusKey"
-            defaultValue={preferences.focusKey}
-            inputClassName={styles.input}
-            maxLength={1}
-            pattern="[A-Za-z]?"
-            placeholder="留空关闭"
-          />
-          <dl className={styles.shortcuts}>
-            <dt>快速打开</dt>
-            <dd>
-              <kbd>Ctrl / ⌘</kbd> + <kbd>K</kbd>
-            </dd>
-            <dt>编辑正文</dt>
-            <dd>
-              <kbd>Alt</kbd> + <kbd>E</kbd>
-            </dd>
-            <dt>完整源码</dt>
-            <dd>
-              <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd>
-            </dd>
-          </dl>
-        </TabPanel>
-      </Tabs>
+      <TabPanel id="appearance" keepMounted className={styles.panel}>
+        <Select
+          label="主题"
+          value={theme}
+          disabled={saving}
+          onChange={setTheme}
+          entries={themes}
+          className={styles.field}
+        />
+        <Select
+          label="字体"
+          value={font}
+          disabled={saving}
+          onChange={setFont}
+          entries={fonts}
+          className={styles.field}
+        />
+        <Checkbox className={styles.checkbox} disabled={saving} checked={eink} onChange={setEink}>
+          墨水屏
+        </Checkbox>
+        <Checkbox
+          className={styles.checkbox}
+          disabled={saving}
+          checked={reduceMotion}
+          onChange={setReduceMotion}
+        >
+          减少动画
+        </Checkbox>
+      </TabPanel>
+      <TabPanel id="reading" keepMounted className={styles.panel}>
+        <Field
+          label="字号"
+          className={styles.field}
+          name="fontSize"
+          type="number"
+          required
+          validationBehavior="native"
+          defaultValue={String(preferences.fontSize)}
+          inputClassName={styles.input}
+          min={16}
+          max={28}
+          step={1}
+        />
+        <Field
+          label="行高"
+          className={styles.field}
+          name="lineHeight"
+          type="number"
+          required
+          validationBehavior="native"
+          defaultValue={String(preferences.lineHeight)}
+          inputClassName={styles.input}
+          min={1.4}
+          max={2.4}
+          step={0.01}
+        />
+        <Field
+          label="每行汉字数"
+          className={styles.field}
+          name="measure"
+          type="number"
+          required
+          validationBehavior="native"
+          defaultValue={String(preferences.measure)}
+          inputClassName={styles.input}
+          min={28}
+          max={56}
+          step={1}
+        />
+        <Field
+          label="空间目录宽度"
+          className={styles.field}
+          name="sidebarWidth"
+          type="number"
+          required
+          validationBehavior="native"
+          defaultValue={String(preferences.sidebarWidth)}
+          inputClassName={styles.input}
+          min={176}
+          max={360}
+          step={1}
+        />
+        <Field
+          label="文档工具宽度"
+          className={styles.field}
+          name="toolsWidth"
+          type="number"
+          required
+          validationBehavior="native"
+          defaultValue={String(preferences.toolsWidth)}
+          inputClassName={styles.input}
+          min={200}
+          max={480}
+          step={1}
+        />
+      </TabPanel>
+      <TabPanel id="shortcuts" keepMounted className={styles.panel}>
+        <Field
+          label="专注快捷键"
+          className={styles.field}
+          name="focusKey"
+          defaultValue={preferences.focusKey}
+          inputClassName={styles.input}
+          maxLength={1}
+          pattern="[A-Za-z]?"
+          placeholder="留空关闭"
+        />
+        <dl className={styles.shortcuts}>
+          <dt>快速打开</dt>
+          <dd>
+            <kbd>Ctrl / ⌘</kbd> + <kbd>K</kbd>
+          </dd>
+          <dt>编辑正文</dt>
+          <dd>
+            <kbd>Alt</kbd> + <kbd>E</kbd>
+          </dd>
+          <dt>完整源码</dt>
+          <dd>
+            <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd>
+          </dd>
+        </dl>
+      </TabPanel>
       {error && (
         <Feedback tone="error" className={styles.error}>
           无法保存设置，请重试。

@@ -95,7 +95,7 @@ pub(super) struct DeliveryRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct EncodedFile {
+pub(super) struct EncodedFile {
     path: String,
     content_base64: String,
 }
@@ -585,8 +585,18 @@ pub(super) fn recover_startup(db: &Metadata) -> Result<(), ApiError> {
 fn decode(request: DeliveryRequest) -> Result<(DeliveryManifest, Files), ApiError> {
     let manifest = request.manifest;
     validate_manifest(&manifest)?;
+    Ok((
+        manifest,
+        decode_files(request.files, request.archive_base64)?,
+    ))
+}
+
+pub(super) fn decode_files(
+    files: Option<Vec<EncodedFile>>,
+    archive_base64: Option<String>,
+) -> Result<Files, ApiError> {
     let mut validated = Payload::default();
-    match (request.files, request.archive_base64) {
+    match (files, archive_base64) {
         (Some(files), None) => {
             if files.len() > MAX_FILES {
                 return Err(too_large());
@@ -603,7 +613,7 @@ fn decode(request: DeliveryRequest) -> Result<(DeliveryManifest, Files), ApiErro
         }
         _ => return Err(ApiError::invalid("Provide either files or a ZIP archive")),
     }
-    Ok((manifest, validated.finish()?))
+    validated.finish()
 }
 
 fn validate_manifest(manifest: &DeliveryManifest) -> Result<(), ApiError> {
@@ -745,7 +755,7 @@ fn decode_base64(value: &str, maximum: usize) -> Result<Vec<u8>, ApiError> {
     Ok(bytes)
 }
 
-fn included_path(path: &str) -> bool {
+pub(super) fn included_path(path: &str) -> bool {
     mutations::valid_file_path(path)
         && path.split('/').all(|part| {
             !part.starts_with('.')

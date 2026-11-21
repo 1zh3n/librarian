@@ -211,17 +211,31 @@ test("the follow-up uses the selected text and revision saved while leaving for 
   await expect(note.link).toBeFocused();
 
   // Inspect the actual submission; only the model service's reply is a fixture.
-  const postUrl = "/api/v1/ai/operations";
-  await page.route(postUrl, (route) =>
-    route.fulfill({
+  const postUrl = /\/api\/v1\/ai\/conversations\/[^/]+\/turns$/u;
+  await page.route(postUrl, (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const { prompt, clientTurnId } = route.request().postDataJSON() as {
+      prompt: string;
+      clientTurnId: string;
+    };
+    return route.fulfill({
       status: 202,
-      json: { ...note.operation, id: "followup", answer: "已解释选区。", sources: [] },
-    }),
-  );
+      json: {
+        id: "followup-turn",
+        conversationId: new URL(route.request().url()).pathname.split("/").at(-2),
+        clientTurnId,
+        prompt,
+        operationId: "followup",
+        createdAt: Date.now() / 1000,
+        historyTruncated: false,
+        operation: { ...note.operation, id: "followup", answer: "已解释选区。", sources: [] },
+      },
+    });
+  });
   await note.prompt.fill("继续解释刚才的选区");
   const [posted] = await Promise.all([
     page.waitForRequest(
-      (req) => req.method() === "POST" && new URL(req.url()).pathname === postUrl,
+      (req) => req.method() === "POST" && postUrl.test(new URL(req.url()).pathname),
     ),
     note.panel.getByRole("button", { name: "询问", exact: true }).click(),
   ]);

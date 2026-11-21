@@ -9,7 +9,7 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post, put},
-    Json, Router,
+    Extension, Json, Router,
 };
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,8 @@ use super::{
         AcceptedResult, Confirmation, ContextRequest, Lease, Mode, Operation, OperationStatus,
         OperationView, SourceReference, TaskInput,
     },
+    ai_managed::{self, Protocol},
+    ai_probes::{self, ProbeAction},
     contract::{content_precondition, present_revision, ApiError, DocumentSummary},
     db::Metadata,
     documents::{body, run, DocumentList, DocumentService},
@@ -31,14 +33,26 @@ const LEASE_SECS: i64 = 180;
 const MAX_SOURCES: usize = 64;
 
 pub(super) fn routes() -> Router<Arc<DocumentService>> {
+    let common = Router::new()
+        .route("/claims", post(claim))
+        .route("/claims/{lease}/sources", post(source))
+        .route("/claims/{lease}/documents", get(documents))
+        .route("/claims/{lease}/events", post(event));
+    let legacy = common
+        .clone()
+        .route("/claims/{lease}/renew", post(renew))
+        .route("/claims/{lease}/fail", post(fail))
+        .route("/claims/{lease}/result", put(result))
+        .layer(Extension(Protocol::Legacy));
+    let managed = common
+        .route("/claims/{lease}/renew", post(managed_renew))
+        .route("/claims/{lease}/fail", post(managed_fail))
+        .route("/claims/{lease}/result", put(managed_result))
+        .layer(Extension(Protocol::Managed));
     Router::new()
-        .route("/ai/runner/claims", post(claim))
-        .route("/ai/runner/claims/{lease}/sources", post(source))
-        .route("/ai/runner/claims/{lease}/documents", get(documents))
-        .route("/ai/runner/claims/{lease}/events", post(event))
-        .route("/ai/runner/claims/{lease}/renew", post(renew))
-        .route("/ai/runner/claims/{lease}/fail", post(fail))
-        .route("/ai/runner/claims/{lease}/result", put(result))
+        .nest("/ai/runner", legacy)
+        .nest("/ai/runner/v2", managed)
+        .merge(ai_managed::routes())
 }
 
 #[derive(Serialize)]
@@ -47,7 +61,21 @@ struct Claimed {
     operation_id: String,
     lease_id: String,
     expires_at: i64,
-    input: TaskInput,
+    input: ClaimInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selection: Option<super::ai_configuration::LeasedSelection>,
+}
+
+#[derive(Serialize)]
+struct ClaimInput {
+    #[serde(flatten)]
+    task: TaskInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    materials: Option<Vec<super::ai_materials::Selected>>,
+    #[serde(flatten)]
+    conversation: Option<super::ai_conversations::ClaimHistory>,
 }
 
 fn now() -> i64 {
@@ -57,7 +85,7 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
-fn authorize(db: &Metadata, headers: &HeaderMap) -> Result<(), ApiError> {
+fn authorize_legacy(db: &Metadata, headers: &HeaderMap) -> Result<(), ApiError> {
     let expected = db.runner_digest()?.ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -89,16 +117,69 @@ fn authorize(db: &Metadata, headers: &HeaderMap) -> Result<(), ApiError> {
     }
 }
 
+fn authenticate(
+    service: &DocumentService,
+    headers: &HeaderMap,
+    protocol: Protocol,
+) -> Result<Option<String>, ApiError> {
+    match protocol {
+        Protocol::Legacy => {
+            authorize_legacy(&service.metadata, headers)?;
+            Ok(None)
+        }
+        Protocol::Managed => ai_managed::instance(service, headers).map(Some),
+    }
+}
+
+fn checked_lease(
+    service: &DocumentService,
+    headers: &HeaderMap,
+    id: &str,
+    protocol: Protocol,
+) -> Result<Operation, ApiError> {
+    let instance = authenticate(service, headers, protocol)?;
+    let mut op = Operation::by_lease(&service.metadata, id)?;
+    ai_managed::check_lease(service, &mut op, protocol, instance.as_deref())?;
+    Ok(op)
+}
+
 async fn claim(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     run(move || {
         let db = &service.metadata;
-        authorize(db, &headers)?;
+        let instance = authenticate(&service, &headers, protocol)?;
         let _guard = db.ai_guard()?;
         let now = now();
-        for mut op in Operation::claimable(db, now)? {
+        if !ai_managed::enabled(&service)? {
+            return Ok(StatusCode::NO_CONTENT.into_response());
+        }
+        if let Some(id) = &instance {
+            let conn = db.connection()?;
+            if let Some(probe) = ai_probes::claim(&service, &conn, id, now)? {
+                return Ok(Json(probe).into_response());
+            }
+        }
+        for mut op in Operation::claimable(db, now, protocol)? {
+            if op.recover_committed(db)? {
+                continue;
+            }
+            if let Err(error) = ai_managed::check_operation(&service, &mut op) {
+                if error.status() == StatusCode::CONFLICT {
+                    continue;
+                }
+                return Err(error);
+            }
+            if protocol == Protocol::Managed
+                && op.view.status == OperationStatus::Queued
+                && op.queued_at <= now - 120
+            {
+                op.view.answer = Some("等待执行器超时，请重试。".into());
+                op.settle(db, OperationStatus::Failed)?;
+                continue;
+            }
             let write = op.view.mode == Mode::Edit;
             let account = match op.actor(&service, write) {
                 Ok(account) => account,
@@ -125,16 +206,39 @@ async fn claim(
                 .input
                 .clone()
                 .ok_or_else(|| ApiError::internal("Missing task input"))?;
+            let input = ClaimInput {
+                conversation: super::ai_conversations::claim_history(
+                    db,
+                    &op.view.id,
+                    input.prompt.len(),
+                )?,
+                materials: if protocol == Protocol::Managed {
+                    Some(super::ai_materials::selected(db, &op.view.id)?)
+                } else {
+                    None
+                },
+                task: input,
+            };
+            let selection = op
+                .view
+                .selection
+                .as_ref()
+                .map(|choice| super::ai_configuration::leased_selection(&*db.connection()?, choice))
+                .transpose()?;
             let lease_id = Uuid::new_v4().to_string();
             let expires_at = now + LEASE_SECS;
             op.lease = Some(Lease {
                 id: lease_id.clone(),
                 expires_at,
+                instance_id: instance.clone(),
+                provider_issued: false,
             });
             op.view.status = OperationStatus::Running;
             op.delivered.clear();
             op.store(db, true)?;
             return Ok(Json(Claimed {
+                task_kind: instance.as_ref().map(|_| "chat"),
+                selection,
                 operation_id: op.view.id,
                 lease_id,
                 expires_at,
@@ -147,7 +251,7 @@ async fn claim(
     .await
 }
 
-fn require_running(op: &Operation) -> Result<(), ApiError> {
+pub(super) fn require_running(op: &Operation) -> Result<(), ApiError> {
     if op.view.status == OperationStatus::Running
         && op
             .lease
@@ -171,6 +275,7 @@ struct Discovery {
 }
 
 async fn documents(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     Path(lease): Path<String>,
     Query(discovery): Query<Discovery>,
@@ -178,9 +283,10 @@ async fn documents(
 ) -> Result<Json<Vec<DocumentSummary>>, ApiError> {
     let lookup = service.clone();
     let id = lease.clone();
+    let copy = headers.clone();
     let (account, workspace) = run(move || {
-        authorize(&lookup.metadata, &headers)?;
-        let op = Operation::by_lease(&lookup.metadata, &id)?;
+        let _guard = lookup.metadata.ai_guard()?;
+        let op = checked_lease(&lookup, &copy, &id, protocol)?;
         require_running(&op)?;
         Ok((op.actor(&lookup, false)?, op.view.workspace_id))
     })
@@ -195,7 +301,8 @@ async fn documents(
         )
         .await?;
         run(move || {
-            let op = Operation::by_lease(&service.metadata, &lease)?;
+            let _guard = service.metadata.ai_guard()?;
+            let op = checked_lease(&service, &headers, &lease, protocol)?;
             require_running(&op)?;
             op.actor(&service, false)?;
             Ok(Json(hits.into_iter().map(|hit| hit.document).collect()))
@@ -203,6 +310,9 @@ async fn documents(
         .await
     } else {
         run(move || {
+            let _guard = service.metadata.ai_guard()?;
+            let op = checked_lease(&service, &headers, &lease, protocol)?;
+            require_running(&op)?;
             service
                 .list(
                     &account,
@@ -225,15 +335,15 @@ struct Renewal {
 }
 
 async fn renew(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     Path(lease): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<Renewal>, ApiError> {
     run(move || {
         let db = &service.metadata;
-        authorize(db, &headers)?;
         let _guard = db.ai_guard()?;
-        let mut op = Operation::by_lease(db, &lease)?;
+        let mut op = checked_lease(&service, &headers, &lease, protocol)?;
         require_running(&op)?;
         op.actor(&service, op.view.mode == Mode::Edit)?;
         let expires_at = now() + LEASE_SECS;
@@ -274,6 +384,7 @@ struct EventReceipt {
 }
 
 async fn event(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     Path(lease): Path<String>,
     headers: HeaderMap,
@@ -282,9 +393,8 @@ async fn event(
     let request = body(request)?;
     run(move || {
         let db = &service.metadata;
-        authorize(db, &headers)?;
         let _guard = db.ai_guard()?;
-        let op = Operation::by_lease(db, &lease)?;
+        let op = checked_lease(&service,&headers,&lease,protocol)?;
         require_running(&op)?;
         op.actor(&service, false)?;
         if !(1..=512).contains(&request.executor_seq) || request.text.len() > 8192 {
@@ -319,6 +429,7 @@ struct Failure {
 }
 
 async fn fail(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     Path(lease): Path<String>,
     headers: HeaderMap,
@@ -327,9 +438,8 @@ async fn fail(
     let request = body(request)?;
     run(move || {
         let db = &service.metadata;
-        authorize(db, &headers)?;
         let _guard = db.ai_guard()?;
-        let mut op = Operation::by_lease(db, &lease)?;
+        let mut op = checked_lease(&service, &headers, &lease, protocol)?;
         op.actor(&service, false)?;
         let text = request.text.trim();
         if text.is_empty() || text.len() > 1024 {
@@ -367,6 +477,7 @@ struct SourceData {
 }
 
 async fn source(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     Path(lease): Path<String>,
     headers: HeaderMap,
@@ -375,9 +486,8 @@ async fn source(
     let request = body(request)?;
     run(move || {
         let db = &service.metadata;
-        authorize(db, &headers)?;
         let _guard = db.ai_guard()?;
-        let mut op = Operation::by_lease(db, &lease)?;
+        let mut op = checked_lease(&service, &headers, &lease, protocol)?;
         require_running(&op)?;
         let account = op.actor(&service, false)?;
         let (workspace, path) = db.document_path(&request.document_id)?;
@@ -424,7 +534,8 @@ async fn source(
             (markdown, None, None, None)
         };
         if let Some(source) = op.delivered.iter().find(|source| {
-            source.path == path
+            source.document_id == request.document_id
+                && source.path == path
                 && source.revision == revision
                 && source.block_id == block_id
                 && source.from == from
@@ -441,6 +552,7 @@ async fn source(
             ));
         }
         let source = SourceReference {
+            material: None,
             id: Uuid::new_v4().to_string(),
             document_id: request.document_id,
             path,
@@ -449,14 +561,20 @@ async fn source(
             from,
             to,
         };
+        let mut conn = db.connection()?;
+        let tx = conn.transaction()?;
+        if protocol == Protocol::Managed {
+            super::ai_materials::charge_read(&tx, &op, markdown.len())?;
+        }
         op.delivered.push(source.clone());
-        op.store(db, false)?;
+        op.store_in(&tx, false)?;
+        tx.commit()?;
         Ok(Json(SourceData { source, markdown }))
     })
     .await
 }
 
-fn select(markdown: &str, context: &ContextRequest) -> Result<String, ApiError> {
+pub(super) fn select(markdown: &str, context: &ContextRequest) -> Result<String, ApiError> {
     let (from, to) = match (context.from, context.to) {
         (None, None) => return Ok(markdown.to_owned()),
         (Some(from), Some(to)) if from < to && to - from <= 64 * 1024 => (from, to),
@@ -495,12 +613,17 @@ struct ResultRequest {
     source_ids: Vec<String>,
     #[serde(default)]
     edits: Vec<EditRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reorganization: Option<super::ai_reorganization::ReorganizationRequest>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct EditRequest {
-    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    document_id: Option<String>,
     #[serde(default, deserialize_with = "present_revision")]
     base_revision: Option<Option<String>>,
     #[serde(default, deserialize_with = "present_revision")]
@@ -508,6 +631,7 @@ struct EditRequest {
 }
 
 async fn result(
+    Extension(protocol): Extension<Protocol>,
     State(service): State<Arc<DocumentService>>,
     Path(lease): Path<String>,
     headers: HeaderMap,
@@ -516,9 +640,8 @@ async fn result(
     let request = body(request)?;
     run(move || {
         let db = &service.metadata;
-        authorize(db, &headers)?;
         let _guard = db.ai_guard()?;
-        let mut op = Operation::by_lease(db, &lease)?;
+        let mut op = checked_lease(&service, &headers, &lease, protocol)?;
         let account = op.actor(&service, op.view.mode == Mode::Edit)?;
         let fingerprint = sha256_hex(&serde_json::to_vec(&request).map_err(ApiError::internal)?);
         if let Some(prior) = &op.result_fingerprint {
@@ -538,7 +661,15 @@ async fn result(
             return Ok(Json(op.view));
         }
         require_running(&op)?;
-        let accepted = verify_result(&op, request)?;
+        if request.reorganization.is_some()
+            && (op.view.mode != Mode::Edit || !request.edits.is_empty())
+        {
+            return Err(ApiError::invalid(
+                "Reorganization requires a dedicated edit operation",
+            ));
+        }
+        let reorganization = request.reorganization.clone();
+        let accepted = verify_result(&service, &op, request)?;
         let paths = accepted
             .edits
             .iter()
@@ -547,12 +678,18 @@ async fn result(
             .collect::<Vec<_>>();
         op.result_fingerprint = Some(fingerprint);
         op.input = None;
+        if let Some(request) = reorganization {
+            op.accepted = Some(accepted);
+            super::ai_reorganization::preview(&service, &account, &mut op, request)?;
+            return Ok(Json(op.view));
+        }
         if !paths.is_empty() {
             op.view.answer = Some(accepted.answer.clone());
             op.view.sources.clone_from(&accepted.sources);
             op.view.confirmation = Some(Confirmation {
                 id: Uuid::new_v4().to_string(),
                 paths,
+                plan: None,
             });
             op.view.status = OperationStatus::NeedsConfirmation;
         }
@@ -567,7 +704,11 @@ async fn result(
     .await
 }
 
-fn verify_result(op: &Operation, request: ResultRequest) -> Result<AcceptedResult, ApiError> {
+fn verify_result(
+    service: &DocumentService,
+    op: &Operation,
+    request: ResultRequest,
+) -> Result<AcceptedResult, ApiError> {
     if request.answer.len() > 256 * 1024 || request.source_ids.len() > MAX_SOURCES {
         return Err(ApiError::invalid("Executor result is too large"));
     }
@@ -603,45 +744,167 @@ fn verify_result(op: &Operation, request: ResultRequest) -> Result<AcceptedResul
             .filter(|source| !seen.contains(source.id.as_str()))
             .cloned(),
     );
-    let mut edits = request
-        .edits
-        .into_iter()
-        .map(|edit| {
-            let base_revision =
-                content_precondition(edit.base_revision.as_ref())?.map(str::to_owned);
-            if let Some(revision) = &base_revision {
-                if !op.delivered.iter().any(|source| {
-                    source.path == edit.path
-                        && &source.revision == revision
-                        && source.from.is_none()
-                }) {
-                    return Err(ApiError::new(
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        "unverified_revision",
-                        "Read the whole current file before modifying it",
-                    ));
+    let mut edits = Vec::new();
+    if !request.edits.is_empty() {
+        if request.edits.iter().any(|e| e.markdown == Some(None)) {
+            // Preserve the legacy protocol's explicit deletion proposals.
+            if request.edits.len() > 32 {
+                return Err(ApiError::invalid("Expected at most 32 edits"));
+            }
+            for edit in request.edits {
+                let base_revision =
+                    content_precondition(edit.base_revision.as_ref())?.map(str::to_owned);
+                let path = super::ai_reorganization::resolve_path(
+                    service,
+                    &op.view.workspace_id,
+                    edit.path,
+                    edit.document_id,
+                )?;
+                let markdown = edit
+                    .markdown
+                    .ok_or_else(|| ApiError::invalid("Expected Markdown or explicit deletion"))?;
+                if let Some(revision) = &base_revision {
+                    super::ai_reorganization::verify_read(&op.delivered, &path, revision)?;
+                } else if markdown.is_none() {
+                    return Err(ApiError::invalid("Deleting a file requires its revision"));
                 }
+                edits.push(MutationEdit {
+                    path,
+                    base_revision,
+                    markdown,
+                });
             }
-            let markdown = edit.markdown.ok_or_else(|| {
-                ApiError::invalid("An edit requires Markdown or an explicit null deletion")
-            })?;
-            if markdown.is_none() && base_revision.is_none() {
-                return Err(ApiError::invalid("Deleting a file requires its revision"));
-            }
-            Ok(MutationEdit {
-                path: edit.path,
-                base_revision,
-                markdown,
-            })
-        })
-        .collect::<Result<Vec<_>, ApiError>>()?;
-    if !edits.is_empty() {
-        edits.sort_unstable_by(|left, right| left.path.cmp(&right.path));
-        mutations::validate_edits(&edits)?;
+            edits.sort_by(|a, b| a.path.cmp(&b.path));
+            mutations::validate_edits(&edits)?;
+        } else {
+            let batch = request
+                .edits
+                .into_iter()
+                .map(|e| {
+                    Ok(super::ai_reorganization::WorkspaceEdit {
+                        path: e.path,
+                        document_id: e.document_id,
+                        base_revision: e.base_revision,
+                        markdown: e
+                            .markdown
+                            .flatten()
+                            .ok_or_else(|| ApiError::invalid("Expected Markdown"))?,
+                    })
+                })
+                .collect::<Result<Vec<_>, ApiError>>()?;
+            edits = super::ai_reorganization::resolve_edits(
+                service,
+                &op.view.workspace_id,
+                batch,
+                Some(&op.delivered),
+            )?;
+        }
     }
     Ok(AcceptedResult {
         answer: request.answer,
         sources,
         edits,
     })
+}
+
+async fn probe_action(
+    service: &Arc<DocumentService>,
+    headers: &HeaderMap,
+    id: &str,
+    action: OwnedProbeAction,
+) -> Result<Option<serde_json::Value>, ApiError> {
+    let service = Arc::clone(service);
+    let headers = headers.clone();
+    let id = id.to_owned();
+    run(move || {
+        let _guard = service.metadata.ai_guard()?;
+        let action = match &action {
+            OwnedProbeAction::Renew => ProbeAction::Renew,
+            OwnedProbeAction::Finish => ProbeAction::Finish,
+            OwnedProbeAction::Fail(code) => ProbeAction::Fail(code),
+            OwnedProbeAction::Deny => ProbeAction::Deny,
+        };
+        ai_managed::probe(&service, &headers, &id, action)
+    })
+    .await
+}
+enum OwnedProbeAction {
+    Renew,
+    Finish,
+    Fail(String),
+    Deny,
+}
+
+async fn managed_renew(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    if let Some(receipt) = probe_action(&service, &headers, &id, OwnedProbeAction::Renew).await? {
+        return Ok(Json(receipt).into_response());
+    }
+    renew(
+        Extension(Protocol::Managed),
+        State(service),
+        Path(id),
+        headers,
+    )
+    .await
+    .map(IntoResponse::into_response)
+}
+async fn managed_result(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<serde_json::Value>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let value = body(request)?;
+    let action = if value == serde_json::json!({"ok":true}) {
+        OwnedProbeAction::Finish
+    } else {
+        OwnedProbeAction::Deny
+    };
+    if let Some(receipt) = probe_action(&service, &headers, &id, action).await? {
+        return Ok(Json(receipt).into_response());
+    }
+    let payload = serde_json::from_value(value)
+        .map_err(|_| ApiError::invalid("Expected a valid chat result"))?;
+    result(
+        Extension(Protocol::Managed),
+        State(service),
+        Path(id),
+        headers,
+        Ok(Json(payload)),
+    )
+    .await
+    .map(IntoResponse::into_response)
+}
+async fn managed_fail(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<serde_json::Value>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let value = body(request)?;
+    let action = match (
+        value.get("code").and_then(|v| v.as_str()),
+        value.get("text").and_then(|v| v.as_str()),
+    ) {
+        (Some(code), Some(_)) => OwnedProbeAction::Fail(code.into()),
+        _ => OwnedProbeAction::Deny,
+    };
+    if let Some(receipt) = probe_action(&service, &headers, &id, action).await? {
+        return Ok(Json(receipt).into_response());
+    }
+    let payload = serde_json::from_value(value)
+        .map_err(|_| ApiError::invalid("Expected a valid chat failure"))?;
+    fail(
+        Extension(Protocol::Managed),
+        State(service),
+        Path(id),
+        headers,
+        Ok(Json(payload)),
+    )
+    .await
+    .map(IntoResponse::into_response)
 }

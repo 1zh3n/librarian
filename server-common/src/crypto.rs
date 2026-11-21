@@ -17,7 +17,7 @@
 use std::path::Path;
 
 use aes_gcm::{
-    aead::{consts::U12, Aead, KeyInit},
+    aead::{consts::U12, Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -40,6 +40,15 @@ pub enum CryptoError {
 
 /// Encrypt `plaintext` with `key`, producing `base64(iv):base64(tag):base64(ciphertext)`.
 pub fn encrypt_with_key(key: &[u8; KEY_LEN], plaintext: &str) -> Result<String, CryptoError> {
+    encrypt_bound(key, plaintext, &[])
+}
+
+/// Encrypt a credential with an authenticated, caller-owned record identifier.
+pub fn encrypt_bound(
+    key: &[u8; KEY_LEN],
+    plaintext: &str,
+    aad: &[u8],
+) -> Result<String, CryptoError> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| CryptoError::Aead(e.to_string()))?;
 
     let mut iv = [0u8; IV_LEN];
@@ -47,7 +56,13 @@ pub fn encrypt_with_key(key: &[u8; KEY_LEN], plaintext: &str) -> Result<String, 
     let nonce = Nonce::<U12>::from(iv);
 
     let sealed = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad,
+            },
+        )
         .map_err(|e| CryptoError::Aead(e.to_string()))?;
 
     // The `aes-gcm` crate appends the 16-byte tag to the ciphertext. Split it
@@ -65,6 +80,15 @@ pub fn encrypt_with_key(key: &[u8; KEY_LEN], plaintext: &str) -> Result<String, 
 
 /// Decrypt a `base64(iv):base64(tag):base64(ciphertext)` string with `key`.
 pub fn decrypt_with_key(key: &[u8; KEY_LEN], encoded: &str) -> Result<String, CryptoError> {
+    decrypt_bound(key, encoded, &[])
+}
+
+/// Open a credential only under the record identifier used to seal it.
+pub fn decrypt_bound(
+    key: &[u8; KEY_LEN],
+    encoded: &str,
+    aad: &[u8],
+) -> Result<String, CryptoError> {
     let mut parts = encoded.splitn(3, ':');
     let iv_b64 = parts.next().ok_or(CryptoError::Format)?;
     let tag_b64 = parts.next().ok_or(CryptoError::Format)?;
@@ -85,7 +109,13 @@ pub fn decrypt_with_key(key: &[u8; KEY_LEN], encoded: &str) -> Result<String, Cr
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| CryptoError::Aead(e.to_string()))?;
     let nonce = Nonce::<U12>::try_from(iv.as_slice()).map_err(|_| CryptoError::Format)?;
     let pt = cipher
-        .decrypt(&nonce, sealed.as_ref())
+        .decrypt(
+            &nonce,
+            Payload {
+                msg: sealed.as_ref(),
+                aad,
+            },
+        )
         .map_err(|e| CryptoError::Aead(e.to_string()))?;
 
     String::from_utf8(pt).map_err(|e| CryptoError::Aead(format!("not valid utf-8: {e}")))

@@ -149,7 +149,7 @@ impl ScanBudget {
     }
 }
 
-fn linked_documents<'a>(
+pub(super) fn linked_documents<'a>(
     markdown: &'a str,
     source: &'a str,
     index: &'a BasenameIndex,

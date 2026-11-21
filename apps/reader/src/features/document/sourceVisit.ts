@@ -4,6 +4,7 @@ export type AiTranscriptVisit = {
   sourceId: string;
   scrollTop: number;
   draft: string;
+  conversation?: { username: string; id: string; materialIds?: readonly string[] };
   questions: ReadonlyMap<string, string>;
 };
 

@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+distribution=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+exec "$distribution/bin/node" "$distribution/deploy/librarian/install-managed-runner.mjs" "$@"

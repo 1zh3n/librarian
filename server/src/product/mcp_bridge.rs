@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::sync::Arc;
 
 use axum::http::{HeaderMap, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -32,35 +32,28 @@ impl McpBridge {
     pub async fn call(
         &self,
         username: &str,
-        granted_space_ids: &BTreeSet<String>,
-        credential_version: Option<&str>,
+        grant_id: &str,
         name: &str,
         arguments: Value,
     ) -> Result<Value, Value> {
-        self.dispatch(
-            username,
-            granted_space_ids,
-            credential_version,
-            name,
-            arguments,
-        )
-        .await
-        .map_err(ApiError::payload)
+        self.dispatch(username, grant_id, name, arguments)
+            .await
+            .map_err(ApiError::payload)
     }
 
     async fn dispatch(
         &self,
         username: &str,
-        granted_space_ids: &BTreeSet<String>,
-        credential_version: Option<&str>,
+        grant_id: &str,
         name: &str,
         arguments: Value,
     ) -> Result<Value, ApiError> {
+        let grant = super::mcp_operations::live_grant(&self.0, username, grant_id)?;
         let account = Account::from_bound_identity(
             self.spaces(),
             username,
-            credential_version,
-            granted_space_ids.clone(),
+            grant.credential_version.as_deref(),
+            grant.spaces.iter().cloned().collect(),
         )?;
         let service = self.0.clone();
         if name == "document_search" {
@@ -76,7 +69,17 @@ impl McpBridge {
             return Ok(json!({"hits": hits}));
         }
         let name = name.to_owned();
-        run(move || call_local(&service, &account, &name, arguments)).await
+        run(move || match name.as_str() {
+            "workspace_apply_edits"
+            | "workspace_request_reorganization"
+            | "workspace_get_operation"
+            | "workspace_undo_operation"
+            | "workspace_upload_files" => {
+                super::mcp_operations::call(&service, &account, &grant, &name, arguments)
+            }
+            _ => call_local(&service, &account, &name, arguments),
+        })
+        .await
     }
 }
 
@@ -230,6 +233,9 @@ enum WriteTarget {
 #[serde(rename_all = "camelCase")]
 struct WriteResult {
     document_id: String,
+    path: String,
+    #[serde(flatten)]
+    link: super::reader_links::ReaderLink,
     #[serde(flatten)]
     receipt: MutationReceipt,
 }
@@ -291,6 +297,8 @@ fn write(
         )?;
         let document_id = service.metadata.document_id(workspace, &path)?;
         Ok(WriteResult {
+            link: service.reader_links.document(workspace, &document_id),
+            path,
             document_id,
             receipt,
         })

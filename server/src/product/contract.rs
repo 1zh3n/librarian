@@ -135,7 +135,12 @@ pub(crate) struct DocumentSummary {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DocumentSnapshot {
+    pub document_id: String,
+    pub path: String,
+    #[serde(flatten)]
+    pub(super) link: super::reader_links::ReaderLink,
     pub document: DocumentSummary,
     pub markdown: String,
     pub revision: String,

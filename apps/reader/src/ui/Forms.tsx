@@ -6,7 +6,13 @@ import { ListBox } from "@heroui/react/list-box";
 import { Select as HeroSelect } from "@heroui/react/select";
 import { TextArea } from "@heroui/react/textarea";
 import { TextField } from "@heroui/react/textfield";
-import type { FormEventHandler, KeyboardEventHandler, ReactNode, Ref } from "react";
+import type {
+  CompositionEventHandler,
+  FormEventHandler,
+  KeyboardEventHandler,
+  ReactNode,
+  Ref,
+} from "react";
 
 export function Form(props: {
   children: ReactNode;
@@ -58,13 +64,15 @@ export function Field({
   autoCapitalize,
   spellCheck,
   onKeyDown,
+  onCompositionStart,
+  onCompositionEnd,
   onInvalid,
   action,
   actionClassName,
   ...props
 }: FieldProps & {
   ref?: Ref<HTMLInputElement>;
-  type?: "text" | "password" | "datetime-local" | "number" | "search";
+  type?: "text" | "url" | "password" | "datetime-local" | "number" | "search";
   autoComplete?: string;
   autoCapitalize?: string;
   spellCheck?: boolean;
@@ -76,6 +84,8 @@ export function Field({
   action?: ReactNode;
   actionClassName?: string;
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+  onCompositionStart?: CompositionEventHandler<HTMLInputElement>;
+  onCompositionEnd?: CompositionEventHandler<HTMLInputElement>;
   onInvalid?: () => void;
 }) {
   const input = (
@@ -90,6 +100,8 @@ export function Field({
       pattern={pattern}
       autoCapitalize={autoCapitalize}
       spellCheck={spellCheck}
+      onCompositionStart={onCompositionStart}
+      onCompositionEnd={onCompositionEnd}
       onKeyDown={onKeyDown}
       onInvalid={onInvalid}
     />

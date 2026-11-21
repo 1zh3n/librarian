@@ -103,13 +103,21 @@
   text-align: start;
 }
 
+.reader-select [data-slot="select-value"],
+.reader-option {
+  min-inline-size: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .reader-select svg {
   inline-size: 1em;
   flex: none;
 }
 
 .reader-select-menu {
-  min-width: var(--trigger-width);
+  inline-size: var(--trigger-width);
+  max-inline-size: calc(100vw - 1rem);
   max-height: min(50dvh, 18rem);
   overflow: auto;
   padding: 0.25rem;

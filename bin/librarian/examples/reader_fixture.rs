@@ -1,3 +1,6 @@
+#[path = "../tests/fixtures/ai-materials/setup.rs"]
+mod material_fixture;
+
 use std::{fs, io, path::Path, process::Command};
 
 use axum::{
@@ -85,7 +88,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metadata.join("runner-token.sha256"),
         sha256_hex(b"reader-fixture-ai-token-only-for-tests"),
     )?;
+    let managed_materials = std::env::args().nth(2).as_deref() == Some("--managed-materials");
+    if managed_materials {
+        fs::write(metadata.join("ai-test-loopback"), "127.0.0.1:9")?;
+    }
     let app = librarian::Product::open(root.path(), port).map_err(io::Error::other)?;
+    if managed_materials {
+        material_fixture::configure(root.path())?;
+    }
     configure_release_targets(
         root.path(),
         release_targets.path(),

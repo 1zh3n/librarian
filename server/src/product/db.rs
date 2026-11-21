@@ -216,9 +216,22 @@ impl Metadata {
         if version <= 7 {
             super::delivery::migrate_scoped_tokens(&transaction)?;
             transaction.pragma_update(None, "user_version", 8)?;
-        } else if version != 8 {
+        }
+        if version <= 8 {
+            transaction.pragma_update(None, "user_version", 9)?;
+        } else if version != 9 {
             return Err(rusqlite::Error::InvalidQuery);
         }
+        super::ai_configuration::migrate(&transaction)?;
+        super::ai_probes::migrate(&transaction)?;
+        super::ai_conversations::migrate(&transaction)?;
+        super::ai_materials::migrate(&transaction)?;
+        transaction.execute_batch("CREATE TABLE IF NOT EXISTS workspace_imports (
+            operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL, receipt TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS mcp_operation_origins (
+            operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL,
+            client_id TEXT NOT NULL, grant_id TEXT NOT NULL, request_digest TEXT NOT NULL,
+            kind TEXT NOT NULL, undo_id TEXT NOT NULL);")?;
         transaction.commit()?;
         Ok(connection)
     }

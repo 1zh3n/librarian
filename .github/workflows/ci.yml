@@ -190,6 +190,20 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --all-features
 
+      - name: Test AI runners with synthetic model providers
+        run: |
+          set -euo pipefail
+          cargo build --locked -p librarian --bin librarian --example reader_fixture --example reader_managed_fixture
+          export LIBRARIAN_READER_FIXTURE="${CARGO_TARGET_DIR:-$PWD/target}/debug/examples/reader_fixture"
+          test -x "$LIBRARIAN_READER_FIXTURE"
+          echo "LIBRARIAN_READER_FIXTURE=$LIBRARIAN_READER_FIXTURE" >> "$GITHUB_ENV"
+          node --test bin/librarian/tests/ai_runner_example.test.mjs
+          npm ci --ignore-scripts --workspaces=false --prefix bin/librarian/runner
+          node --test bin/librarian/runner/*.test.mjs
+          spike=bin/librarian/examples/deepseek-harness-spike
+          npm ci --ignore-scripts --workspaces=false --prefix "$spike"
+          LIBRARIAN_SPIKE_BROWSER=1 npm test --prefix "$spike"
+
       - name: Test Reader against a native Space
         run: npm run test:e2e:product -w @librarian/reader
 
@@ -295,7 +309,7 @@ jobs:
     secrets: inherit
 
   release:
-    needs: [config, build, test-frontend, test-rust, test-e2e, test-e2e-release]
+    needs: [config, build, test-frontend, test-reader, test-rust, test-e2e, test-e2e-release]
     if: needs.config.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -360,7 +374,7 @@ jobs:
             dist-artifacts/sb-*.zip
 
   docker:
-    needs: [config, build, test-frontend, test-rust, test-e2e, test-e2e-release]
+    needs: [config, build, test-frontend, test-reader, test-rust, test-e2e, test-e2e-release]
     if: needs.config.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:

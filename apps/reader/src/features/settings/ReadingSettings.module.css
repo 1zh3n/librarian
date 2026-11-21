@@ -13,6 +13,7 @@
   container-type: inline-size;
   width: min(100%, 38rem);
   max-height: calc(100dvh - 2rem);
+  scroll-padding-block: 0.5rem;
   overflow: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -24,7 +25,7 @@
   outline: 0;
 }
 
-.dialog > fieldset {
+.device {
   min-inline-size: 0;
   margin: 0;
   padding: 0;
@@ -93,6 +94,7 @@
 
 .field {
   display: grid;
+  align-content: start;
   min-width: 0;
   gap: 0.25rem;
   color: var(--ink-secondary);
@@ -136,6 +138,7 @@
 }
 
 .actions button {
+  scroll-margin-block: 0.5rem;
   width: auto;
   min-height: 44px;
   border-radius: var(--radius);
@@ -152,5 +155,72 @@
 @container (max-width: 17rem) {
   .panel {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.aiPanel[data-inert] {
+  display: none;
+}
+
+.aiPanel {
+  display: grid;
+  min-width: 0;
+  gap: 0.875rem;
+  padding-block-start: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.aiPanel p,
+.aiPanel h3 {
+  margin: 0;
+}
+
+.aiPanel h3 {
+  font-size: 1rem;
+}
+
+.catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.625rem 0.875rem;
+}
+
+.detail {
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.refresh {
+  justify-self: start;
+  min-height: 44px;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.controls {
+  display: grid;
+  gap: 1.25rem;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.section {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.section + .section {
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 1rem;
+}
+
+@container (max-width: 13rem) {
+  .tabList {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
