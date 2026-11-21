@@ -1,3 +1,5 @@
+pub(super) mod restored;
+
 use std::sync::Arc;
 
 use axum::{
@@ -121,8 +123,14 @@ pub(super) fn document_history(
             more: false,
         });
     }
-    let result = read::file_history(engine.store(), &path, query.before.as_deref(), limit)
-        .map_err(ApiError::internal)?;
+    let result = restored::Lineage::load(
+        &service.metadata,
+        engine.store(),
+        &workspace,
+        document,
+        &path,
+    )?
+    .page(query.before.as_deref(), limit)?;
     let uncommitted = engine
         .store()
         .exact_markdown_uncommitted(&path)
@@ -181,10 +189,24 @@ pub(super) fn document_diff(
     check_file_path(state, &path)?;
     state.space.get_file_meta(&path)?;
     let engine = engine(state)?;
-    let diff = read::file_diff(engine.store(), &path, &commit, false)
+    let path = restored::Lineage::load(
+        &service.metadata,
+        engine.store(),
+        &workspace,
+        document,
+        &path,
+    )?
+    .path_at(&commit)?
+    .ok_or_else(ApiError::not_found)?;
+    let diff = read::RevisionPath::Recorded(&path)
+        .diff(engine.store(), &commit, false)
         .map_err(ApiError::internal)?
         .ok_or_else(ApiError::not_found)?;
-    let markdown = historical_markdown(engine, &path, &commit)?;
+    let markdown = read::RevisionPath::Recorded(&path)
+        .bytes(engine.store(), &commit, false)
+        .map_err(ApiError::internal)?
+        .map(text)
+        .transpose()?;
     if diff.len() > MARKDOWN_LIMIT * 3 {
         return Err(too_large());
     }
@@ -196,11 +218,21 @@ pub(super) fn document_diff(
 }
 
 pub(super) fn historical_markdown(
+    service: &DocumentService,
     engine: &RevisionEngine,
+    workspace: &str,
+    document: &str,
     path: &str,
     commit: &str,
 ) -> Result<Option<String>, ApiError> {
-    read::file_at(engine.store(), path, commit, false)
+    let Some(historical) =
+        restored::Lineage::load(&service.metadata, engine.store(), workspace, document, path)?
+            .path_at(commit)?
+    else {
+        return Ok(None);
+    };
+    read::RevisionPath::Recorded(&historical)
+        .bytes(engine.store(), commit, false)
         .map_err(ApiError::internal)?
         .map(text)
         .transpose()
@@ -249,8 +281,15 @@ pub(super) async fn restore(
             if current_revision != expected {
                 return Err(ApiError::conflict(Some(current_revision)));
             }
-            let restored = historical_markdown(engine, &path, &request.commit_id)?
-                .ok_or_else(ApiError::not_found)?;
+            let restored = historical_markdown(
+                &service,
+                engine,
+                &workspace,
+                &document,
+                &path,
+                &request.commit_id,
+            )?
+            .ok_or_else(ApiError::not_found)?;
             if current == restored {
                 return Err(ApiError::new(
                     StatusCode::CONFLICT,

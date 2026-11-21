@@ -321,13 +321,15 @@ fn retire_workspace(
         let state = state(&instance)?;
         let _mutation = product_write(state)?;
         let source = retention_source(root, &relative, &instance, state)?;
-        // The core mutation journal still needs the original workspace folder on restart.
+        // File transfers and the core mutation journal may still need this folder on restart.
         let pending: bool = service.metadata.connection()?.query_row(
             "SELECT EXISTS(SELECT 1 FROM mutations WHERE workspace_id = ?1 AND state = 'pending')",
             [workspace],
             |row| row.get(0),
         )?;
-        if pending {
+        if pending
+            || super::file_actions::storage::pending_retirement(&service.metadata, workspace)?
+        {
             return Err(ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "storage_recovery_pending",

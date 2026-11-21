@@ -44,13 +44,16 @@ pub(crate) struct DocumentService {
 impl DocumentService {
     pub(crate) fn open(root: &Path, spaces: NativeSpaces) -> Result<Self, String> {
         let metadata = Metadata::open(root)?;
-        Ok(Self {
+        let service = Self {
             reader_links: super::reader_links::ReaderLinks::load(&metadata)?,
             ai_discovery: super::ai_settings::AiDiscoveryService::open(&metadata)?,
             material_parser: None,
             metadata,
             spaces,
-        })
+        };
+        super::file_actions::storage::recover(&service)
+            .map_err(|error| format!("Could not recover workspace file actions: {error:?}"))?;
+        Ok(service)
     }
 
     pub(crate) fn scope(
@@ -188,13 +191,22 @@ impl DocumentService {
 
     pub(super) fn get(&self, account: &Account, id: &str) -> Result<DocumentSnapshot, ApiError> {
         let (workspace, _) = self.metadata.document_path(id)?;
-        let (instance, _) = self.scope(account, &workspace, false)?;
+        self.get_in(account, &workspace, id)
+    }
+
+    pub(super) fn get_in(
+        &self,
+        account: &Account,
+        workspace: &str,
+        id: &str,
+    ) -> Result<DocumentSnapshot, ApiError> {
+        let (instance, _) = self.scope(account, workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
-        let path = self.path_in(&workspace, id)?;
+        let path = self.path_in(workspace, id)?;
         let markdown = read_markdown(state, &path)?;
         let revision = sha256_hex(markdown.as_bytes());
-        Ok(self.snapshot(state, &workspace, id.to_owned(), path, markdown, revision))
+        Ok(self.snapshot(state, workspace, id.to_owned(), path, markdown, revision))
     }
 
     fn create(
@@ -248,10 +260,19 @@ impl DocumentService {
         id: &str,
     ) -> Result<OutlineSnapshot, ApiError> {
         let (workspace, _) = self.metadata.document_path(id)?;
-        let (instance, _) = self.scope(account, &workspace, false)?;
+        self.get_outline_in(account, &workspace, id)
+    }
+
+    pub(super) fn get_outline_in(
+        &self,
+        account: &Account,
+        workspace: &str,
+        id: &str,
+    ) -> Result<OutlineSnapshot, ApiError> {
+        let (instance, _) = self.scope(account, workspace, false)?;
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
-        let path = self.path_in(&workspace, id)?;
+        let path = self.path_in(workspace, id)?;
         check_file_path(state, &path)?;
         state.space.get_file_meta(&path)?;
         let sidecar = outline_path(&path);
@@ -354,17 +375,35 @@ pub(crate) fn check_file_path(state: &ServerState, path: &str) -> Result<(), Api
 }
 
 pub(super) fn check_native_path(root: &Path, path: &str) -> Result<(), ApiError> {
+    if native_path_has_no_links(root, path).map_err(ApiError::internal)? {
+        Ok(())
+    } else {
+        Err(ApiError::not_found())
+    }
+}
+
+pub(super) fn native_path_has_no_links(root: &Path, path: &str) -> io::Result<bool> {
     let mut location = root.to_path_buf();
     for part in path.split('/') {
         location.push(part);
         match std::fs::symlink_metadata(&location) {
-            Ok(meta) if meta.is_symlink() => return Err(ApiError::not_found()),
+            Ok(meta) if meta.is_symlink() => return Ok(false),
             Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => break,
-            Err(error) => return Err(ApiError::internal(error)),
+            // Once a component is absent or is a regular file, there are no more
+            // descendants to check for links. The caller handles path occupancy.
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                break
+            }
+
+            Err(error) => return Err(error),
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 pub(super) fn read_markdown(state: &ServerState, path: &str) -> Result<String, ApiError> {
@@ -531,6 +570,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .merge(super::ai_configuration::routes())
         .merge(super::ai_probes::routes())
         .merge(super::workspace::routes())
+        .merge(super::file_actions::routes())
         .merge(super::ai_materials::routes())
         .merge(super::delivery::routes())
         .merge(super::imports::routes())

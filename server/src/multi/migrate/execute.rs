@@ -437,7 +437,7 @@ fn create_journal(root: &Path, journal: &Journal) -> Result<(), String> {
 /// `rename`, failing with `AlreadyExists` instead of replacing `to`. Atomic
 /// where the OS offers it; elsewhere, or on a filesystem that refuses the
 /// flag, `to` is checked first.
-fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
     if let Some(result) = rename_exclusive(from, to) {
         return result;
     }

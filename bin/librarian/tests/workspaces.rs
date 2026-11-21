@@ -572,3 +572,6 @@ async fn startup_finishes_quarantined_workspace_cleanup_without_touching_reused_
         .get(temporary["spaceId"].as_str().unwrap())
         .is_none());
 }
+
+#[path = "workspaces/file_action_storage.rs"]
+mod file_action_storage;

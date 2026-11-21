@@ -5357,6 +5357,229 @@
           }
         }
       }
+    },
+    "/workspaces/{workspace}/folders": {
+      "get": {
+        "operationId": "listWorkspaceFolders",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFolders"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWorkspaceFolder",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFolder"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceFolder"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/file-actions/preview": {
+      "post": {
+        "operationId": "previewWorkspaceFileAction",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileActionPreview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileActionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/file-actions/apply": {
+      "post": {
+        "operationId": "applyWorkspaceFileAction",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileActionResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileActionApply"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/file-actions/undo": {
+      "post": {
+        "operationId": "undoWorkspaceFileAction",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileActionResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileActionUndo"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8484,6 +8707,194 @@
             }
           }
         ]
+      },
+      "WorkspaceFolders": {
+        "type": "object",
+        "required": [
+          "folders",
+          "identities"
+        ],
+        "properties": {
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "identities": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Current folder identity by relative path. Use it when acting on a selected folder."
+          }
+        }
+      },
+      "WorkspaceFolder": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "FileActionRequest": {
+        "type": "object",
+        "required": [
+          "action",
+          "sourcePath",
+          "sourceKind"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "move",
+              "copy",
+              "delete"
+            ]
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "document",
+              "folder"
+            ]
+          },
+          "expectedDocumentId": {
+            "type": "string",
+            "description": "Stable ID for a document row."
+          },
+          "targetWorkspace": {
+            "type": "string"
+          },
+          "targetPath": {
+            "type": "string",
+            "description": "Final workspace-relative file or folder path for a move or copy."
+          },
+          "expectedFolderId": {
+            "type": "string",
+            "description": "Opaque source identity captured from the folder listing. A replaced source is a conflict."
+          }
+        }
+      },
+      "FileActionApply": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/FileActionRequest"
+          },
+          {
+            "type": "object",
+            "required": [
+              "token",
+              "operationId"
+            ],
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "operationId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "FileActionUndo": {
+        "type": "object",
+        "required": [
+          "operationId"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Original deletion operation."
+          }
+        }
+      },
+      "FileActionPreview": {
+        "type": "object",
+        "required": [
+          "token",
+          "fileCount",
+          "access"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "access": {
+            "type": "object",
+            "required": [
+              "gainedRead",
+              "gainedWrite",
+              "lost",
+              "upgraded",
+              "downgraded"
+            ],
+            "properties": {
+              "gainedRead": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gainedWrite": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lost": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "upgraded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "downgraded": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "FileActionResult": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "workspaceId",
+          "path",
+          "undoable"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "undoable": {
+            "type": "boolean"
+          }
+        }
       }
     }
   }

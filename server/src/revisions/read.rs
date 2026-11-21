@@ -201,6 +201,7 @@ fn awaiting_first_commit(repo: &Path, rel: &str) -> Result<bool, String> {
 
 fn log_records(
     repo: &Path,
+    head: &str,
     before: Option<&str>,
     limit: usize,
     rel: &str,
@@ -214,13 +215,15 @@ fn log_records(
             let Some(parent) = parent_of(repo, commit)? else {
                 return Ok((Vec::new(), false));
             };
-            let Some(path) = path_at_rev(repo, &parent, rel, boundary)? else {
+            let Some(path) = path_at_rev(repo, head, &parent, rel, boundary)? else {
                 return Ok((Vec::new(), false));
             };
             (parent, path)
         }
-        None if awaiting_first_commit(repo, rel)? => return Ok((Vec::new(), false)),
-        None => ("HEAD".to_owned(), rel.to_owned()),
+        None if head == "HEAD" && awaiting_first_commit(repo, rel)? => {
+            return Ok((Vec::new(), false))
+        }
+        None => (head.to_owned(), rel.to_owned()),
     };
     let count = format!("-n{}", limit + 1);
     let format = format!("--format=%x1e{FORMAT}");
@@ -283,12 +286,25 @@ pub fn file_history(
     before: Option<&str>,
     limit: usize,
 ) -> Result<FileRevisions, String> {
+    file_history_from(store, space_path, "HEAD", before, limit)
+}
+
+pub(crate) fn file_history_from(
+    store: &RevisionStore,
+    space_path: &str,
+    head: &str,
+    before: Option<&str>,
+    limit: usize,
+) -> Result<FileRevisions, String> {
     validate_space_path(space_path)?;
+    if head != "HEAD" && !is_hex40(head) {
+        return Err("invalid history anchor".into());
+    }
     let repo = store.repo_root().ok_or("no repository")?;
     let rel = store.rel(space_path);
     let pathspec = format!(":(literal){rel}");
     let prefix = space_prefix(store);
-    let (revisions, more) = log_records(&repo, before, limit, &rel, prefix.as_deref())?;
+    let (revisions, more) = log_records(&repo, head, before, limit, &rel, prefix.as_deref())?;
     let status = git::run(
         &repo,
         &[
@@ -338,14 +354,15 @@ fn effective_rev(repo: &Path, rev: &str, parent: bool) -> Result<Option<String>,
 /// or the Space boundary means the current document did not exist there.
 fn path_at_rev(
     repo: &Path,
+    head: &str,
     rev: &str,
     rel: &str,
     boundary: Option<&str>,
 ) -> Result<Option<String>, String> {
-    if awaiting_first_commit(repo, rel)? {
+    if head == "HEAD" && awaiting_first_commit(repo, rel)? {
         return Ok(None);
     }
-    match git::check(repo, &["merge-base", "--is-ancestor", rev, "HEAD"], 1) {
+    match git::check(repo, &["merge-base", "--is-ancestor", rev, head], 1) {
         Ok(true) => {}
         Ok(false) => return Ok(None),
         Err(e)
@@ -355,7 +372,7 @@ fn path_at_rev(
         }
         Err(e) => return Err(e),
     }
-    let range = format!("{rev}..HEAD");
+    let range = format!("{rev}..{head}");
     let pathspec = format!(":(literal){rel}");
     let out = git::run(
         repo,
@@ -385,11 +402,15 @@ fn path_at_rev(
     Ok(Some(path.to_owned()))
 }
 
-pub(crate) fn file_path_at_revision(
+pub(crate) fn file_path_at_revision_from(
     store: &RevisionStore,
     space_path: &str,
+    head: &str,
     commit: &str,
 ) -> Result<Option<String>, String> {
+    if head != "HEAD" && !is_hex40(head) {
+        return Err("invalid history anchor".into());
+    }
     validate_space_path(space_path)?;
     if !is_hex40(commit) {
         return Err("invalid revision".into());
@@ -398,7 +419,7 @@ pub(crate) fn file_path_at_revision(
     let relative = store.rel(space_path);
     let prefix = space_prefix(store);
     Ok(
-        path_at_rev(&repo, commit, &relative, prefix.as_deref())?.and_then(|historical| {
+        path_at_rev(&repo, head, commit, &relative, prefix.as_deref())?.and_then(|historical| {
             historical
                 .strip_prefix(prefix.as_deref().unwrap_or_default())
                 .map(str::to_owned)
@@ -451,7 +472,8 @@ impl RevisionPath<'_> {
         let rel = store.rel(path);
         let historical = match self {
             Self::Current(_) => {
-                let Some(path) = path_at_rev(&repo, &rev, &rel, space_prefix(store).as_deref())?
+                let Some(path) =
+                    path_at_rev(&repo, "HEAD", &rev, &rel, space_prefix(store).as_deref())?
                 else {
                     return Ok(None);
                 };

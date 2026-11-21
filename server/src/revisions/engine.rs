@@ -728,6 +728,7 @@ fn account_attribution(actor: &crate::auth::Actor) -> Attribution {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ManagedWrite<'a>(&'a EngineInner);
 
 impl ManagedWrite<'_> {

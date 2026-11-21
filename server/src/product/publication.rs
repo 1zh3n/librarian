@@ -313,7 +313,14 @@ fn propose(
         .iter()
         .map(|id| {
             let path = service.path_in(&request.workspace_id, id)?;
-            document_blob_at_commit(store, &repo, &commit, &path).map(|(path, _)| path)
+            let lineage = super::revisions::restored::Lineage::load(
+                &service.metadata,
+                store,
+                &request.workspace_id,
+                id,
+                &path,
+            )?;
+            document_blob_at_commit(store, &repo, &commit, &lineage).map(|(path, _)| path)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let id = request.operation_id.clone();

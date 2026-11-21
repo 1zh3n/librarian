@@ -222,6 +222,7 @@ impl Metadata {
         } else if version != 9 {
             return Err(rusqlite::Error::InvalidQuery);
         }
+        super::file_actions::storage::migrate(&transaction)?;
         super::ai_configuration::migrate(&transaction)?;
         super::ai_probes::migrate(&transaction)?;
         super::ai_conversations::migrate(&transaction)?;

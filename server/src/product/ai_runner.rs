@@ -495,7 +495,7 @@ async fn source(
             return Err(ApiError::not_found());
         }
         let (path, markdown, revision) = if request.outline {
-            let outline = service.get_outline(&account, &request.document_id)?;
+            let outline = service.get_outline_in(&account, &workspace, &request.document_id)?;
             let revision = outline.revision.ok_or_else(ApiError::not_found)?;
             (
                 super::documents::outline_path(&path),
@@ -503,7 +503,7 @@ async fn source(
                 revision,
             )
         } else {
-            let snapshot = service.get(&account, &request.document_id)?;
+            let snapshot = service.get_in(&account, &workspace, &request.document_id)?;
             (path, snapshot.markdown, snapshot.revision)
         };
         let context = op.input.as_ref().and_then(|input| {

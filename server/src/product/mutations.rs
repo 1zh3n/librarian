@@ -230,8 +230,18 @@ impl MutationContext<'_> {
     pub(super) fn apply_files(
         &self,
         transaction: ManagedWrite<'_>,
+        edits: Vec<FileEdit>,
+        subject: &str,
+    ) -> Result<MutationReceipt, ApiError> {
+        self.apply_files_before_publish(transaction, edits, subject, || Ok(()))
+    }
+
+    pub(super) fn apply_files_before_publish(
+        &self,
+        transaction: ManagedWrite<'_>,
         mut edits: Vec<FileEdit>,
         subject: &str,
+        mut before_publish: impl FnMut() -> Result<(), ApiError>,
     ) -> Result<MutationReceipt, ApiError> {
         edits.sort_unstable_by(|left, right| left.path.cmp(&right.path));
         validate_files(&edits)?;
@@ -247,7 +257,12 @@ impl MutationContext<'_> {
             .collect();
         let fingerprint =
             sha256_hex(&serde_json::to_vec(&before_after).map_err(ApiError::internal)?);
-        self.apply_batch(transaction, edits, fingerprint, subject, |_| Ok(()))
+        self.apply_batch(transaction, edits, fingerprint, subject, |point| {
+            if matches!(point, Checkpoint::BeforePublish) {
+                before_publish()?;
+            }
+            Ok(())
+        })
     }
 
     fn apply_batch(

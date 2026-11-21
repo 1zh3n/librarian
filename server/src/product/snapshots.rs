@@ -20,11 +20,7 @@ use serde::{Deserialize, Serialize};
 use silverbullet_server_common::revision::sha256_hex;
 use uuid::Uuid;
 
-use crate::{
-    multi::instance::SpaceInstance,
-    revisions::{read::file_path_at_revision, RevisionStore},
-    state::ServerState,
-};
+use crate::{multi::instance::SpaceInstance, revisions::RevisionStore, state::ServerState};
 
 use super::{
     auth::Account,
@@ -36,6 +32,7 @@ use super::{
         MARKDOWN_LIMIT,
     },
     mutations::{max_file_bytes, valid_file_path},
+    revisions::restored::Lineage,
 };
 const MAX_DOCUMENTS: usize = 64;
 const MAX_ATTACHMENTS: usize = 128;
@@ -283,7 +280,8 @@ fn create_locked(
             let commit =
                 git_blobs::resolve_commit(&repo, request.commit_id.as_deref().unwrap_or("HEAD"))?;
             for (document, path) in manifest.documents.iter_mut().zip(paths) {
-                document.release = Some(release_document(store, &repo, &commit, &path)?);
+                let lineage = Lineage::load(metadata, store, workspace, &document.id, &path)?;
+                document.release = Some(release_document(store, &repo, &commit, &lineage)?);
             }
             for (path, blob) in &mut manifest.attachments {
                 let oid = git_blobs::find(store, &repo, &commit, path, max_file_bytes(path))?
@@ -543,13 +541,10 @@ pub(super) fn document_blob_at_commit(
     store: &RevisionStore,
     repo: &std::path::Path,
     commit: &str,
-    current_path: &str,
+    lineage: &Lineage<'_>,
 ) -> Result<(String, String), ApiError> {
-    if !is_document_path(current_path) || !valid_file_path(current_path) {
-        return Err(ApiError::not_found());
-    }
-    let path = file_path_at_revision(store, current_path, commit)
-        .map_err(ApiError::internal)?
+    let path = lineage
+        .path_at(commit)?
         .filter(|path| is_document_path(path) && valid_file_path(path))
         .ok_or_else(ApiError::not_found)?;
     let blob = git_blobs::find(store, repo, commit, &path, MARKDOWN_LIMIT)?
@@ -561,9 +556,9 @@ fn release_document(
     store: &RevisionStore,
     repo: &std::path::Path,
     commit: &str,
-    current_path: &str,
+    lineage: &Lineage<'_>,
 ) -> Result<ReleaseDocument, ApiError> {
-    let (path, blob) = document_blob_at_commit(store, repo, commit, current_path)?;
+    let (path, blob) = document_blob_at_commit(store, repo, commit, lineage)?;
     let markdown = release_markdown(repo, &blob)?;
     Ok(ReleaseDocument {
         title: title(&path, markdown.as_bytes()),

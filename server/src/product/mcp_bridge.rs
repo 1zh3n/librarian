@@ -263,8 +263,8 @@ fn write(
         })?;
     let result = engine.with_managed_write(|transaction| -> Result<WriteResult, ApiError> {
         let path = match target_document {
-            WriteTarget::NewPath(path) => path,
-            WriteTarget::Document(document) => service.path_in(workspace, &document)?,
+            WriteTarget::NewPath(ref path) => path.clone(),
+            WriteTarget::Document(ref document) => service.path_in(workspace, document)?,
         };
         let (target, markdown, base_revision) = match change {
             Change::Markdown(markdown, base) => (path.clone(), markdown, base),
@@ -274,8 +274,13 @@ fn write(
                 (outline_path(&path), markdown, base)
             }
             Change::Restore(commit, base) => {
-                let markdown = revisions::historical_markdown(engine, &path, &commit)?
-                    .ok_or_else(ApiError::not_found)?;
+                let WriteTarget::Document(ref document) = target_document else {
+                    return Err(ApiError::invalid("Restoring a version requires a document"));
+                };
+                let markdown = revisions::historical_markdown(
+                    service, engine, workspace, document, &path, &commit,
+                )?
+                .ok_or_else(ApiError::not_found)?;
                 (path.clone(), markdown, Some(base))
             }
         };

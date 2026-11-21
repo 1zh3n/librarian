@@ -100,7 +100,7 @@ fn check_scope(
         if service.metadata.document_path(id)?.0 != workspace {
             return Err(ApiError::not_found());
         }
-        service.get(account, id)?;
+        service.get_in(account, workspace, id)?;
     }
     Ok(())
 }
@@ -409,7 +409,7 @@ fn create_turn(
     let op = Operation::prepare(service, account, task)?;
     let task = op.input.as_ref().expect("new queued operation");
     for context in &task.context {
-        let document = service.get(account, &context.document_id)?;
+        let document = service.get_in(account, &task.workspace_id, &context.document_id)?;
         if context
             .revision
             .as_ref()

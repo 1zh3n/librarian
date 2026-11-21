@@ -16,6 +16,7 @@ mod contract;
 pub(crate) mod db;
 mod delivery;
 mod documents;
+mod file_actions;
 mod imports;
 pub mod mcp_bridge;
 mod mcp_operations;

@@ -107,34 +107,7 @@ impl Account {
                 return Err(ApiError::not_found());
             }
         }
-        if !spaces.users.is_enabled(&self.username) {
-            return Err(ApiError::not_found());
-        }
-        let member_level = if spaces.users.is_admin(&self.username) {
-            AccessLevel::Write
-        } else {
-            match instance
-                .config
-                .members
-                .get(&self.username)
-                .map(|member| member.role)
-            {
-                Some(MemberRole::Write) => AccessLevel::Write,
-                Some(MemberRole::Read) => AccessLevel::Read,
-                None => return Err(ApiError::not_found()),
-            }
-        };
-        let state = instance.state.as_ref().ok_or_else(|| {
-            ApiError::new(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "space_unavailable",
-                "Workspace is unavailable",
-            )
-        })?;
-        let level = state
-            .access_policy
-            .level_for(Some(&self.username))
-            .min(member_level);
+        let level = effective_level(spaces, instance, &self.username)?;
         if level < AccessLevel::Read {
             return Err(ApiError::not_found());
         }
@@ -145,7 +118,9 @@ impl Account {
                 "Workspace is read-only for this account",
             ));
         }
-        let profile = state.identity.resolve(Some(&self.username));
+        let profile = super::documents::state(instance)?
+            .identity
+            .resolve(Some(&self.username));
         Ok(Actor {
             username: profile.username,
             credential_version: spaces.users.credential_version(&self.username),
@@ -154,4 +129,33 @@ impl Account {
             level,
         })
     }
+}
+
+/// The product only exposes spaces through active accounts with membership or administration rights.
+pub(super) fn effective_level(
+    spaces: &NativeSpaces,
+    instance: &SpaceInstance,
+    username: &str,
+) -> Result<AccessLevel, ApiError> {
+    if !spaces.users.is_enabled(username) {
+        return Ok(AccessLevel::None);
+    }
+    let member = if spaces.users.is_admin(username) {
+        AccessLevel::Write
+    } else {
+        match instance
+            .config
+            .members
+            .get(username)
+            .map(|member| member.role)
+        {
+            Some(MemberRole::Write) => AccessLevel::Write,
+            Some(MemberRole::Read) => AccessLevel::Read,
+            None => return Ok(AccessLevel::None),
+        }
+    };
+    Ok(super::documents::state(instance)?
+        .access_policy
+        .level_for(Some(username))
+        .min(member))
 }
