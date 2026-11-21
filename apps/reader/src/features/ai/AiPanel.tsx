@@ -182,7 +182,7 @@ export function AiPanel({
       id={id}
       className={styles.panel}
       data-document-ai={Boolean(documentId) || undefined}
-      aria-label={documentId ? "文档 AI" : "Workspace AI"}
+      aria-label={documentId ? "文档 AI" : "工作区 AI"}
     >
       {!hasTurns && history.isError && <p role="alert">无法读取 AI 操作记录。</p>}
       {hasTurns && (

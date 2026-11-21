@@ -16,5 +16,9 @@ declare const styles: {
   readonly tab: string;
   readonly panel: string;
   readonly shortcuts: string;
+  readonly aiPanel: string;
+  readonly catalog: string;
+  readonly detail: string;
+  readonly refresh: string;
 };
 export default styles;

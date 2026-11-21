@@ -178,3 +178,44 @@ button.input {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.fields[hidden],
+.aiPanel[data-inert] {
+  display: none;
+}
+
+.aiPanel {
+  display: grid;
+  min-width: 0;
+  gap: 0.875rem;
+  padding-block-start: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.aiPanel p,
+.aiPanel h3 {
+  margin: 0;
+}
+
+.aiPanel h3 {
+  font-size: 1rem;
+}
+
+.catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.625rem 0.875rem;
+}
+
+.detail {
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.refresh {
+  justify-self: start;
+  min-height: 44px;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}

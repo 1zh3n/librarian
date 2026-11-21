@@ -273,9 +273,9 @@ test("Workspace AI stays in a separate route and resumes an interrupted event re
 }) => {
   const { document, pathToNote } = await createNote(page, "AiWorkspace.md", "空间问答的来源。");
   await page.getByRole("button", { name: "搜索文档" }).click();
-  await page.getByRole("option", { name: "Workspace AI", exact: true }).click();
+  await page.getByRole("option", { name: "工作区 AI", exact: true }).click();
   await expect(page).toHaveURL(`/workspaces/${document.document.workspaceId}/ai`);
-  await expect(page.getByRole("heading", { name: "Workspace AI" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "工作区 AI" })).toBeVisible();
   await expect(page.getByRole("button", { name: "打开文档辅助区" })).toHaveCount(0);
 
   const cursors: number[] = [];

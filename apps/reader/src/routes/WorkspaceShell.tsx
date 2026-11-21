@@ -316,7 +316,7 @@ export function WorkspaceShell() {
       ? [
           {
             id: "workspace-ai",
-            title: "Workspace AI",
+            title: "工作区 AI",
             run: () =>
               void navigate({
                 to: "/workspaces/$workspaceId/ai",
@@ -693,6 +693,7 @@ export function WorkspaceShell() {
             <ReadingSettings
               preferences={settingsQuery.data}
               loading={settingsQuery.isFetching}
+              isAdmin={session.data?.isAdmin}
               retry={() => void settingsQuery.refetch()}
               save={save}
               close={() => {

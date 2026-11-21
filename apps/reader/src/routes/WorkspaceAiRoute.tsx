@@ -13,7 +13,7 @@ export function WorkspaceAiRoute() {
   const writable = workspaces?.some((item) => item.id === workspaceId && item.canWrite) ?? false;
   return (
     <div className={styles.workspace}>
-      <h1>Workspace AI</h1>
+      <h1>工作区 AI</h1>
       <AiPanel
         key={workspaceId}
         workspace={workspaceId}
