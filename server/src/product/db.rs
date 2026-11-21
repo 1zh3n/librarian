@@ -219,6 +219,7 @@ impl Metadata {
         } else if version != 8 {
             return Err(rusqlite::Error::InvalidQuery);
         }
+        super::ai_conversations::migrate(&transaction)?;
         transaction.commit()?;
         Ok(connection)
     }

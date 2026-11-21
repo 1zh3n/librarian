@@ -147,6 +147,63 @@ pub(super) struct Operation {
 }
 
 impl Operation {
+    pub(super) fn prepare(
+        service: &DocumentService,
+        account: &Account,
+        input: TaskInput,
+    ) -> Result<Self, ApiError> {
+        if input.prompt.trim().is_empty()
+            || input.prompt.len() > 16 * 1024
+            || input.context.len() > 24
+        {
+            return Err(ApiError::invalid(
+                "Expected a prompt between 1 and 16,384 bytes and at most 24 references",
+            ));
+        }
+        if input.context.iter().any(|context| {
+            context.from.is_some() != context.to.is_some()
+                || (context.from.is_some() && context.revision.is_none())
+        }) {
+            return Err(ApiError::invalid(
+                "A source selection requires a range and its content revision",
+            ));
+        }
+        let (_, actor) = service.scope(account, &input.workspace_id, input.mode == Mode::Edit)?;
+        for id in input
+            .document_id
+            .iter()
+            .chain(input.context.iter().map(|entry| &entry.document_id))
+        {
+            let (workspace, _) = service.metadata.document_path(id)?;
+            if workspace != input.workspace_id {
+                return Err(ApiError::not_found());
+            }
+        }
+        Ok(Self {
+            view: OperationView {
+                id: Uuid::new_v4().to_string(),
+                workspace_id: input.workspace_id.clone(),
+                document_id: input.document_id.clone(),
+                mode: input.mode,
+                status: OperationStatus::Queued,
+                answer: None,
+                sources: Vec::new(),
+                commit_id: None,
+                confirmation: None,
+                undo_commit_id: None,
+                changes: Vec::new(),
+            },
+            owner: account.username().to_owned(),
+            credential_version: actor.credential_version,
+            input: Some(input),
+            lease: None,
+            delivered: Vec::new(),
+            accepted: None,
+            result_fingerprint: None,
+            undo_id: Uuid::new_v4().to_string(),
+        })
+    }
+
     pub(super) fn get(db: &Metadata, id: &str) -> Result<Self, ApiError> {
         Self::find(db, "id", id)
     }
@@ -186,6 +243,12 @@ impl Operation {
     pub(super) fn store(&self, db: &Metadata, emit: bool) -> Result<(), ApiError> {
         let mut connection = db.connection()?;
         let tx = connection.transaction()?;
+        self.store_in(&tx, emit)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(super) fn store_in(&self, tx: &rusqlite::Transaction, emit: bool) -> Result<(), ApiError> {
         let entry = serde_json::to_string(self).map_err(ApiError::internal)?;
         tx.execute(
             "INSERT INTO ai_operations (id, workspace_id, status, lease_id, expires_at, entry)
@@ -208,7 +271,6 @@ impl Operation {
                 params![self.view.id, payload],
             )?;
         }
-        tx.commit()?;
         Ok(())
     }
 
@@ -254,6 +316,28 @@ impl Operation {
         self.store(db, true)
     }
 
+    /// An interrupted AI receipt can lag a durable filesystem commit. Reconcile
+    /// it without issuing a second write or requiring the author's former role.
+    pub(super) fn recover_committed(&mut self, db: &Metadata) -> Result<bool, ApiError> {
+        if self.view.status != OperationStatus::Running || self.accepted.is_none() {
+            return Ok(false);
+        }
+        let Some(receipt) = mutations::receipt(db, &self.view.id, &self.view.workspace_id, &self.owner)? else {
+            return Ok(false);
+        };
+        self.view.commit_id = Some(receipt.commit_id);
+        self.view.changes = receipt.changes;
+        self.finish_accepted(db)?;
+        Ok(true)
+    }
+
+    fn finish_accepted(&mut self, db: &Metadata) -> Result<(), ApiError> {
+        let accepted = self.accepted.take().expect("accepted AI result");
+        self.view.answer = Some(accepted.answer);
+        self.view.sources = accepted.sources;
+        self.settle(db, OperationStatus::Succeeded)
+    }
+
     pub(super) fn apply_result(
         &mut self,
         service: &DocumentService,
@@ -280,9 +364,7 @@ impl Operation {
                 Err(error) => return Err(error),
             }
         }
-        self.view.answer = Some(accepted.answer.clone());
-        self.view.sources.clone_from(&accepted.sources);
-        self.settle(&service.metadata, OperationStatus::Succeeded)
+        self.finish_accepted(&service.metadata)
     }
 }
 
@@ -294,6 +376,7 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .route("/ai/operations/{operation}/diff", get(diff))
         .route("/ai/operations/{operation}/confirm", post(confirm))
         .route("/ai/operations/{operation}/undo", post(undo))
+        .merge(super::ai_conversations::routes())
         .merge(super::ai_runner::routes())
 }
 
@@ -353,56 +436,7 @@ async fn create(
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let input = body(input)?;
     run(move || {
-        if input.prompt.trim().is_empty()
-            || input.prompt.len() > 16 * 1024
-            || input.context.len() > 24
-        {
-            return Err(ApiError::invalid(
-                "Expected a prompt between 1 and 16,384 bytes and at most 24 references",
-            ));
-        }
-        if input.context.iter().any(|context| {
-            context.from.is_some() != context.to.is_some()
-                || (context.from.is_some() && context.revision.is_none())
-        }) {
-            return Err(ApiError::invalid(
-                "A source selection requires a range and its content revision",
-            ));
-        }
-        let (_, actor) = service.scope(&account, &input.workspace_id, input.mode == Mode::Edit)?;
-        for id in input
-            .document_id
-            .iter()
-            .chain(input.context.iter().map(|entry| &entry.document_id))
-        {
-            let (workspace, _) = service.metadata.document_path(id)?;
-            if workspace != input.workspace_id {
-                return Err(ApiError::not_found());
-            }
-        }
-        let op = Operation {
-            view: OperationView {
-                id: Uuid::new_v4().to_string(),
-                workspace_id: input.workspace_id.clone(),
-                document_id: input.document_id.clone(),
-                mode: input.mode,
-                status: OperationStatus::Queued,
-                answer: None,
-                sources: Vec::new(),
-                commit_id: None,
-                confirmation: None,
-                undo_commit_id: None,
-                changes: Vec::new(),
-            },
-            owner: account.username().to_owned(),
-            credential_version: actor.credential_version,
-            input: Some(input),
-            lease: None,
-            delivered: Vec::new(),
-            accepted: None,
-            result_fingerprint: None,
-            undo_id: Uuid::new_v4().to_string(),
-        };
+        let op = Operation::prepare(&service, &account, input)?;
         op.store(&service.metadata, true)?;
         Ok((StatusCode::ACCEPTED, Json(op.view)))
     })
@@ -454,6 +488,10 @@ async fn confirm(
                 "The requested confirmation is no longer valid",
             ));
         }
+        // Record the commit decision before the filesystem transaction so recovery,
+        // cancel and delete can distinguish it from an unconfirmed proposal.
+        op.view.status = OperationStatus::Running;
+        op.store(&service.metadata, false)?;
         op.apply_result(&service, &account)?;
         Ok(Json(op.view))
     })

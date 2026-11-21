@@ -47,7 +47,15 @@ struct Claimed {
     operation_id: String,
     lease_id: String,
     expires_at: i64,
-    input: TaskInput,
+    input: ClaimInput,
+}
+
+#[derive(Serialize)]
+struct ClaimInput {
+    #[serde(flatten)]
+    task: TaskInput,
+    #[serde(flatten)]
+    conversation: Option<super::ai_conversations::ClaimHistory>,
 }
 
 fn now() -> i64 {
@@ -99,6 +107,9 @@ async fn claim(
         let _guard = db.ai_guard()?;
         let now = now();
         for mut op in Operation::claimable(db, now)? {
+            if op.recover_committed(db)? {
+                continue;
+            }
             let write = op.view.mode == Mode::Edit;
             let account = match op.actor(&service, write) {
                 Ok(account) => account,
@@ -125,6 +136,14 @@ async fn claim(
                 .input
                 .clone()
                 .ok_or_else(|| ApiError::internal("Missing task input"))?;
+            let input = ClaimInput {
+                conversation: super::ai_conversations::claim_history(
+                    db,
+                    &op.view.id,
+                    input.prompt.len(),
+                )?,
+                task: input,
+            };
             let lease_id = Uuid::new_v4().to_string();
             let expires_at = now + LEASE_SECS;
             op.lease = Some(Lease {
@@ -456,7 +475,7 @@ async fn source(
     .await
 }
 
-fn select(markdown: &str, context: &ContextRequest) -> Result<String, ApiError> {
+pub(super) fn select(markdown: &str, context: &ContextRequest) -> Result<String, ApiError> {
     let (from, to) = match (context.from, context.to) {
         (None, None) => return Ok(markdown.to_owned()),
         (Some(from), Some(to)) if from < to && to - from <= 64 * 1024 => (from, to),
