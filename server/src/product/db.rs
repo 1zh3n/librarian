@@ -216,9 +216,13 @@ impl Metadata {
         if version <= 7 {
             super::delivery::migrate_scoped_tokens(&transaction)?;
             transaction.pragma_update(None, "user_version", 8)?;
-        } else if version != 8 {
+        }
+        if version <= 8 {
+            transaction.pragma_update(None, "user_version", 9)?;
+        } else if version != 9 {
             return Err(rusqlite::Error::InvalidQuery);
         }
+        super::ai_configuration::migrate(&transaction)?;
         super::ai_conversations::migrate(&transaction)?;
         super::ai_materials::migrate(&transaction)?;
         transaction.commit()?;

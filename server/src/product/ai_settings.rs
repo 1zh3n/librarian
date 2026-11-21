@@ -19,10 +19,11 @@ use uuid::Uuid;
 
 use super::{
     accounts::administrator,
+    ai_configuration,
     ai_provider::{self, AddressPolicy, DiscoveredModel},
     contract::ApiError,
     db::Metadata,
-    documents::DocumentService,
+    documents::{run, DocumentService},
 };
 
 const TICKET_LIFETIME: Duration = Duration::from_secs(600);
@@ -191,10 +192,23 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct DiscoveryInput {
+struct DraftDiscovery {
     provider: String,
     base_url: String,
     api_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SavedDiscovery {
+    connection_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum DiscoveryInput {
+    Draft(DraftDiscovery),
+    Saved(SavedDiscovery),
 }
 
 async fn discover(
@@ -222,6 +236,35 @@ async fn discover(
     })?;
     let input: DiscoveryInput = serde_json::from_slice(&bytes)
         .map_err(|_| ApiError::invalid("Expected a valid discovery request"))?;
+    let input = match input {
+        DiscoveryInput::Draft(input) => input,
+        DiscoveryInput::Saved(saved) => {
+            let read_service = Arc::clone(&service);
+            let id = saved.connection_id;
+            let read_id = id.clone();
+            let credential =
+                run(move || ai_configuration::saved_credential(&read_service, &read_id)).await?;
+            let endpoint = ai_provider::normalize(&credential.base_url)?;
+            let models =
+                ai_provider::models(&service.ai_discovery.policy, &endpoint, &credential.api_key)
+                    .await?;
+            administrator(&service, &parts.headers, true)?;
+            let catalog = DiscoveredCatalog {
+                fetched_at: chrono::Utc::now().timestamp(),
+                models,
+            };
+            // A saved connection refresh is applied here. Its receipt cannot authorize
+            // creating a different connection with the stored credential.
+            return run(move || {
+                ai_configuration::refresh_catalog(&service, &id, credential.version, &catalog)?;
+                Ok(Json(Discovery {
+                    discovery_id: Uuid::new_v4().to_string(),
+                    catalog,
+                }))
+            })
+            .await;
+        }
+    };
     let key = input.api_key.as_str();
     if input.provider != "deepseek"
         || key.is_empty()

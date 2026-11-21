@@ -318,3 +318,42 @@ async fn checks_browser_admin_origin_and_endpoint_before_contacting_provider() {
     assert!(other.requests.lock().unwrap().is_empty());
     assert!(fixture.requests.lock().unwrap().is_empty());
 }
+
+#[path = "ai_settings/configuration.rs"]
+mod configuration;
+
+#[tokio::test]
+async fn saved_discovery_uses_only_the_connection_id() {
+    let upstream = Provider::start(vec![
+        Json(json!({"data":[{"id":"before"}]})).into_response(),
+        Json(json!({"data":[{"id":"after"}]})).into_response(),
+    ]).await;
+    let app = App::new(Some(&upstream.addr));
+    let admin = app.login("admin").await;
+    let (_, discovery) = app.discover(&admin, ORIGIN, draft(&upstream.base())).await;
+    let conn = json!({"provider":"deepseek","label":"fixture","baseUrl":upstream.base(),
+        "discoveryId":discovery["discoveryId"],"keyChange":{"kind":"replace","apiKey":KEY}});
+    let send = |method, path, conn: Value| app.router.clone().oneshot(
+        Request::builder().method(method).uri(path).header(header::COOKIE, &admin)
+        .header(header::HOST, HOST).header(header::ORIGIN, ORIGIN)
+        .header(header::CONTENT_TYPE,"application/json").body(Body::from(conn.to_string())).unwrap());
+    let created = send("POST","/api/v1/ai/settings/connections", conn.clone()).await.unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let list = send("GET","/api/v1/ai/settings",Value::Null).await.unwrap();
+    let view: Value = serde_json::from_slice(&to_bytes(list.into_body(),65536).await.unwrap()).unwrap();
+    let id = &view["connections"][0]["id"];
+    let reader = app.login("reader").await;
+    assert_eq!(app.discover(&reader,ORIGIN,json!({"connectionId":id})).await.0,StatusCode::FORBIDDEN);
+    for field in ["apiKey","baseUrl","provider"] {
+        let mixed = json!({"connectionId":id, field:"ignored"});
+        assert_eq!(app.discover(&admin,ORIGIN,mixed).await.0,StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    let (status, refreshed) = app.discover(&admin,ORIGIN,json!({"connectionId":id})).await;
+    assert_eq!(status,StatusCode::OK);
+    assert_eq!(refreshed["models"],json!([{"id":"after"}]));
+    let mut replacement = conn;
+    replacement["discoveryId"] = refreshed["discoveryId"].clone();
+    let rejected = send("POST","/api/v1/ai/settings/connections",replacement).await.unwrap();
+    assert_eq!(rejected.status(),StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(*upstream.requests.lock().unwrap(),[("GET /models".into(),true),("GET /models".into(),true)]);
+}

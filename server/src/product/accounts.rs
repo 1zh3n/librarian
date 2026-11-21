@@ -39,7 +39,7 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .layer(DefaultBodyLimit::max(64 * 1024))
 }
 
-fn browser(
+pub(super) fn browser(
     service: &DocumentService,
     headers: &HeaderMap,
     mutation: bool,

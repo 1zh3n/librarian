@@ -2,6 +2,8 @@ mod accounts;
 mod ai;
 mod ai_conversations;
 pub mod ai_materials;
+mod ai_configuration;
+mod ai_credentials;
 mod ai_provider;
 mod ai_runner;
 mod ai_settings;
