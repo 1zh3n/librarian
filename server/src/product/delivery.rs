@@ -93,7 +93,7 @@ pub(super) struct DeliveryRequest {
     archive_base64: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct EncodedFile {
     path: String,
@@ -916,9 +916,62 @@ async fn asset(
         let root = DiskPath::new(&state.space_folder_path);
         let bytes = mutations::current_bytes(root, state.space.as_ref(), &path)?
             .ok_or_else(ApiError::not_found)?;
-        Ok(binary_response(&path, bytes))
+        Ok(workspace_asset_response(&path, bytes, &headers))
     })
     .await
+}
+
+pub(super) fn workspace_asset_response(
+    path: &str,
+    bytes: Vec<u8>,
+    request_headers: &HeaderMap,
+) -> Response {
+    let revision = sha256_hex(&bytes);
+    let etag = format!("\"{revision}\"");
+    let not_modified = request_headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|candidate| {
+                let candidate = candidate.trim();
+                candidate == "*" || candidate.trim_start_matches("W/") == etag
+            })
+        });
+    if not_modified {
+        let mut response = StatusCode::NOT_MODIFIED.into_response();
+        response.headers_mut().insert(
+            header::ETAG,
+            header::HeaderValue::from_str(&etag).expect("ETag is a valid header value"),
+        );
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("private, no-cache"),
+        );
+        response.headers_mut().insert(
+            header::X_CONTENT_TYPE_OPTIONS,
+            header::HeaderValue::from_static("nosniff"),
+        );
+        response.headers_mut().insert(
+            header::HeaderName::from_static("x-content-revision"),
+            header::HeaderValue::from_str(&revision).expect("revision is a valid header value"),
+        );
+        response
+    } else {
+        let mut response = binary_response(path, bytes);
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("private, no-cache"),
+        );
+        response.headers_mut().insert(
+            header::ETAG,
+            header::HeaderValue::from_str(&etag).expect("ETag is a valid header value"),
+        );
+        response.headers_mut().insert(
+            header::HeaderName::from_static("x-content-revision"),
+            header::HeaderValue::from_str(&revision).expect("revision is a valid header value"),
+        );
+        response
+    }
 }
 
 pub(super) fn binary_response(path: &str, bytes: Vec<u8>) -> Response {
@@ -953,4 +1006,44 @@ pub(super) fn binary_response(path: &str, bytes: Vec<u8>) -> Response {
         );
     }
     response
+}
+
+#[cfg(test)]
+mod asset_response_tests {
+    use super::*;
+
+    #[test]
+    fn workspace_asset_response_revalidates_with_a_content_etag() {
+        let response = workspace_asset_response("photo.png", b"first".to_vec(), &HeaderMap::new());
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-cache"
+        );
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+        let etag = response.headers()[header::ETAG].clone();
+        assert!(etag.to_str().unwrap().starts_with('"'));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, etag);
+        let response = workspace_asset_response("photo.png", b"first".to_vec(), &headers);
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        assert!(response.headers().contains_key(header::ETAG));
+
+        let response = workspace_asset_response("photo.png", b"second".to_vec(), &headers);
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn workspace_asset_response_never_inlines_svg() {
+        let response = workspace_asset_response("icon.svg", b"<svg/>".to_vec(), &HeaderMap::new());
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/octet-stream"
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_DISPOSITION],
+            "attachment"
+        );
+    }
 }

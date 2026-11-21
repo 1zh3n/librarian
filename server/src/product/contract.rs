@@ -72,11 +72,19 @@ impl ApiError {
     }
 
     pub(crate) fn conflict(current_revision: Option<String>) -> Self {
-        let mut error = Self::new(
-            StatusCode::CONFLICT,
+        Self::conflict_with(
             "revision_conflict",
             "Document revision changed",
-        );
+            current_revision,
+        )
+    }
+
+    pub(super) fn conflict_with(
+        code: &'static str,
+        message: &'static str,
+        current_revision: Option<String>,
+    ) -> Self {
+        let mut error = Self::new(StatusCode::CONFLICT, code, message);
         error.body.current_revision = current_revision;
         error
     }

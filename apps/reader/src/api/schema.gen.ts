@@ -1506,6 +1506,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/workspaces/{workspace}/assets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["uploadWorkspaceAsset"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2544,6 +2560,20 @@ export interface components {
     McpGrantSpace: {
       id: string;
       name: string;
+    };
+    AssetUpload: {
+      path: string;
+      assetPath: string;
+      assetUrl: string | null;
+      assetUrlError?: string | null;
+      revision: string;
+      contentType: string;
+      width: number;
+      height: number;
+      size: number;
+      /** Format: uuid */
+      operationId: string;
+      commitId: string;
     };
   };
   responses: {
@@ -6946,6 +6976,54 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  uploadWorkspaceAsset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": {
+          /** Format: binary */
+          file: string;
+          /** Format: uuid */
+          operationId: string;
+          targetDirectory: string;
+          fileName: string;
+          /**
+           * @default rename
+           * @enum {string}
+           */
+          conflictPolicy?: "rename" | "reject";
+          baseRevision?: string | null;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AssetUpload"];
+        };
       };
       /** @description Request could not be completed */
       default: {

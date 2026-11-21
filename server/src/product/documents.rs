@@ -615,6 +615,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .merge(super::file_actions::routes())
         .merge(super::ai_materials::routes())
         .merge(super::delivery::routes())
+        .merge(super::assets::routes())
         .merge(super::imports::routes())
         .merge(super::snapshots::routes())
         .merge(super::session::routes())
@@ -623,9 +624,12 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .merge(super::mcp_settings::routes())
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
+            // Default every product response to no-store, but let explicit
+            // cache policies (for example image ETag revalidation) win.
             response
                 .headers_mut()
-                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                .entry(header::CACHE_CONTROL)
+                .or_insert(HeaderValue::from_static("no-store"));
             response
         }))
         .with_state(service)

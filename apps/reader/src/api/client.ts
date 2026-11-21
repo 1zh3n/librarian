@@ -64,6 +64,7 @@ export type CreateSnapshot = components["schemas"]["CreateSnapshot"];
 export type SnapshotLink = components["schemas"]["SnapshotLink"];
 export type SnapshotLinkSummary = components["schemas"]["SnapshotLinkSummary"];
 export type Snapshot = components["schemas"]["ReaderSnapshot"];
+export type AssetUpload = components["schemas"]["AssetUpload"];
 
 export type BackupSettings = components["schemas"]["BackupSettings"];
 export type BackupJob = components["schemas"]["BackupJob"];
@@ -602,6 +603,16 @@ export const api = {
   },
   snapshotAsset(id: string, path: string) {
     return `/api/v1${snapshotPath(id)}/assets/${encodeFilePath(path)}`;
+  },
+  async uploadWorkspaceAsset(workspace: string, body: FormData, signal?: AbortSignal) {
+    const response = await fetch(`/api/v1${workspacePath(workspace)}/assets`, {
+      method: "POST",
+      body,
+      credentials: "same-origin",
+      signal: signal ?? null,
+    });
+    if (!response.ok) throw await responseError(response);
+    return (await response.json()) as AssetUpload;
   },
   listDocuments(workspace: string, options: ListOptions = {}, signal?: AbortSignal) {
     const query = new URLSearchParams();

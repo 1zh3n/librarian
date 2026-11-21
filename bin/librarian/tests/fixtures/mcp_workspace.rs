@@ -9,6 +9,7 @@ async fn workspace(server: &Server, who: &Session) -> String {
 }
 
 const OP: &str = "86f1927a-4cf8-4924-aa63-a8e1307afba5";
+const IMAGE: &[u8] = include_bytes!("../../../../server/testdata/images/tiny.png");
 
 #[tokio::test]
 async fn mcp_reader_url_uses_trusted_public_base() {
@@ -17,7 +18,7 @@ async fn mcp_reader_url_uses_trusted_public_base() {
     let who = server.connect("alice", "left").await;
     let ws = workspace(&server, &who).await;
     let files = json!([{"path":"方案.md","contentBase64":STANDARD.encode("原文\r\n![图](img.png)\r\n")},
-                       {"path":"img.png","contentBase64":STANDARD.encode([0,255,17])}]);
+                       {"path":"img.png","contentBase64":STANDARD.encode(IMAGE)}]);
     let upload =
         json!({"workspaceId":ws,"targetDirectory":"项目甲","operationId":OP,"files":files});
     let response = server.client.post(format!("{}/.mcp",server.url)).bearer_auth(&who.access)
@@ -46,7 +47,7 @@ async fn mcp_reader_url_uses_trusted_public_base() {
     );
     assert_eq!(
         fs::read(server.root.path().join("spaces/left/项目甲/img.png")).unwrap(),
-        [0, 255, 17]
+        IMAGE
     );
     let mut injected = upload;
     injected["readerUrl"] = json!("https://untrusted.example");

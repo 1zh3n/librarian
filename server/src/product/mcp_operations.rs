@@ -1,13 +1,16 @@
 use super::{
     ai::{AcceptedResult, Operation, OperationStatus},
     ai_reorganization::{self, ReorganizationRequest, WorkspaceEdit},
+    assets::{self, ImageUpload},
     auth::Account,
     contract::ApiError,
     documents::DocumentService,
+    image_policy::ConflictPolicy,
     imports,
 };
 use crate::auth::mcp::grants::Grant;
 use axum::http::StatusCode;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{params, OptionalExtension};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -89,6 +92,7 @@ enum Command {
     Apply(Vec<WorkspaceEdit>),
     Reorganize(ReorganizationRequest),
     Upload(imports::ImportRequest),
+    UploadImage(ImageUpload),
     Get,
     Undo,
 }
@@ -123,6 +127,36 @@ impl Command {
             {
                 obj.insert("operationId".into(), json!(id));
                 return Ok((workspace, id, Self::Upload(parse(args)?)));
+            }
+            "workspace_upload_image" => {
+                let target_directory = parse(obj.remove("targetDirectory").ok_or_else(bad)?)?;
+                let file_name = parse(obj.remove("fileName").ok_or_else(bad)?)?;
+                let content_base64: String = parse(obj.remove("contentBase64").ok_or_else(bad)?)?;
+                let conflict_policy = match obj.remove("conflictPolicy") {
+                    Some(value) => {
+                        parse::<String>(value).and_then(|value| match value.as_str() {
+                            "rename" => Ok(ConflictPolicy::Rename),
+                            "reject" => Ok(ConflictPolicy::Reject),
+                            _ => Err(bad()),
+                        })?
+                    }
+                    None => ConflictPolicy::Rename,
+                };
+                let base_revision = match obj.remove("baseRevision") {
+                    Some(value) => parse::<Option<String>>(value)?,
+                    None => None,
+                };
+                let bytes = STANDARD
+                    .decode(content_base64.as_bytes())
+                    .map_err(|_| bad())?;
+                Self::UploadImage(ImageUpload {
+                    operation_id: id.clone(),
+                    target_directory,
+                    file_name,
+                    conflict_policy,
+                    base_revision,
+                    bytes,
+                })
             }
             _ => return Err(bad()),
         };
@@ -185,9 +219,12 @@ pub(super) fn call(
     if let Command::Upload(upload) = cmd {
         return imports::import(service, account, &ws, upload);
     }
+    if let Command::UploadImage(upload) = cmd {
+        return assets::upload_image(service, account, &ws, upload);
+    }
     if let Some(bound) = prior
         .as_ref()
-        .filter(|b| b.kind == "workspace_upload_files")
+        .filter(|b| b.kind == "workspace_upload_files" || b.kind == "workspace_upload_image")
     {
         return imports::operation(
             service,

@@ -1,6 +1,7 @@
 use std::{fs, time::Duration};
 
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{Client, Url};
 use serde_json::{json, Value};
 use silverbullet_server::auth::mcp::SCOPE;
@@ -618,13 +619,32 @@ async fn mcp_lists_only_product_tools_and_their_input_contracts() {
     let response = server.rpc(&session.access, "tools/list", json!({})).await;
     let tools: Value = response.json().await.unwrap();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    let expected: [(&str, bool, bool, &[&str]); 18] = [
+    let expected: [(&str, bool, bool, &[&str]); 21] = [
         (
             "workspace_upload_files",
             false,
             true,
             &["workspaceId", "targetDirectory", "operationId", "files"],
         ),
+        (
+            "workspace_upload_image",
+            false,
+            true,
+            &[
+                "workspaceId",
+                "operationId",
+                "targetDirectory",
+                "fileName",
+                "contentBase64",
+            ],
+        ),
+        (
+            "workspace_read_asset",
+            true,
+            false,
+            &["workspaceId", "path"],
+        ),
+        ("workspace_list_assets", true, false, &["workspaceId"]),
         (
             "workspace_apply_edits",
             false,
@@ -1209,4 +1229,217 @@ async fn mcp_writes_create_immediate_versions_and_retries_reuse_receipts() {
     .await
     .expect("MCP search returned the current document");
     assert!(search["excerpt"].as_str().unwrap().contains("鹭鸟"));
+}
+
+#[tokio::test]
+async fn mcp_uploads_reads_lists_and_undoes_an_image() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let png = include_bytes!("../../../server/testdata/images/tiny.png");
+    let operation = "11111111-1111-4111-8111-111111111111";
+    let uploaded = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": operation,
+                "targetDirectory": "notes",
+                "fileName": "tiny.png",
+                "contentBase64": STANDARD.encode(png),
+            }),
+        )
+        .await;
+    let asset = &uploaded["structuredContent"];
+    assert_eq!(asset["path"], "notes/tiny.png", "{uploaded}");
+    assert_eq!(asset["contentType"], "image/png");
+    assert_eq!(asset["width"], 2);
+    assert_eq!(asset["height"], 3);
+    let path = asset["path"].as_str().unwrap();
+
+    let retried = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": operation,
+                "targetDirectory": "notes",
+                "fileName": "tiny.png",
+                "contentBase64": STANDARD.encode(png),
+            }),
+        )
+        .await;
+    assert_eq!(retried["structuredContent"]["path"], "notes/tiny.png");
+    assert_eq!(retried["structuredContent"]["commitId"], asset["commitId"]);
+
+    let invalid = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "44444444-4444-4444-8444-444444444444",
+                "targetDirectory": "notes",
+                "fileName": "broken.png",
+                "contentBase64": STANDARD.encode(b"not an image"),
+            }),
+        )
+        .await;
+    assert_eq!(invalid["isError"], true);
+    assert_eq!(invalid["structuredContent"]["code"], "invalid_image");
+
+    let read = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": path}),
+        )
+        .await;
+    assert_eq!(read["content"][0]["type"], "image");
+    assert_eq!(read["content"][0]["mimeType"], "image/png");
+    assert_eq!(read["structuredContent"]["inline"], true);
+    assert_eq!(read["structuredContent"]["revision"], asset["revision"]);
+
+    let listed = server
+        .tool(
+            &session,
+            "workspace_list_assets",
+            json!({"workspaceId": workspace, "directory": "notes"}),
+        )
+        .await;
+    assert_eq!(listed["structuredContent"]["assets"][0]["path"], path);
+    assert_eq!(listed["structuredContent"]["assets"][0]["isImage"], true);
+
+    let undone = server
+        .tool(
+            &session,
+            "workspace_undo_operation",
+            json!({"workspaceId": workspace, "operationId": operation}),
+        )
+        .await;
+    assert_eq!(undone["isError"], Value::Null);
+    let missing = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": path}),
+        )
+        .await;
+    assert_eq!(missing["isError"], true);
+}
+
+fn multipart_image_body(
+    boundary: &str,
+    operation_id: &str,
+    file_name: &str,
+    image: &[u8],
+) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (name, value) in [
+        ("operationId", operation_id),
+        ("targetDirectory", "notes"),
+        ("fileName", file_name),
+    ] {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\nContent-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(image);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
+}
+
+#[tokio::test]
+async fn http_multipart_upload_names_images_and_revalidates_etags() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let boundary = "librarian-image-boundary";
+    let png = include_bytes!("../../../server/testdata/images/tiny.png");
+    let upload = |operation_id: &str| {
+        let body = multipart_image_body(boundary, operation_id, "photo.png", png);
+        server
+            .client
+            .post(format!(
+                "{}/api/v1/workspaces/{workspace}/assets",
+                server.url
+            ))
+            .header(header::COOKIE, &session.cookie)
+            .header(header::ORIGIN, &server.url)
+            .header(
+                header::CONTENT_TYPE,
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+    };
+    let first = upload("22222222-2222-4222-8222-222222222222")
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::CREATED);
+    let first: Value = first.json().await.unwrap();
+    assert_eq!(first["path"], "notes/photo.png");
+    assert_eq!(first["width"], 2);
+    assert_eq!(first["height"], 3);
+    let second = upload("33333333-3333-4333-8333-333333333333")
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::CREATED);
+    let second: Value = second.json().await.unwrap();
+    assert_eq!(second["path"], "notes/photo-2.png");
+
+    let asset_url = format!(
+        "{}/api/v1{}",
+        server.url,
+        first["assetPath"].as_str().unwrap()
+    );
+    let response = server
+        .client
+        .get(&asset_url)
+        .header(header::COOKIE, &session.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, no-cache"
+    );
+    let etag = response.headers()[header::ETAG].clone();
+    let revalidated = server
+        .client
+        .get(&asset_url)
+        .header(header::COOKIE, &session.cookie)
+        .header(header::IF_NONE_MATCH, etag)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revalidated.status(), StatusCode::NOT_MODIFIED);
 }

@@ -23,6 +23,7 @@ thiserror = "2"
 argon2 = "0.6"
 walkdir = "2"
 ignore = "0.4"
+imagesize = { version = "0.15", default-features = false, features = ["png", "jpeg", "webp", "gif", "heif"] }
 libc = "0.2"
 mime_guess = "2"
 chrono = "0.4"

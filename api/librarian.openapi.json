@@ -6057,6 +6057,90 @@
           }
         }
       }
+    },
+    "/workspaces/{workspace}/assets": {
+      "post": {
+        "operationId": "uploadWorkspaceAsset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "operationId",
+                  "targetDirectory",
+                  "fileName"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "operationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "targetDirectory": {
+                    "type": "string"
+                  },
+                  "fileName": {
+                    "type": "string"
+                  },
+                  "conflictPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "rename",
+                      "reject"
+                    ],
+                    "default": "rename"
+                  },
+                  "baseRevision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUpload"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -10233,6 +10317,67 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AssetUpload": {
+        "type": "object",
+        "required": [
+          "path",
+          "assetPath",
+          "assetUrl",
+          "revision",
+          "contentType",
+          "width",
+          "height",
+          "size",
+          "operationId",
+          "commitId"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "assetPath": {
+            "type": "string"
+          },
+          "assetUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assetUrlError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "commitId": {
             "type": "string"
           }
         }

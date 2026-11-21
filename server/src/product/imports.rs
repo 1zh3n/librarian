@@ -4,17 +4,19 @@ use super::{
     contract::ApiError,
     delivery::{self, EncodedFile},
     documents::{body, is_document_path, run, state, DocumentService},
+    image_policy,
     mutations::{FileEdit, MutationContext, MutationReceipt},
 };
 use axum::{
     extract::{rejection::JsonRejection, DefaultBodyLimit, Path, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use silverbullet_server_common::revision::sha256_hex;
 use std::{collections::BTreeMap, sync::Arc};
 
 pub(super) fn routes() -> Router<Arc<DocumentService>> {
@@ -27,7 +29,7 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .layer(DefaultBodyLimit::max(34 * 1024 * 1024))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ImportRequest {
     pub operation_id: String,
@@ -38,7 +40,7 @@ pub(super) struct ImportRequest {
     updates: Vec<Update>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Update {
     path: String,
@@ -47,20 +49,33 @@ struct Update {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ImportedDocument {
+pub(super) struct ImportedDocument {
     document_id: String,
     path: String,
 }
 
 #[derive(Serialize, Deserialize)]
-struct ImportReceipt {
+#[serde(rename_all = "camelCase")]
+pub(super) struct ImportedAsset {
+    pub path: String,
+    pub revision: String,
+    pub content_type: String,
+    pub width: usize,
+    pub height: usize,
+    pub size: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(super) struct ImportReceipt {
     #[serde(flatten)]
-    receipt: MutationReceipt,
-    documents: Vec<ImportedDocument>,
+    pub(super) receipt: MutationReceipt,
+    pub(super) documents: Vec<ImportedDocument>,
+    #[serde(default)]
+    pub(super) assets: Vec<ImportedAsset>,
 }
 
 impl ImportReceipt {
-    fn view(self, service: &DocumentService) -> Value {
+    pub(super) fn view(self, service: &DocumentService) -> Value {
         let documents = self
             .documents
             .into_iter()
@@ -73,8 +88,25 @@ impl ImportReceipt {
                 fields
             })
             .collect::<Vec<_>>();
+        let assets = self
+            .assets
+            .iter()
+            .map(|asset| {
+                let mut fields = json!(service
+                    .reader_links
+                    .asset(&self.receipt.workspace_id, &asset.path));
+                fields["path"] = json!(asset.path);
+                fields["revision"] = json!(asset.revision);
+                fields["contentType"] = json!(asset.content_type);
+                fields["width"] = json!(asset.width);
+                fields["height"] = json!(asset.height);
+                fields["size"] = json!(asset.size);
+                fields
+            })
+            .collect::<Vec<_>>();
         let mut result = json!(self.receipt);
         result["documents"] = json!(documents);
+        result["assets"] = json!(assets);
         result
     }
 }
@@ -84,12 +116,31 @@ fn saved(
     account: &Account,
     ws: &str,
     id: &str,
-) -> Result<Option<ImportReceipt>, ApiError> {
-    let raw:Option<String>=service.metadata.connection()?.query_row(
-        "SELECT receipt FROM workspace_imports WHERE operation_id=?1 AND workspace_id=?2 AND owner=?3",
-        params![id,ws,account.username()],|r| r.get(0)).optional()?;
-    raw.map(|s| serde_json::from_str(&s).map_err(ApiError::internal))
-        .transpose()
+) -> Result<Option<(ImportReceipt, Option<String>)>, ApiError> {
+    let row: Option<(String, Option<String>)> = service
+        .metadata
+        .connection()?
+        .query_row(
+            "SELECT receipt, digest FROM workspace_imports
+             WHERE operation_id=?1 AND workspace_id=?2 AND owner=?3",
+            params![id, ws, account.username()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    row.map(|(raw, digest)| {
+        serde_json::from_str(&raw)
+            .map(|receipt| (receipt, digest))
+            .map_err(ApiError::internal)
+    })
+    .transpose()
+}
+
+fn operation_reused() -> ApiError {
+    ApiError::new(
+        StatusCode::CONFLICT,
+        "operation_id_reused",
+        "Operation ID is already bound to another request",
+    )
 }
 
 pub(super) fn import(
@@ -98,15 +149,8 @@ pub(super) fn import(
     ws: &str,
     input: ImportRequest,
 ) -> Result<Value, ApiError> {
-    let (instance, actor) = service.scope(account, ws, true)?;
-    let state = state(&instance)?;
-    let engine = ai::managed_engine(state)?;
-    let dir = input.target_directory.trim_end_matches('/');
-    if (!input.target_directory.is_empty() && dir.is_empty())
-        || (!dir.is_empty() && !delivery::included_path(dir))
-    {
-        return Err(ApiError::invalid("Select a safe relative target directory"));
-    }
+    let digest = sha256_hex(&serde_json::to_vec(&input).map_err(ApiError::internal)?);
+    let dir = image_policy::validate_directory(&input.target_directory)?;
     let files = delivery::decode_files(input.files, input.archive_base64)?;
     let mut updates = BTreeMap::new();
     for update in input.updates {
@@ -123,30 +167,106 @@ pub(super) fn import(
             ));
         }
     }
-    let edits = files
-        .into_iter()
-        .map(|(path, contents)| FileEdit {
-            base_revision: updates.remove(&path),
-            path: if dir.is_empty() {
-                path
-            } else {
-                format!("{dir}/{path}")
-            },
-            contents: Some(contents),
-        })
-        .collect();
+    import_files(
+        service,
+        account,
+        ws,
+        ImportFiles {
+            operation_id: input.operation_id,
+            dir,
+            files,
+            updates,
+            digest,
+        },
+    )
+    .map(|receipt| receipt.view(service))
+}
+
+pub(super) struct ImportFiles {
+    pub operation_id: String,
+    pub dir: String,
+    pub files: BTreeMap<String, Vec<u8>>,
+    pub updates: BTreeMap<String, String>,
+    pub digest: String,
+}
+
+pub(super) fn import_files(
+    service: &DocumentService,
+    account: &Account,
+    ws: &str,
+    input: ImportFiles,
+) -> Result<ImportReceipt, ApiError> {
+    let ImportFiles {
+        operation_id,
+        dir,
+        files,
+        mut updates,
+        digest,
+    } = input;
+    let (instance, actor) = service.scope(account, ws, true)?;
+    let state = state(&instance)?;
+    let engine = ai::managed_engine(state)?;
     engine.with_managed_write(|tx| {
+        if let Some((prior, prior_digest)) = saved(service, account, ws, &operation_id)? {
+            if prior_digest
+                .as_deref()
+                .is_some_and(|value| value != digest.as_str())
+            {
+                return Err(operation_reused());
+            }
+            return Ok(prior);
+        }
+
+        let mut edits = Vec::new();
+        let mut assets = Vec::new();
+        for (source_path, contents) in files {
+            let path = if dir.is_empty() {
+                source_path.clone()
+            } else {
+                format!("{dir}/{source_path}")
+            };
+            if image_policy::is_image_extension(&path) {
+                let info = image_policy::inspect(&path, &contents)?;
+                assets.push(ImportedAsset {
+                    revision: sha256_hex(&contents),
+                    content_type: info.kind.content_type().to_owned(),
+                    width: info.width,
+                    height: info.height,
+                    size: contents.len(),
+                    path: path.clone(),
+                });
+            }
+            edits.push(FileEdit {
+                base_revision: updates.remove(&source_path),
+                path,
+                contents: Some(contents),
+            });
+        }
+        if !updates.is_empty() {
+            return Err(ApiError::invalid(
+                "Each update must identify one uploaded file and its content revision",
+            ));
+        }
+
         let context = MutationContext {
             metadata: &service.metadata,
             state,
             actor: &actor,
             workspace: ws,
             account: account.username(),
-            operation: &input.operation_id,
+            operation: &operation_id,
         };
         let receipt = context.apply_files(tx, edits, "Import workspace files")?;
-        if let Some(prior) = saved(service, account, ws, &input.operation_id)? {
-            return Ok(prior.view(service));
+        for asset in &mut assets {
+            if let Some(change) = receipt
+                .changes
+                .iter()
+                .find(|change| change.path == asset.path)
+            {
+                if let Some(revision) = &change.revision {
+                    asset.revision.clone_from(revision);
+                }
+            }
         }
         let mut documents = Vec::new();
         for change in &receipt.changes {
@@ -157,14 +277,18 @@ pub(super) fn import(
                 });
             }
         }
-        let receipt = ImportReceipt { receipt, documents };
+        let receipt = ImportReceipt {
+            receipt,
+            documents,
+            assets,
+        };
         let encoded = serde_json::to_string(&receipt).map_err(ApiError::internal)?;
         service.metadata.connection()?.execute(
-            "INSERT INTO workspace_imports(operation_id,workspace_id,owner,receipt)
-             VALUES(?1,?2,?3,?4)",
-            params![input.operation_id, ws, account.username(), encoded],
+            "INSERT INTO workspace_imports(operation_id,workspace_id,owner,receipt,digest)
+             VALUES(?1,?2,?3,?4,?5)",
+            params![operation_id, ws, account.username(), encoded, digest],
         )?;
-        Ok(receipt.view(service))
+        Ok(receipt)
     })
 }
 
@@ -187,7 +311,7 @@ pub(super) fn operation(
     undo: Option<&str>,
 ) -> Result<Value, ApiError> {
     let (space, actor) = service.scope(account, ws, undo.is_some())?;
-    let saved = saved(service, account, ws, id)?.ok_or_else(ApiError::not_found)?;
+    let (saved, _) = saved(service, account, ws, id)?.ok_or_else(ApiError::not_found)?;
     let Some(undo) = undo else {
         return Ok(saved.view(service));
     };
@@ -239,6 +363,7 @@ async fn get_receipt(
         Ok(Json(
             saved(&service, &account, &ws, &id)?
                 .ok_or_else(ApiError::not_found)?
+                .0
                 .view(&service),
         ))
     })

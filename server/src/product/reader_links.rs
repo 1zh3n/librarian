@@ -1,4 +1,5 @@
 use super::db::Metadata;
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::{fs, io};
@@ -12,6 +13,32 @@ pub(super) struct ReaderLink {
     pub reader_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reader_url_error: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AssetLink {
+    pub asset_path: String,
+    pub asset_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_url_error: Option<&'static str>,
+}
+
+const ASSET_PATH_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'?')
+    .add(b'[')
+    .add(b']')
+    .add(b'\\');
+
+fn encode_asset_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| utf8_percent_encode(segment, ASSET_PATH_SET).to_string())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 impl ReaderLinks {
@@ -67,5 +94,17 @@ impl ReaderLinks {
     }
     pub(super) fn document(&self, workspace: &str, document: &str) -> ReaderLink {
         self.link(format!("/workspaces/{workspace}/documents/{document}"))
+    }
+
+    pub(super) fn asset(&self, workspace: &str, path: &str) -> AssetLink {
+        let asset_path = format!("/workspaces/{workspace}/assets/{}", encode_asset_path(path));
+        AssetLink {
+            asset_url: self
+                .0
+                .as_ref()
+                .map(|base| format!("{base}/api/v1{asset_path}")),
+            asset_url_error: self.0.is_none().then_some("reader_url_unavailable"),
+            asset_path,
+        }
     }
 }

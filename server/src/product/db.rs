@@ -230,12 +230,23 @@ impl Metadata {
         super::ai_conversations::migrate(&transaction)?;
         super::ai_materials::migrate(&transaction)?;
         super::ai_space_management::migrate(&transaction)?;
-        transaction.execute_batch("CREATE TABLE IF NOT EXISTS workspace_imports (
-            operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL, receipt TEXT NOT NULL);
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS workspace_imports (
+            operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL,
+            receipt TEXT NOT NULL, digest TEXT);
             CREATE TABLE IF NOT EXISTS mcp_operation_origins (
             operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL,
             client_id TEXT NOT NULL, grant_id TEXT NOT NULL, request_digest TEXT NOT NULL,
-            kind TEXT NOT NULL, undo_id TEXT NOT NULL);")?;
+            kind TEXT NOT NULL, undo_id TEXT NOT NULL);",
+        )?;
+        let has_import_digest: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('workspace_imports') WHERE name='digest')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_import_digest {
+            transaction.execute("ALTER TABLE workspace_imports ADD COLUMN digest TEXT", [])?;
+        }
         if version < 10 {
             super::ai_conversations::migrate_global_scope(&transaction)?;
             if transaction

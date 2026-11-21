@@ -56,6 +56,21 @@ impl McpBridge {
             grant.spaces.iter().cloned().collect(),
         )?;
         let service = self.0.clone();
+        if name == "workspace_read_asset" {
+            let args: AssetReadArgs = arguments_as(arguments)?;
+            return super::assets::read_asset(&service, &account, &args.workspace_id, &args.path);
+        }
+        if name == "workspace_list_assets" {
+            let args: AssetListArgs = arguments_as(arguments)?;
+            return super::assets::list_assets(
+                &service,
+                &account,
+                &args.workspace_id,
+                args.directory.as_deref().unwrap_or(""),
+                args.after.as_deref(),
+                args.limit,
+            );
+        }
         if name == "document_search" {
             let args: SearchArgs = arguments_as(arguments)?;
             let hits = search::find_documents(
@@ -74,7 +89,8 @@ impl McpBridge {
             | "workspace_request_reorganization"
             | "workspace_get_operation"
             | "workspace_undo_operation"
-            | "workspace_upload_files" => {
+            | "workspace_upload_files"
+            | "workspace_upload_image" => {
                 super::mcp_operations::call(&service, &account, &grant, &name, arguments)
             }
             _ => call_local(&service, &account, &name, arguments),
@@ -314,6 +330,22 @@ fn write(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EmptyArgs {}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AssetReadArgs {
+    workspace_id: String,
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AssetListArgs {
+    workspace_id: String,
+    directory: Option<String>,
+    after: Option<String>,
+    limit: Option<usize>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -7,6 +7,7 @@ use axum::{
     routing::get,
     Router,
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use silverbullet_server::{
@@ -217,6 +218,21 @@ impl ToolSet for ProductTools {
                 &["workspaceId", "targetId", "commitId", "documentIds", "operationId"], false, false,
             ),
             tool(
+                "workspace_upload_image", "Upload image", "Upload one PNG, JPEG, WebP, GIF or AVIF image into a granted Workspace. The server chooses a non-conflicting name by default and returns an asset URL.",
+                json!({"workspaceId": workspace, "operationId": operation, "targetDirectory": {"type": "string", "description": "Safe relative directory; empty means the workspace root."}, "fileName": {"type": "string", "description": "Single file name with a supported image extension."}, "contentBase64": {"type": "string", "contentEncoding": "base64"}, "conflictPolicy": {"type": "string", "enum": ["rename", "reject"], "default": "rename"}, "baseRevision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "Set only when replacing an existing image."}}),
+                &["workspaceId", "operationId", "targetDirectory", "fileName", "contentBase64"], false, true,
+            ),
+            tool(
+                "workspace_read_asset", "Read asset", "Read an image or attachment from a granted Workspace. Images up to 8 MiB are returned as MCP image content; larger assets return metadata and a URL.",
+                json!({"workspaceId": workspace, "path": {"type": "string", "description": "Safe relative workspace asset path."}}),
+                &["workspaceId", "path"], true, false,
+            ),
+            tool(
+                "workspace_list_assets", "List assets", "List non-Markdown assets in a granted workspace, including images, in path order.",
+                json!({"workspaceId": workspace, "directory": {"type": "string", "description": "Optional safe relative directory prefix."}, "after": {"type": "string", "description": "List paths strictly after this path."}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
+                &["workspaceId"], true, false,
+            ),
+            tool(
                 "document_list", "List documents", "List documents in a granted workspace in path order.",
                 json!({"workspaceId": workspace, "after": {"type": "string", "description": "List paths strictly after this document path."}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
                 &["workspaceId"], true, false,
@@ -280,7 +296,24 @@ impl ToolSet for ProductTools {
             return error_result("A current OAuth grant is required");
         };
         match self.0.call(&caller.username, grant_id, name, args).await {
-            Ok(result) => json_result(result),
+            Ok(result) => {
+                if let (Some(data), Some(mime)) = (
+                    result.get("imageBase64").and_then(Value::as_str),
+                    result.get("mimeType").and_then(Value::as_str),
+                ) {
+                    if let Ok(bytes) = STANDARD.decode(data) {
+                        let mut structured = result.clone();
+                        if let Some(object) = structured.as_object_mut() {
+                            object.remove("imageBase64");
+                        }
+                        let mut response =
+                            silverbullet_server_mcp::image_result_with_mime(&bytes, mime);
+                        response["structuredContent"] = structured;
+                        return response;
+                    }
+                }
+                json_result(result)
+            }
             Err(error) => {
                 let mut result = json_result(error);
                 result["isError"] = json!(true);
