@@ -239,6 +239,10 @@ test("manages a local account and applies Workspace membership through Reader", 
     await expect(memberTabs.getByRole("tab")).toHaveText(["外部导入", "备份与发布"]);
     await expect(memberPage.getByRole("region", { name: "阅读地址" })).toBeVisible();
     await member.getByRole("button", { name: "移除成员" }).click();
+    const remove = page.getByRole("dialog", { name: "移除成员" });
+    await expect(remove).toContainText("无法继续访问这个空间");
+    await expect(remove.getByRole("button", { name: "取消" })).toBeVisible();
+    await remove.getByRole("button", { name: "移除成员" }).click();
     await expect(member).toHaveCount(0);
     const removed = (await (
       await memberPage.request.get("/api/v1/workspaces")

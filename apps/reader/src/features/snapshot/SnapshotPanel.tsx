@@ -1,7 +1,10 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../../api/client";
-import type { CreateSnapshot, DocumentSummary, SnapshotLink } from "../../api/client";
+import type { CreateSnapshot, DocumentSummary, SnapshotLinkSummary } from "../../api/client";
+import { workspaceKeys } from "../../api/queries";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { CopyButton } from "../../ui/CopyButton";
 import { Disclosure } from "../../ui/Disclosure";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
@@ -33,14 +36,24 @@ export function SnapshotPanel({
   const [commit, setCommit] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [expiryError, setExpiryError] = useState(false);
-  const [addresses, setAddresses] = useState<SnapshotLink[]>([]);
+  const client = useQueryClient();
+  const addressesKey = [...workspaceKeys.workspace(workspace), "snapshots"];
+  const addresses = useQuery({
+    queryKey: addressesKey,
+    queryFn: ({ signal }) => api.listSnapshots(workspace, signal),
+  });
+  const [revoking, setRevoking] = useState<SnapshotLinkSummary>();
   const create = useMutation({
     mutationFn: (body: CreateSnapshot) => api.createSnapshot(workspace, body),
-    onSuccess: (address) => setAddresses((items) => [address, ...items]),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: addressesKey });
+    },
   });
   const revoke = useMutation({
     mutationFn: (id: string) => api.revokeSnapshot(id),
-    onSuccess: (_response, id) => setAddresses((items) => items.filter((item) => item.id !== id)),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: addressesKey });
+    },
   });
   const documentIds = selected.filter((id) => documents.some((document) => document.id === id));
 
@@ -157,31 +170,55 @@ export function SnapshotPanel({
           </Button>
         </Form>
       )}
-      {create.isSuccess && addresses.some(({ id }) => id === create.data.id) && (
+      {create.isSuccess && (
         <Feedback tone="success" className={styles.status}>
           已创建阅读地址
         </Feedback>
       )}
-      {addresses.length > 0 && (
+      {addresses.isPending && <Feedback className={styles.status}>正在读取阅读地址…</Feedback>}
+      {addresses.isError && (
+        <Feedback tone="error" className={styles.status}>
+          无法读取阅读地址。
+        </Feedback>
+      )}
+      {addresses.data && addresses.data.length > 0 && (
         <ul className={styles.records} aria-label="已创建的阅读地址">
-          {addresses.map((address) => (
-            <li key={address.id}>
-              <a href={address.url} target="_blank" rel="noreferrer">
-                打开阅读地址
-              </a>
-              <div className={styles.address}>
-                {new URL(address.url, window.location.origin).href}
-              </div>
-              <Button
-                variant="outline"
-                className={styles.formAction}
-                isDisabled={revoke.isPending}
-                onPress={() => revoke.mutate(address.id)}
-              >
-                {revoke.isPending && revoke.variables === address.id ? "正在撤销…" : "撤销阅读地址"}
-              </Button>
-            </li>
-          ))}
+          {addresses.data.map((address) => {
+            const url = new URL(address.url, window.location.origin).href;
+            const expires = address.expiresAt
+              ? new Date(address.expiresAt * 1_000).toLocaleDateString("zh-CN")
+              : undefined;
+            return (
+              <li key={address.id}>
+                <a href={address.url} target="_blank" rel="noreferrer">
+                  打开阅读地址
+                </a>
+                <div className={styles.address}>{url}</div>
+                <p className={styles.status}>
+                  {address.kind === "release" ? "固定版本" : "当前地址"} ·{" "}
+                  {address.audience === "share" ? "持链接可读" : "仅空间成员"} ·{" "}
+                  {address.documentCount} 篇文档
+                  {expires && ` · 到期 ${expires}`}
+                </p>
+                <div className={styles.actions}>
+                  <CopyButton text={url} label="复制地址" />
+                  <Button
+                    variant="outline"
+                    className={styles.formAction}
+                    isDisabled={revoke.isPending}
+                    onPress={() => {
+                      revoke.reset();
+                      setRevoking(address);
+                    }}
+                  >
+                    {revoke.isPending && revoke.variables === address.id
+                      ? "正在撤销…"
+                      : "撤销阅读地址"}
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       {revoke.isSuccess && (
@@ -189,10 +226,32 @@ export function SnapshotPanel({
           阅读地址已撤销
         </Feedback>
       )}
-      {revoke.isError && (
+      {revoke.isError && !revoking && (
         <Feedback tone="error" className={styles.status}>
           无法撤销阅读地址。
         </Feedback>
+      )}
+      {revoking && (
+        <ConfirmDialog
+          title="撤销阅读地址"
+          confirmLabel="撤销地址"
+          destructive
+          busy={revoke.isPending}
+          error={
+            revoke.isError && revoke.variables === revoking.id ? "无法撤销阅读地址。" : undefined
+          }
+          onCancel={() => {
+            revoke.reset();
+            setRevoking(undefined);
+          }}
+          onConfirm={() =>
+            revoke.mutate(revoking.id, {
+              onSuccess: () => setRevoking(undefined),
+            })
+          }
+        >
+          撤销后，这个阅读地址将立即失效。已经打开的页面不会自动收回。
+        </ConfirmDialog>
       )}
     </section>
   );

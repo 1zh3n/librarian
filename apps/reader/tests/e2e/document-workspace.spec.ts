@@ -910,7 +910,7 @@ test("a read-only workspace member can open an import receipt without upload or 
 test("a share snapshot reads the selected documents anonymously and revokes the same address", async ({
   page,
   browser,
-}) => {
+}, info) => {
   const workspace = await createWorkspace(page, "浏览器共享阅读");
   const start = await addDocument(
     page,
@@ -961,6 +961,10 @@ test("a share snapshot reads the selected documents anonymously and revokes the 
     await visitor.goto(new URL(href, page.url()).href);
     await expect(article).toContainText("起点已更新");
     await page.getByRole("button", { name: "撤销阅读地址" }).click();
+    const revoke = page.getByRole("dialog", { name: "撤销阅读地址" });
+    await expect(revoke).toContainText("已经打开的页面不会自动收回");
+    await page.screenshot({ path: info.outputPath("share-revoke-confirm-1440.png") });
+    await revoke.getByRole("button", { name: "撤销地址" }).click();
     await expect(page.getByText("阅读地址已撤销")).toBeVisible();
     await visitor.reload();
     await expect(visitor.getByRole("alert")).toContainText("阅读地址不可用");
@@ -969,7 +973,62 @@ test("a share snapshot reads the selected documents anonymously and revokes the 
   }
 });
 
-test("shows a delivery credential once and persists its revocation", async ({ page }) => {
+test("created reading addresses survive reload and remain copyable and revocable", async ({
+  page,
+}, info) => {
+  const workspace = await createWorkspace(page, "阅读地址回访");
+  const note = await addDocument(page, workspace.id, "共享/回访.md", "# 回访\n");
+  await page.reload();
+  await page.getByRole("tab", { name: "备份与发布" }).click();
+  const snapshot = page.getByRole("form", { name: "创建阅读地址" });
+  await snapshot.getByText(note.document.path, { exact: true }).click();
+  await snapshot.getByRole("button", { name: /访问范围/ }).click();
+  await page.getByRole("option", { name: "持链接可读" }).click();
+  await snapshot.getByRole("button", { name: "创建阅读地址" }).click();
+  const address = page.getByRole("link", { name: "打开阅读地址" });
+  await expect(address).toBeVisible();
+  const href = await address.getAttribute("href");
+  if (!href) throw new Error("Snapshot address missing");
+  await expect(page.getByText(/当前地址 · 持链接可读 · 1 篇文档/u)).toBeVisible();
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.reload();
+  await page.getByRole("tab", { name: "备份与发布" }).click();
+  await expect(address).toHaveAttribute("href", href);
+  await page.getByRole("button", { name: "复制地址" }).click();
+  await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    new URL(href, page.url()).href,
+  );
+  await page.screenshot({ path: info.outputPath("reading-addresses-1440.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await page.getByRole("link", { name: "打开阅读地址" }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "复制地址" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "撤销阅读地址" })).toBeVisible();
+  await page.getByRole("button", { name: "撤销阅读地址" }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "撤销阅读地址" })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: info.outputPath("reading-addresses-390-200.png") });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "";
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.getByRole("button", { name: "撤销阅读地址" }).click();
+  await page
+    .getByRole("dialog", { name: "撤销阅读地址" })
+    .getByRole("button", { name: "撤销地址" })
+    .click();
+  await expect(page.getByRole("link", { name: "打开阅读地址" })).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("tab", { name: "备份与发布" }).click();
+  await expect(page.getByRole("link", { name: "打开阅读地址" })).toHaveCount(0);
+});
+
+test("shows a delivery credential once and persists its revocation", async ({ page }, info) => {
   const workspace = await createWorkspace(page, "浏览器投递凭证");
   await page.getByRole("tab", { name: "外部导入" }).click();
   const tokens = page.getByRole("region", { name: "项目自动导入" });
@@ -1011,6 +1070,18 @@ test("shows a delivery credential once and persists its revocation", async ({ pa
   const token = tokens.getByRole("listitem").filter({ hasText: "文档 CI" });
   await expect(token).toContainText(updatedReceipt.commitId);
   await token.getByRole("button", { name: "撤销凭证" }).click();
+  const revoke = page.getByRole("dialog", { name: "撤销投递凭证" });
+  await expect(revoke).toContainText("文档 CI");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await page.screenshot({ path: info.outputPath("delivery-revoke-confirm-390-200.png") });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "";
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await revoke.getByRole("button", { name: "撤销凭证" }).click();
   await expect(token).toContainText("已撤销");
   expect((await ci("3", "# 已撤销\n")).status()).toBe(401);
   await page.reload();

@@ -107,6 +107,7 @@ test("review a directory move on a narrow screen, cancel by keyboard and confirm
   await expect(plan).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "提示词" })).toBeFocused();
   await edit(page, "确认归档", note, result);
+  await expect(plan.getByRole("button", { name: "确认移动" })).toHaveClass(/danger/);
   await plan.getByRole("button", { name: "确认移动" }).click();
   const receipt = page.getByRole("region", { name: "操作回执" });
   await expect(receipt).toContainText("归档/记录/笔记.md");
@@ -139,7 +140,7 @@ test("a Reader confirmation link opens only the requested workspace operation", 
   expect(preview.status()).toBe(200);
   await page.goto(`/workspaces/${ws.id}/ai?operationId=${op.id}`);
   const focused = page.getByRole("region", { name: "指定操作" });
-  await expect(focused.getByRole("button", { name: "确认删除" })).toBeVisible();
+  await expect(focused.getByRole("button", { name: "确认删除" })).toHaveClass(/danger/);
   await focused.getByRole("button", { name: "取消操作" }).click();
   await expect(focused.getByText("此操作已取消。")).toBeVisible();
   await expect(focused.getByRole("link", { name: "返回工作区 AI" })).toBeFocused();

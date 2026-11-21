@@ -1,4 +1,5 @@
 import { Button } from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Feedback } from "../../ui/Feedback";
 import { Form, Field, Select } from "../../ui/Forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +26,7 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
     username: "",
     role: "read",
   });
+  const [removing, setRemoving] = useState<WorkspaceMember>();
   const name = draft.username.trim();
   const existing = members.data?.find((member) => member.username === name);
   const changed = Boolean(name) && !existing?.isOwner && existing?.role !== draft.role;
@@ -131,7 +133,10 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
                         variant="outline"
                         className={styles.formAction}
                         isDisabled={mutation.isPending}
-                        onPress={() => mutation.mutate({ name: member.username, next: null })}
+                        onPress={() => {
+                          mutation.reset();
+                          setRemoving(member);
+                        }}
                       >
                         {mutation.isPending &&
                         mutation.variables.next === null &&
@@ -146,6 +151,32 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
             </ul>
           )}
         </>
+      )}
+      {removing && (
+        <ConfirmDialog
+          title="移除成员"
+          confirmLabel="移除成员"
+          destructive
+          busy={mutation.isPending}
+          error={
+            mutation.isError && mutation.variables?.name === removing.username
+              ? memberError
+              : undefined
+          }
+          onCancel={() => {
+            mutation.reset();
+            setRemoving(undefined);
+          }}
+          onConfirm={() =>
+            mutation.mutate(
+              { name: removing.username, next: null },
+              { onSuccess: () => setRemoving(undefined) },
+            )
+          }
+        >
+          移除「{removing.username}
+          」后，该账号将无法继续访问这个空间。空间内的文档和版本不会被删除。
+        </ConfirmDialog>
       )}
     </section>
   );

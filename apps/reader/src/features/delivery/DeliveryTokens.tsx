@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { DeliveryToken } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Disclosure } from "../../ui/Disclosure";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
@@ -34,6 +35,7 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
   const expanded = useRef(false);
   const canIssue = Boolean(name.trim() && validSourceId.test(deliveryId.trim()));
   const [issued, setIssued] = useState<{ id: string; token: string }>();
+  const [revoking, setRevoking] = useState<DeliveryToken>();
   const [exampleSource, setExampleSource] = useState<string>();
   const [copyStatus, setCopyStatus] = useState("");
   const commandSource = validSourceId.test(deliveryId.trim())
@@ -206,7 +208,10 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
                         variant="outline"
                         className={styles.formAction}
                         isDisabled={revoke.isPending}
-                        onPress={() => revoke.mutate(token.id)}
+                        onPress={() => {
+                          revoke.reset();
+                          setRevoking(token);
+                        }}
                       >
                         {revoke.isPending && revoke.variables === token.id
                           ? "正在撤销…"
@@ -214,7 +219,7 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
                       </Button>
                     </>
                   )}
-                  {revoke.isError && revoke.variables === token.id && (
+                  {revoke.isError && revoke.variables === token.id && !revoking && (
                     <Feedback tone="error" className={styles.status}>
                       无法撤销投递凭证。
                     </Feedback>
@@ -225,6 +230,28 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
           </ul>
         )}
       </Disclosure>
+      {revoking && (
+        <ConfirmDialog
+          title="撤销投递凭证"
+          confirmLabel="撤销凭证"
+          destructive
+          busy={revoke.isPending}
+          error={
+            revoke.isError && revoke.variables === revoking.id ? "无法撤销投递凭证。" : undefined
+          }
+          onCancel={() => {
+            revoke.reset();
+            setRevoking(undefined);
+          }}
+          onConfirm={() =>
+            revoke.mutate(revoking.id, {
+              onSuccess: () => setRevoking(undefined),
+            })
+          }
+        >
+          撤销后，使用「{revoking.name}」的 CI 或脚本将无法继续向这个空间投递文档。
+        </ConfirmDialog>
+      )}
     </section>
   );
 }

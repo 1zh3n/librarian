@@ -38,6 +38,7 @@ export function AiOperationReceipt({
   const plan = confirmation?.plan;
   const request = plan?.request;
   const transfer = confirmation?.transfer;
+  const confirmIsPrimary = transfer?.kind === "copy" || (!transfer && !request?.kind);
   const receipt = operation.transferResult;
   const management = operation.workspaceManagement;
   const focusReceipt = useRef(false);
@@ -191,9 +192,17 @@ export function AiOperationReceipt({
           )}
           {plan?.partialLinks && <Feedback>仅显示扫描范围内的内链。</Feedback>}
           <div className={styles.actions}>
+            <Button
+              className={styles.button}
+              isDisabled={busy}
+              onPress={() => void apply("cancel")}
+            >
+              取消操作
+            </Button>
             {writable && operation.status === "needs_confirmation" && (
               <Button
-                className={styles.button}
+                variant={confirmIsPrimary ? "primary" : "outline"}
+                className={confirmIsPrimary ? styles.button : `${styles.button} ${styles.danger}`}
                 isDisabled={busy}
                 onPress={() => void apply("confirm")}
               >
@@ -206,13 +215,6 @@ export function AiOperationReceipt({
                       : "确认操作"}
               </Button>
             )}
-            <Button
-              className={styles.button}
-              isDisabled={busy}
-              onPress={() => void apply("cancel")}
-            >
-              取消操作
-            </Button>
           </div>
         </section>
       )}
