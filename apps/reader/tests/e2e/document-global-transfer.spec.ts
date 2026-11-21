@@ -65,10 +65,9 @@ test("reviews a cross-space copy, checks the original, and comes back to the pen
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await info.attach("复制预览-" + width, {
-      body: await page.screenshot(),
-      contentType: "image/png",
-    });
+    const path = info.outputPath("transfer-preview-" + width + ".png");
+    await page.screenshot({ path });
+    await info.attach("复制预览-" + width, { path, contentType: "image/png" });
   }
   const draft = form.getByRole("textbox", { name: "提示词" });
   await draft.fill("下一步核对时间。");
@@ -88,7 +87,9 @@ test("reviews a cross-space copy, checks the original, and comes back to the pen
   const href = await copy.getAttribute("href");
   expect(href).toContain("/workspaces/" + destination.id + "/documents/");
   expect(href).not.toContain(note.document.id);
-  await info.attach("复制回执", { body: await page.screenshot(), contentType: "image/png" });
+  const path = info.outputPath("transfer-receipt.png");
+  await page.screenshot({ path });
+  await info.attach("复制回执", { path, contentType: "image/png" });
   await copy.click();
   await expect(page.getByRole("article")).toContainText("样点编号 42。");
   await page.goBack();
