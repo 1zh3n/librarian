@@ -500,7 +500,7 @@ export function WorkspaceShell() {
               </Button>
               <Button
                 className={styles.button}
-                aria-current={assistant ? "page" : undefined}
+                {...(assistant && { "aria-current": "page" })}
                 onPress={() => void navigate({ to: "/ai" })}
               >
                 AI
