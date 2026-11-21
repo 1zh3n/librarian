@@ -22,6 +22,7 @@ export function Form(props: {
   method?: "post" | "get";
   validationBehavior?: "native" | "aria";
   onSubmit: FormEventHandler<HTMLFormElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLFormElement>;
 }) {
   return <HeroForm {...props} />;
 }

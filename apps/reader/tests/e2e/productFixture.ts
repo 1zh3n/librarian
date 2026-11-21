@@ -22,18 +22,20 @@ export async function closeDocumentTool(page: Page) {
   await page.getByRole("button", { name: "收起文档辅助区" }).click();
 }
 
-export async function openFieldWorkspace(page: Page, name = "田野笔记") {
+export async function signIn(page: Page, username: string, password: string) {
   await page.goto("/.auth/librarian/login");
-  await page.getByLabel("用户名").fill("reader");
-  await page.getByLabel("密码").fill("reader-test-password");
-  const [login] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" && response.url().includes("/.auth/librarian/login"),
-    ),
-    page.getByRole("button", { name: "登录" }).click(),
-  ]);
-  expect(login.status()).toBe(303);
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码", { exact: true }).fill(password);
+  const result = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && response.url().endsWith("/.auth/librarian/login"),
+  );
+  await page.getByRole("button", { name: "登录" }).click();
+  expect((await result).status()).toBe(303);
+}
+
+export async function openFieldWorkspace(page: Page, name = "田野笔记") {
+  await signIn(page, "reader", "reader-test-password");
   const response = await page.request.get("/api/v1/workspaces");
   expect(response.ok()).toBe(true);
   const workspaces = (await response.json()) as Workspace[];

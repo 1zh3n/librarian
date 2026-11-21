@@ -1,10 +1,12 @@
 import { Icon } from "../Icon";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Collection, Group, Tree, TreeItem, TreeItemContent } from "react-aria-components";
 import { Button } from "../Button";
 import { Tooltip } from "../Tooltip";
 import type { DocumentSummary } from "../../api/client";
 import styles from "./DirectoryTree.module.css";
+
+type RevealRow = { path: string; mount: (item: HTMLDivElement | null) => (() => void) | undefined };
 
 type OpenDirectoryMenu = (trigger: HTMLElement, folder: string) => void;
 
@@ -16,12 +18,12 @@ type Entry = {
   children?: Entry[];
 };
 
-function entries(documents: readonly DocumentSummary[]) {
+const noFolders: readonly string[] = [];
+
+function entries(documents: readonly DocumentSummary[], folderPaths: readonly string[]) {
   const tree: Entry[] = [];
   const folders = new Map<string, Entry[]>();
-  for (const document of documents) {
-    const parts = document.path.split("/");
-    const filename = parts.pop() ?? document.path;
+  function addFolder(parts: string[]) {
     let current = tree;
     let path = "";
     for (const part of parts) {
@@ -34,8 +36,19 @@ function entries(documents: readonly DocumentSummary[]) {
       }
       current = children;
     }
-    current.push({ id: document.id, name: document.title, filename, folder: parts.join("/") });
+    return current;
   }
+  for (const document of documents) {
+    const parts = document.path.split("/");
+    const filename = parts.pop() ?? document.path;
+    addFolder(parts).push({
+      id: document.id,
+      name: document.title,
+      filename,
+      folder: parts.join("/"),
+    });
+  }
+  for (const folder of folderPaths) addFolder(folder.split("/"));
   return { tree, folders };
 }
 
@@ -85,11 +98,16 @@ function EntryRow({
   entry,
   open,
   openMenu,
+  markedPath,
+  revealRow,
 }: {
+  revealRow: RevealRow | undefined;
+  markedPath: string | undefined;
   entry: Entry;
   open: (id: string) => void;
   openMenu: OpenDirectoryMenu | undefined;
 }) {
+  const path = [entry.folder, entry.filename].filter(Boolean).join("/");
   return (
     <TreeItem
       id={entry.id}
@@ -97,23 +115,27 @@ function EntryRow({
       className={styles.row}
       {...(!entry.children && { onAction: () => open(entry.id) })}
       data-context-folder={entry.folder}
+      data-context-path={path}
+      data-command-target={path === markedPath || undefined}
       data-context-document={entry.children ? undefined : entry.id}
       aria-description={entry.filename}
     >
       <TreeItemContent>
         {({ level, isExpanded, isSelected }) => (
           <div
-            ref={isSelected ? revealCurrentRow : undefined}
+            ref={
+              revealRow?.path === path ? revealRow.mount : isSelected ? revealCurrentRow : undefined
+            }
             className={styles.item}
             style={{ paddingInlineStart: 8 + 14 * (level - 1) }}
           >
-            {entry.children ? (
+            {entry.children?.length ? (
               <Button slot="chevron" className={styles.disclosure}>
                 <Icon name={isExpanded ? "chevron-down" : "chevron-right"} />
               </Button>
             ) : (
               <span className={styles.leaf} aria-hidden="true">
-                <Icon name="file-text" />
+                <Icon name={entry.children ? "folder" : "file-text"} />
               </span>
             )}
             <div className={styles.labels}>
@@ -133,8 +155,16 @@ function EntryRow({
         )}
       </TreeItemContent>
       {entry.children && (
-        <Collection items={entry.children} dependencies={[open, openMenu]}>
-          {(child) => <EntryRow entry={child} open={open} openMenu={openMenu} />}
+        <Collection items={entry.children} dependencies={[open, openMenu, markedPath, revealRow]}>
+          {(child) => (
+            <EntryRow
+              entry={child}
+              open={open}
+              openMenu={openMenu}
+              markedPath={markedPath}
+              revealRow={revealRow}
+            />
+          )}
         </Collection>
       )}
     </TreeItem>
@@ -143,43 +173,88 @@ function EntryRow({
 
 export function DirectoryTree({
   documents,
+  folderPaths = noFolders,
+  reveal,
+  markedPath,
   activeDocument,
   open,
   openMenu,
+  rootMenu = Boolean(openMenu),
 }: {
+  folderPaths?: readonly string[] | undefined;
+  reveal?: { path: string } | undefined;
+  markedPath?: string | undefined;
+  rootMenu?: boolean;
   documents: readonly DocumentSummary[];
   activeDocument: string | undefined;
   open: (id: string) => void;
   openMenu: OpenDirectoryMenu | undefined;
 }) {
-  const { tree, folders } = useMemo(() => entries(documents), [documents]);
+  const { tree, folders } = useMemo(
+    () => entries(documents, folderPaths),
+    [documents, folderPaths],
+  );
   const activePath = documents.find((document) => document.id === activeDocument)?.path;
   const activeFolders = [...folders.keys()].filter((path) =>
     `/${activePath ?? ""}`.startsWith(`${path}/`),
   );
+  const revealFolders: string[] = [];
+  let parent = "";
+  for (const part of reveal?.path.split("/") ?? []) {
+    parent += `/${part}`;
+    revealFolders.push(parent);
+  }
   const [expanded, setExpanded] = useState(() => ({
     activePath,
-    keys: new Set(folders.size < 12 ? [...folders.keys()] : activeFolders),
+    reveal,
+    keys: new Set([...(folders.size < 12 ? folders.keys() : activeFolders), ...revealFolders]),
   }));
-  if (expanded.activePath !== activePath) {
-    setExpanded({ activePath, keys: new Set([...expanded.keys, ...activeFolders]) });
+  if (expanded.activePath !== activePath || expanded.reveal !== reveal) {
+    setExpanded({
+      activePath,
+      reveal,
+      keys: new Set([...expanded.keys, ...activeFolders, ...revealFolders]),
+    });
   }
+  const lastReveal = useRef<typeof reveal>(undefined);
+  const revealRow = useMemo<RevealRow | undefined>(
+    () =>
+      reveal && {
+        path: reveal.path,
+        mount: (item) => {
+          const row = item?.closest<HTMLElement>("[data-context-path]");
+          if (!row || lastReveal.current === reveal) return;
+          // React Aria may commit the new row after the collection data updates.
+          // Observe that row itself so it can receive focus as soon as it is visible.
+          const observer = new ResizeObserver(() => {
+            if (!row.getClientRects().length) return;
+            observer.disconnect();
+            row.focus({ preventScroll: true });
+            row.scrollIntoView({ block: "nearest" });
+            lastReveal.current = reveal;
+          });
+          observer.observe(row);
+          return () => observer.disconnect();
+        },
+      },
+    [reveal],
+  );
   return (
     <Group aria-label="目录内容" className={styles.directory} tabIndex={-1}>
-      {tree.length > 0 && (
+      {(tree.length > 0 || rootMenu) && (
         <div className={styles.heading}>
           <span>目录</span>
-          {openMenu && <MoreButton name="根目录更多" folder="" openMenu={openMenu} />}
+          {openMenu && rootMenu && <MoreButton name="根目录更多" folder="" openMenu={openMenu} />}
         </div>
       )}
       <Tree
         aria-label="空间目录"
         className={styles.tree}
         items={tree}
-        dependencies={[open, openMenu]}
+        dependencies={[open, openMenu, markedPath, revealRow]}
         expandedKeys={expanded.keys}
         onExpandedChange={(keys) =>
-          setExpanded({ activePath, keys: new Set(Array.from(keys, String)) })
+          setExpanded({ activePath, reveal, keys: new Set(Array.from(keys, String)) })
         }
         selectionMode="single"
         selectedKeys={activeDocument ? [activeDocument] : []}
@@ -189,7 +264,15 @@ export function DirectoryTree({
           if (typeof first === "string" && !folders.has(first)) open(first);
         }}
       >
-        {(entry) => <EntryRow entry={entry} open={open} openMenu={openMenu} />}
+        {(entry) => (
+          <EntryRow
+            entry={entry}
+            open={open}
+            openMenu={openMenu}
+            markedPath={markedPath}
+            revealRow={revealRow}
+          />
+        )}
       </Tree>
     </Group>
   );

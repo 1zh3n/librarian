@@ -496,12 +496,14 @@ test("renaming a directory keeps the original document deep link", async ({ page
   const deepLink = `/workspaces/${workspace.id}/documents/${document.document.id}`;
   await page.goto(deepLink);
   await expect(page.getByRole("article")).toContainText("路径保留");
-  await page.getByRole("button", { name: "空间设置" }).click();
-  const rename = page.getByRole("form", { name: "移动或重命名" });
-  await rename.getByRole("textbox", { name: "原路径" }).fill("初始目录");
-  await rename.getByRole("textbox", { name: "新路径" }).fill("归档目录");
-  await rename.getByRole("button", { name: "保存路径" }).click();
-  await expect(rename.getByText("文件或目录已更新")).toBeVisible();
+  const folder = page.getByRole("row", { name: "初始目录", exact: true });
+  await folder.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "重命名…" }).click();
+  const rename = page.getByRole("dialog", { name: "重命名文件夹" });
+  const name = rename.getByRole("textbox", { name: "文件夹名称" });
+  await name.fill("归档目录");
+  await name.press("Enter");
+  await expect(page.getByRole("row", { name: "归档目录", exact: true })).toBeVisible();
   await page.goto(deepLink);
   await expect(page.getByRole("article")).toContainText("路径保留");
   const snapshot = (await (

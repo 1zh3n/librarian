@@ -2,21 +2,10 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { Workspace } from "../../src/api/client";
+import { signIn } from "./productFixture";
 
 const firstPassword = "fixture-test-password-initial";
 const replacementPassword = "fixture-test-password-updated";
-
-async function signIn(page: Page, username: string, password: string) {
-  await page.goto("/.auth/librarian/login");
-  await page.getByLabel("用户名").fill(username);
-  await page.getByLabel("密码", { exact: true }).fill(password);
-  const result = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" && response.url().endsWith("/.auth/librarian/login"),
-  );
-  await page.getByRole("button", { name: "登录" }).click();
-  expect((await result).status()).toBe(303);
-}
 
 async function openCommand(page: Page, title: string) {
   await page.getByRole("button", { name: /^(搜索文档|命令)$/ }).click();
@@ -154,7 +143,8 @@ test("opens a legacy release anchor and switches management tabs on a narrow scr
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   await page.goto(`/workspaces/${workspace.id}/manage#directory`);
   await expect(tabs.getByRole("tab", { name: "常规" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("region", { name: "移动或重命名" })).toBeVisible();
+  await expect(page.getByRole("form", { name: "空间设置" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "移动或重命名" })).toHaveCount(0);
 });
 
 test("manages a local account and applies Workspace membership through Reader", async ({

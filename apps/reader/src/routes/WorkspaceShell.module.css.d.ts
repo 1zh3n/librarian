@@ -12,6 +12,7 @@ declare const styles: {
   readonly tooltip: string;
   readonly topActions: string;
   readonly layoutMenu: string;
+  readonly actionNotice: string;
   readonly notice: string;
   readonly navigation: string;
   readonly popover: string;

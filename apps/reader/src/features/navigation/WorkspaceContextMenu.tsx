@@ -1,3 +1,4 @@
+import type { DirectorySource } from "./fileActions";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { ContextMenuPopover } from "../../ui/ContextMenuPopover";
 import type { MenuPoint } from "../../ui/ContextMenuPopover";
@@ -8,6 +9,7 @@ import styles from "./WorkspaceContextMenu.module.css";
 export type WorkspaceMenuTarget = {
   trigger: HTMLElement;
   folder: string;
+  source?: DirectorySource;
   point: MenuPoint | undefined;
 };
 export type OpenWorkspaceMenu = (trigger: HTMLElement, folder: string, point?: MenuPoint) => void;
@@ -69,11 +71,13 @@ export function WorkspaceContextMenu({
   target,
   create,
   rename,
+  actions,
   search,
   hasWorkspace,
   close,
 }: {
   target: WorkspaceMenuTarget;
+  actions: Partial<Record<"createFolder" | "move" | "copy" | "delete", () => void>>;
   rename: (() => void) | undefined;
   create: ((folder: string, origin: HTMLElement) => void) | undefined;
   search: (origin: HTMLElement) => void;
@@ -127,6 +131,32 @@ export function WorkspaceContextMenu({
                 },
               ]
             : []),
+          ...(
+            [
+              ["createFolder", "新建文件夹…"],
+              ["move", "移动到…"],
+              ["copy", "复制到…"],
+              ["delete", "删除…"],
+            ] as const
+          ).flatMap(([id, label]) => {
+            const run = actions[id];
+            return run
+              ? [
+                  {
+                    id,
+                    label,
+                    className:
+                      id === "delete"
+                        ? `${styles.menuItem} ${styles.destructive}`
+                        : styles.menuItem,
+                    run: () => {
+                      close();
+                      run();
+                    },
+                  },
+                ]
+              : [];
+          }),
         ]}
       />
     </ContextMenuPopover>

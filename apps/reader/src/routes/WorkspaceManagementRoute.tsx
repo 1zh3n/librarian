@@ -1,14 +1,12 @@
 import { Feedback } from "../ui/Feedback";
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
 import { documentsQuery, workspacesQuery } from "../api/queries";
 import { DeliveryPanel } from "../features/delivery/DeliveryPanel";
 import { DeliveryTokens } from "../features/delivery/DeliveryTokens";
 import { BackupPanel } from "../features/release/BackupPanel";
 import { PublicationPanel } from "../features/release/PublicationPanel";
 import { SnapshotPanel } from "../features/snapshot/SnapshotPanel";
-import { RenamePathForm } from "../features/workspace/RenamePathForm";
 import { WorkspaceEditor } from "../features/workspace/WorkspaceEditor";
 import { WorkspaceMembers } from "../features/workspace/WorkspaceMembers";
 import styles from "../features/workspace/Management.module.css";
@@ -46,17 +44,6 @@ export function WorkspaceManagementRoute() {
   const list = useQuery(workspacesQuery);
   const documents = useQuery(documentsQuery(workspaceId));
   const workspace = list.data?.find((item) => item.id === workspaceId);
-  const renameHeading = useRef<HTMLHeadingElement>(null);
-  const canManage = workspace?.canManage ?? false;
-
-  useEffect(() => {
-    if (!canManage || hash !== "directory") return;
-    const frame = requestAnimationFrame(() => {
-      renameHeading.current?.scrollIntoView({ block: "nearest" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [canManage, hash, workspaceId]);
-
   if (!workspace) {
     return (
       <div className={styles.page}>
@@ -103,7 +90,7 @@ export function WorkspaceManagementRoute() {
   ];
   const activeAction = releaseActions.find(({ id }) => id === hash) ?? releaseActions[0];
   const requested =
-    hash === "space" || hash === "directory"
+    hash === "space"
       ? general.id
       : releaseActions.some(({ id }) => id === hash)
         ? release.id
@@ -136,12 +123,6 @@ export function WorkspaceManagementRoute() {
             <section className={styles.section} aria-label="空间设置">
               <h2 id="space">空间设置</h2>
               <WorkspaceEditor current={workspace} />
-            </section>
-            <section className={styles.section} aria-label="移动或重命名">
-              <h2 id="directory" ref={renameHeading}>
-                移动或重命名
-              </h2>
-              <RenamePathForm workspace={workspaceId} />
             </section>
           </TabPanel>
         )}

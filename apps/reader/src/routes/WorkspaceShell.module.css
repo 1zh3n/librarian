@@ -140,6 +140,7 @@
   width: 38%;
 }
 
+.actionNotice,
 .notice {
   position: fixed;
   inset-block-end: 1rem;
@@ -154,6 +155,27 @@
   color: var(--ink);
   background: var(--surface);
   font-size: var(--ui-size);
+}
+
+.actionNotice {
+  display: flex;
+  width: max-content;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.actionNotice button {
+  min-height: 44px;
+  padding-inline: 0.75rem;
+  border-radius: var(--radius);
+  color: var(--accent);
+}
+
+.actionNotice button[aria-label] {
+  width: 44px;
+  padding-inline: 0;
 }
 
 .application[data-reading-focus] .bar {
@@ -281,6 +303,12 @@
   max-width: var(--measure);
   margin: 3rem auto;
   padding-inline: 1rem;
+}
+
+.state button {
+  min-height: 44px;
+  padding-inline: 0.875rem;
+  border-radius: var(--radius);
 }
 
 .state h1 {

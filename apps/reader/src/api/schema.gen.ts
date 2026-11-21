@@ -1359,6 +1359,70 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/workspaces/{workspace}/folders": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listWorkspaceFolders"];
+    put?: never;
+    post: operations["createWorkspaceFolder"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/file-actions/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["previewWorkspaceFileAction"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/file-actions/apply": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["applyWorkspaceFileAction"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/workspaces/{workspace}/file-actions/undo": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["undoWorkspaceFileAction"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2116,6 +2180,61 @@ export interface components {
         };
     WorkspaceImportReceipt: components["schemas"]["MutationReceipt"] & {
       documents: components["schemas"]["DocumentMemberLink"][];
+    };
+    WorkspaceFolders: {
+      folders: string[];
+      /** @description Current folder identity by relative path. Use it when acting on a selected folder. */
+      identities: {
+        [key: string]: string;
+      };
+    };
+    WorkspaceFolder: {
+      path: string;
+    };
+    FileActionRequest: {
+      /** @enum {string} */
+      action: "move" | "copy" | "delete";
+      sourcePath: string;
+      /** @enum {string} */
+      sourceKind: "document" | "folder";
+      /** @description Stable ID for a document row. */
+      expectedDocumentId?: string;
+      targetWorkspace?: string;
+      /** @description Final workspace-relative file or folder path for a move or copy. */
+      targetPath?: string;
+      /** @description Opaque source identity captured from the folder listing. A replaced source is a conflict. */
+      expectedFolderId?: string;
+    };
+    FileActionApply: components["schemas"]["FileActionRequest"] & {
+      token: string;
+      /** Format: uuid */
+      operationId: string;
+    };
+    FileActionUndo: {
+      /**
+       * Format: uuid
+       * @description Original deletion operation.
+       */
+      operationId: string;
+    };
+    FileActionPreview: {
+      token: string;
+      fileCount: number;
+      access: {
+        gainedRead: number;
+        gainedWrite: number;
+        lost: number;
+        upgraded: number;
+        downgraded: number;
+      };
+    };
+    FileActionResult: {
+      /** Format: uuid */
+      operationId: string;
+      workspaceId: string;
+      path: string;
+      documentId?: string;
+      undoable: boolean;
     };
   };
   responses: never;
@@ -6042,6 +6161,177 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["WorkspaceImportReceipt"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listWorkspaceFolders: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkspaceFolders"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  createWorkspaceFolder: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WorkspaceFolder"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkspaceFolder"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  previewWorkspaceFileAction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FileActionRequest"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileActionPreview"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  applyWorkspaceFileAction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FileActionApply"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileActionResult"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  undoWorkspaceFileAction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FileActionUndo"];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileActionResult"];
         };
       };
       /** @description Request could not be completed */

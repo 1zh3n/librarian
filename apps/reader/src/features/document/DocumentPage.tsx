@@ -1,7 +1,7 @@
 import { Icon } from "../../ui/Icon";
 import { Feedback } from "../../ui/Feedback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { Navigate, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "../../ui/Button";
@@ -10,7 +10,13 @@ import { DocumentToolPanel, useDocumentTools } from "./DocumentToolPanel";
 import type { Tool } from "./DocumentToolPanel";
 import { api, ApiError } from "../../api/client";
 import type { AiContext, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
-import { documentQuery, documentsQuery, outlineQuery, workspaceKeys } from "../../api/queries";
+import {
+  DocumentMoved,
+  documentQuery,
+  documentsQuery,
+  outlineQuery,
+  workspaceKeys,
+} from "../../api/queries";
 import { blockAtOffset, captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
@@ -71,6 +77,16 @@ export function DocumentPage({
   writable: boolean;
 }) {
   const result = useQuery(documentQuery(workspace, document));
+  if (result.error instanceof DocumentMoved) {
+    return (
+      <Navigate
+        to="/workspaces/$workspaceId/documents/$documentId"
+        params={{ workspaceId: result.error.workspaceId, documentId: document }}
+        hash={true}
+        replace
+      />
+    );
+  }
   if (result.isError && (!result.data || unavailableDocument(result.error))) {
     return (
       <Feedback tone="error" className={styles.message}>
@@ -121,6 +137,7 @@ function DocumentWorkspace({
     clearCreatedDocument,
     navigationCancelled,
     renameDocument,
+    draft: draftRef,
   } = useReaderLayout();
   const navigate = useNavigate();
   const { history } = useRouter();
@@ -538,6 +555,19 @@ function DocumentWorkspace({
         : outlineSession.saves.flush(),
     ]);
   }, [body, outlineSession]);
+  useEffect(() => {
+    const current = {
+      id: documentId,
+      save: async () => {
+        await flush();
+        return !isDirty();
+      },
+    };
+    draftRef.current = current;
+    return () => {
+      if (draftRef.current === current) draftRef.current = undefined;
+    };
+  }, [documentId, draftRef, flush, isDirty]);
   function selectedContext(source: string) {
     const root = canvas.current;
     const stored = savedSelection.current;

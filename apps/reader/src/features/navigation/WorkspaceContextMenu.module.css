@@ -28,3 +28,10 @@
     min-height: 44px;
   }
 }
+
+.destructive {
+  border-block-start: 1px solid var(--border);
+  border-radius: 0;
+  margin-block-start: 0.25rem;
+  color: light-dark(#962d25, #ffa89c);
+}

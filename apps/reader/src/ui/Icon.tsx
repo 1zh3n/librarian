@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Ellipsis,
   FileText,
+  Folder,
   History,
   Link,
   PanelRight,
@@ -13,6 +14,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  X,
 } from "lucide-static";
 import styles from "./Icon.module.css";
 
@@ -25,6 +27,7 @@ const glyphs = {
   "chevron-right": ChevronRight,
   ellipsis: Ellipsis,
   "file-text": FileText,
+  folder: Folder,
   history: History,
   link: Link,
   "panel-right": PanelRight,
@@ -32,6 +35,7 @@ const glyphs = {
   search: Search,
   settings: Settings,
   sparkles: Sparkles,
+  x: X,
 } as const;
 
 export function Icon({ name, className }: { name: keyof typeof glyphs; className?: string }) {

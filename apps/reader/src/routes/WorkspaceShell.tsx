@@ -27,6 +27,12 @@ import type {
   OpenWorkspaceMenu,
   WorkspaceMenuTarget,
 } from "../features/navigation/WorkspaceContextMenu";
+import { canReceiveFiles, foldersQuery } from "../features/navigation/fileActions";
+import type { DirectorySource } from "../features/navigation/fileActions";
+import {
+  useDirectoryActions,
+  type DraftPreparation,
+} from "../features/navigation/useDirectoryActions";
 import { DirectoryTree } from "../ui/DirectoryTree/DirectoryTree";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
 import {
@@ -87,6 +93,7 @@ export function WorkspaceShell() {
   const workspace = workspaces.data?.find((item) => item.id === contextWorkspaceId);
   const selected = workspace?.id ?? "";
   const resource = useQuery({ ...documentsQuery(selected), enabled: Boolean(workspace) });
+  const folderList = useQuery({ ...foldersQuery(selected), enabled: Boolean(workspace) });
   const documents = resource.data ?? noDocuments;
   const active = documents.find((item) => item.id === documentId);
   const username = session.data?.username;
@@ -101,17 +108,46 @@ export function WorkspaceShell() {
   const [navigationOverride, setNavigationOverride] = useState<boolean>();
   const [layoutSelection, setLayoutSelection] = useState(0);
   const [search, setSearch] = useState(false);
+  const draft = useRef<DraftPreparation>(undefined);
+  const directoryActions = useDirectoryActions({
+    selected,
+    workspaces: workspaces.data ?? [],
+    active,
+    documents,
+    draft,
+    showDirectory: () => setNavigationOverride(true),
+  });
   const [contextMenu, setContextMenu] = useState<WorkspaceMenuTarget>();
-  const openContextMenu = useCallback<OpenWorkspaceMenu>((trigger, folder, point) => {
-    trigger.focus({ preventScroll: true });
-    setContextMenu({ trigger, folder, point });
-  }, []);
+  const openContextMenu = useCallback<OpenWorkspaceMenu>(
+    (trigger, folder, point) => {
+      trigger.focus({ preventScroll: true });
+      const row = trigger.closest<HTMLElement>("[data-context-path]");
+      const path = row?.dataset.contextPath;
+      const id = row?.dataset.contextDocument;
+      const folderId = !id && path ? folderList.data?.identities?.[path] : undefined;
+      setContextMenu({
+        trigger,
+        folder,
+        point,
+        ...(workspace &&
+          path && {
+            source: {
+              workspace,
+              path,
+              kind: id ? "document" : "folder",
+              ...(id && { documentId: id }),
+              ...(typeof folderId === "string" && { folderId }),
+            },
+          }),
+      });
+    },
+    [workspace, folderList.data],
+  );
   const [renaming, setRenaming] = useState<{ document: DocumentSummary; origin: HTMLElement }>();
   const canRename = Boolean(
     workspace?.canWrite && workspace.canManage && workspace.revisionMode === "managed",
   );
-  const menuDocumentId =
-    contextMenu?.trigger.closest<HTMLElement>("[data-context-document]")?.dataset.contextDocument;
+  const menuDocumentId = contextMenu?.source?.documentId;
   const menuDocument = menuDocumentId
     ? documents.find((doc) => doc.id === menuDocumentId)
     : undefined;
@@ -173,6 +209,15 @@ export function WorkspaceShell() {
   const navigation = navigationOverride ?? preferences.navigation ?? wide;
   const navigationVisible = Boolean(workspace && navigation && !focus.active);
   const canCreate = Boolean(workspace?.canWrite);
+  const canCopy = Boolean(workspaces.data?.some(canReceiveFiles));
+  const inDirectory = Boolean(contextMenu?.trigger.closest("#workspace-navigation"));
+  const rowSource = contextMenu?.source;
+  const fileSource = rowSource?.kind === "folder" && !rowSource.folderId ? undefined : rowSource;
+  const rootSource: DirectorySource | undefined = workspace
+    ? { workspace, kind: "folder", path: "" }
+    : undefined;
+  const folderSource =
+    rowSource?.kind === "folder" ? rowSource : !rowSource ? rootSource : undefined;
 
   const showCreateDocument = useCallback(
     (folder: string, origin: Element) => {
@@ -347,6 +392,7 @@ export function WorkspaceShell() {
         renameDocument: canRename ? renameDocument : undefined,
         clearCreatedDocument,
         navigationCancelled,
+        draft,
       }}
     >
       <div
@@ -545,9 +591,13 @@ export function WorkspaceShell() {
                   <DirectoryTree
                     key={selected}
                     documents={documents}
+                    folderPaths={folderList.data?.folders}
+                    rootMenu={canCreate}
+                    reveal={directoryActions.reveal}
+                    markedPath={contextMenu?.source?.path ?? directoryActions.markedPath}
                     activeDocument={documentId}
                     open={openDocument}
-                    openMenu={canCreate ? openContextMenu : undefined}
+                    openMenu={canCreate || canCopy ? openContextMenu : undefined}
                   />
                 )}
               </aside>
@@ -573,7 +623,7 @@ export function WorkspaceShell() {
               </p>
             ) : workspaces.isPending ? (
               <output className={styles.state}>正在加载空间…</output>
-            ) : creating || accountSettings ? (
+            ) : creating || accountSettings || documentId ? (
               <Outlet />
             ) : !workspace ? (
               <div className={styles.state}>
@@ -593,7 +643,7 @@ export function WorkspaceShell() {
                   </>
                 )}
               </div>
-            ) : documentId || toolRoute ? (
+            ) : toolRoute ? (
               <Outlet />
             ) : resource.isError ? (
               <p role="alert" className={styles.state}>
@@ -623,8 +673,31 @@ export function WorkspaceShell() {
             rename={
               canRename && menuDocument
                 ? () => renameDocument(menuDocument, contextMenu.trigger)
-                : undefined
+                : canRename && fileSource?.kind === "folder"
+                  ? () => directoryActions.start("renameFolder", fileSource, contextMenu.trigger)
+                  : undefined
             }
+            actions={{
+              ...(canCreate &&
+                inDirectory &&
+                folderSource && {
+                  createFolder: () =>
+                    directoryActions.start("createFolder", folderSource, contextMenu.trigger),
+                }),
+              ...(canRename &&
+                fileSource && {
+                  move: () => directoryActions.start("move", fileSource, contextMenu.trigger),
+                }),
+              ...(canCopy &&
+                fileSource && {
+                  copy: () => directoryActions.start("copy", fileSource, contextMenu.trigger),
+                }),
+              ...(workspace &&
+                canReceiveFiles(workspace) &&
+                fileSource && {
+                  delete: () => directoryActions.start("delete", fileSource, contextMenu.trigger),
+                }),
+            }}
             create={
               canCreate &&
               ((!creating && !accountSettings) ||
@@ -663,6 +736,8 @@ export function WorkspaceShell() {
             }}
           />
         )}
+        {directoryActions.dialogs}
+        {directoryActions.notice}
         {settingsError && (
           <p role="alert" className={styles.notice}>
             布局未保存，请重试。

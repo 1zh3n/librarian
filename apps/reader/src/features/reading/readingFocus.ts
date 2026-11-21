@@ -1,5 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { DraftPreparation } from "../navigation/useDirectoryActions";
 import type { RefObject } from "react";
 import type { DevicePreferences, DocumentSummary } from "../../api/client";
 
@@ -115,6 +116,7 @@ export function isEditingTarget(target: EventTarget | null) {
 }
 
 type ReaderLayout = {
+  draft: RefObject<DraftPreparation | undefined>;
   focus: ReturnType<typeof useReadingFocus>;
   preferences: DevicePreferences;
   layoutSelection: number;

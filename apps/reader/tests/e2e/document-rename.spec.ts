@@ -300,7 +300,7 @@ test("retries a lost rename receipt from the right-clicked file without applying
   const rename = page.getByRole("menuitem", { name: "重命名…" });
   await page.getByRole("row", { name: "研究", exact: true }).click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: /新建文档/ })).toBeVisible();
-  await expect(rename).toHaveCount(0);
+  await expect(rename).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("row", { name: /雨季观察/ }).click({ button: "right" });
   await rename.click();

@@ -45,6 +45,9 @@ type AiConfirm = components["schemas"]["AiConfirmRequest"];
 type CreateWorkspace = components["schemas"]["CreateWorkspace"];
 type UpdateWorkspace = components["schemas"]["UpdateWorkspace"];
 export type RenameWorkspacePath = components["schemas"]["RenameWorkspacePaths"];
+export type FileActionRequest = components["schemas"]["FileActionRequest"];
+export type FileActionPreview = components["schemas"]["FileActionPreview"];
+export type FileActionResult = components["schemas"]["FileActionResult"];
 export type WorkspaceSettings = Omit<CreateWorkspace, "origin">;
 export type DeliveryManifest = components["schemas"]["DeliveryManifest"];
 type DeliveryInput = components["schemas"]["DeliveryRequest"];
@@ -120,6 +123,9 @@ async function request<T>(
       | CreateWorkspace
       | UpdateWorkspace
       | RenameWorkspacePath
+      | FileActionRequest
+      | components["schemas"]["FileActionApply"]
+      | components["schemas"]["WorkspaceFolder"]
       | DeliveryInput
       | WorkspaceImportRequest
       | NewDeliveryToken
@@ -378,6 +384,40 @@ export const api = {
     return request<MutationReceipt>(`${workspacePath(workspace)}/rename`, undefined, {
       method: "POST",
       body,
+    });
+  },
+  folders(workspace: string, signal?: AbortSignal) {
+    return request<components["schemas"]["WorkspaceFolders"]>(
+      `${workspacePath(workspace)}/folders`,
+      signal,
+    );
+  },
+  createFolder(workspace: string, path: string) {
+    return request<components["schemas"]["WorkspaceFolder"]>(
+      `${workspacePath(workspace)}/folders`,
+      undefined,
+      {
+        method: "POST",
+        body: { path },
+      },
+    );
+  },
+  previewFileAction(workspace: string, body: FileActionRequest, signal?: AbortSignal) {
+    return request<FileActionPreview>(`${workspacePath(workspace)}/file-actions/preview`, signal, {
+      method: "POST",
+      body,
+    });
+  },
+  applyFileAction(workspace: string, body: components["schemas"]["FileActionApply"]) {
+    return request<FileActionResult>(`${workspacePath(workspace)}/file-actions/apply`, undefined, {
+      method: "POST",
+      body,
+    });
+  },
+  undoFileAction(workspace: string, operationId: string) {
+    return request<FileActionResult>(`${workspacePath(workspace)}/file-actions/undo`, undefined, {
+      method: "POST",
+      body: { operationId },
     });
   },
   importWorkspaceFiles(workspace: string, body: WorkspaceImportRequest, signal?: AbortSignal) {

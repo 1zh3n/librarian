@@ -49,13 +49,22 @@ export function documentsQuery(workspace: string) {
   });
 }
 
+export class DocumentMoved extends ApiError {
+  readonly workspaceId: string;
+
+  constructor(workspaceId: string) {
+    super(404, "document_moved", "Document belongs to a different workspace");
+    this.workspaceId = workspaceId;
+  }
+}
+
 export function documentQuery(workspace: string, document: string) {
   return queryOptions({
     queryKey: workspaceKeys.document(workspace, document),
     queryFn: async ({ signal }) => {
       const snapshot = await api.getDocument(document, signal);
       if (snapshot.document.workspaceId !== workspace) {
-        throw new ApiError(404, "not_found", "Document belongs to a different workspace");
+        throw new DocumentMoved(snapshot.document.workspaceId);
       }
       return snapshot;
     },

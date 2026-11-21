@@ -5,6 +5,12 @@ declare const styles: {
   readonly form: string;
   readonly field: string;
   readonly actions: string;
+  readonly source: string;
+  readonly location: string;
+  readonly detail: string;
+  readonly access: string;
+  readonly newFolder: string;
+  readonly deleteButton: string;
   readonly error: string;
 };
 
