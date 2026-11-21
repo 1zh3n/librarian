@@ -176,7 +176,19 @@ test("two history entries for the same document keep independently edited AI dra
 test("the follow-up uses the selected text and revision saved while leaving for a citation", async ({
   page,
 }) => {
-  const note = await openAnswer(page, "临行保存");
+  await checkFollowupAfterSave(page, "临行保存", false);
+});
+
+test("Back from a same-document citation keeps the selection whose save was pending", async ({
+  page,
+}) => {
+  await checkFollowupAfterSave(page, "同篇保存", true);
+});
+
+async function checkFollowupAfterSave(page: Page, title: string, sameDocument: boolean) {
+  const note = await openAnswer(page, `${title}-${crypto.randomUUID()}`, sameDocument);
+  const destination = await note.link.getAttribute("href");
+  if (!destination) throw new Error("Missing citation destination");
   const selected = "新选区";
   const saving = page.waitForRequest(
     (req) => req.method() === "PUT" && new URL(req.url()).pathname === note.apiUrl,
@@ -185,6 +197,9 @@ test("the follow-up uses the selected text and revision saved while leaving for 
   const held = new Promise<void>((resolve) => {
     releaseSave = resolve;
   });
+  const saved = page.waitForResponse(
+    (res) => res.request().method() === "PUT" && new URL(res.url()).pathname === note.apiUrl,
+  );
   await page.route(note.apiUrl, async (route) => {
     if (route.request().method() === "PUT") {
       await held;
@@ -201,6 +216,8 @@ test("the follow-up uses the selected text and revision saved while leaving for 
   } finally {
     releaseSave();
   }
+  expect((await saved).ok()).toBe(true);
+  await expect(page).toHaveURL(destination);
   await expect(page.getByRole("article")).toContainText(note.reference.markdown);
   const result = await page.request.get(note.apiUrl);
   expect(result.ok()).toBe(true);
@@ -248,4 +265,4 @@ test("the follow-up uses the selected text and revision saved while leaving for 
       to: selected.length,
     }),
   ]);
-});
+}

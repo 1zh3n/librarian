@@ -1,7 +1,7 @@
 import { Icon } from "../../ui/Icon";
 import { Feedback } from "../../ui/Feedback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "../../ui/Button";
@@ -121,6 +121,7 @@ function DocumentWorkspace({
     renameDocument,
   } = useReaderLayout();
   const navigate = useNavigate();
+  const { history } = useRouter();
   const documents = useQuery(documentsQuery(workspace)).data;
   const path = snapshot.document.path;
   const resolveLink = useCallback(
@@ -576,16 +577,26 @@ function DocumentWorkspace({
     return [{ documentId, revision: body.saves.confirmed().revision, ...local }];
   }
 
-  useBlocker({
-    enableBeforeUnload: isDirty,
-    shouldBlockFn: async ({ current, next }) => {
-      if (current.pathname === next.pathname || !isDirty()) return false;
-      await flush();
-      const blocked = isDirty() && !window.confirm("还有未保存的内容。确定离开文档？");
-      if (blocked) navigationCancelled(next.pathname);
-      return blocked;
-    },
-  });
+  useEffect(
+    () =>
+      history.block({
+        enableBeforeUnload: isDirty,
+        blockerFn: async ({ currentLocation, nextLocation, action }) => {
+          if (!isDirty()) return false;
+          // A citation's history entry captures the selection against the confirmed revision.
+          const opensCitation =
+            action === "PUSH" &&
+            nextLocation.state.readerCitation &&
+            nextLocation.state.readerCitationOrigin === currentLocation.state.__TSR_key;
+          if (currentLocation.pathname === nextLocation.pathname && !opensCitation) return false;
+          await flush();
+          const blocked = isDirty() && !window.confirm("还有未保存的内容。确定离开文档？");
+          if (blocked) navigationCancelled(nextLocation.pathname);
+          return blocked;
+        },
+      }),
+    [history, isDirty, flush, navigationCancelled],
+  );
 
   const writeOutline = async (draft: MarkdownWrite) => {
     await queryClient.cancelQueries({
