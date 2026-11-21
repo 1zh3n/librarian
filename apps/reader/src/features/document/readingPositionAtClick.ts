@@ -89,11 +89,13 @@ function blankLineHit(run: HTMLElement, y: number, source: string): ReadingHit {
     count - 1,
     Math.max(0, 1 + Math.floor((y - rect.top - firstHeight) / lineHeight)),
   );
-  const line = Number(run.dataset.blankLine) + row;
+  const quote = run.dataset.quoteBlankLine;
+  const line = Number(quote ?? run.dataset.blankLine) + row;
   const endings = /\r\n|[\r\n]/g;
   let start = 0;
   for (let n = 1; n < line && endings.exec(source); n++) start = endings.lastIndex;
-  const position = start + (/^[ \t]*/.exec(source.slice(start))?.[0].length ?? 0);
+  const indentation = quote ? /^[^\r\n]*/ : /^[ \t]*/;
+  const position = start + (indentation.exec(source.slice(start))?.[0].length ?? 0);
   const screenTop = rect.top + (row ? firstHeight + (row - 1) * lineHeight : 0);
   return { position, anchor: { sourceOffset: position, screenTop } };
 }
@@ -143,6 +145,12 @@ export function readingPositionAtClick(
     return { position: "blankLine", anchor };
   }
   const top = next.getBoundingClientRect().top;
+  if (next.tagName === "BLOCKQUOTE" && y >= top) {
+    for (const run of next.querySelectorAll<HTMLElement>("[data-quote-blank-line]")) {
+      const rect = run.getBoundingClientRect();
+      if (y >= rect.top && y < rect.bottom) return blankLineHit(run, y, source);
+    }
+  }
   const previous = blocks[lo - 1];
   if (previous && y < top && y - previous.getBoundingClientRect().bottom <= top - y) {
     const block = analysis.blocks.find(({ id }) => id === previous.dataset.blockId);

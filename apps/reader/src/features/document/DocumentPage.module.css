@@ -291,12 +291,18 @@
   height: calc(max(1lh, var(--paragraph-gap)) + var(--extra-lines) * 1lh);
 }
 
-.canvas article > :has(+ [data-blank-line]) {
+.canvas article > :has(+ :is(blockquote, [data-blank-line])),
+.canvas article > blockquote:has(+ *) {
   margin-block-end: 0;
 }
 
 .canvas article > [data-blank-line] + * {
   margin-block-start: 0;
+}
+
+.canvas article > blockquote,
+.canvas article > blockquote + * {
+  margin-block-start: var(--quote-join-gap, 0px);
 }
 
 .canvas :where(th, td) {
@@ -307,9 +313,13 @@
 
 .canvas blockquote {
   padding-inline-start: 1em;
-  margin-inline-start: 0;
+  margin-inline: 0;
   border-inline-start: 2px solid var(--muted-accent);
   color: var(--ink-secondary);
+}
+
+.canvas blockquote > :is(p, blockquote) {
+  margin-block: 0;
 }
 
 .contents {

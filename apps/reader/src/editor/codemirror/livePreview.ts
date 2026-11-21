@@ -123,6 +123,11 @@ function formatLine(ranges: Range<Decoration>[], state: EditorState, node: Synta
     }
   }
   if (name === "QuoteMark") {
+    if (state.facet(documentTypographyActive)) {
+      let block = node;
+      while (block.parent && block.parent.name !== "Document") block = block.parent;
+      if (block.name === "Blockquote") return;
+    }
     ranges.push(lineDecoration("data-preview-quote", "").range(state.doc.lineAt(from).from));
     const next = state.sliceDoc(to, to + 1);
     if (!selectionTouches(state, from, state.doc.lineAt(from).to)) {

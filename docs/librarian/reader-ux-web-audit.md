@@ -107,3 +107,11 @@
 2026-11-22 的书写规则保留用户主动输入的每一行。连续按两次 Enter 后，两个「啊」之间有一个可点的空行；按四次则有三个。逐行点击、输入、撤销，再回读 CRLF 原文，插入位置都在点击的空行上。段内一次 Enter 在阅读时也换行，Markdown 显式硬换行只占一行。文末已有的手动空行逐行显示，从整篇正文下方点击时复用最后一行。图中左右是在同一位置阅读和落笔的画面。 [空行位置对照](evidence/reader-editing-workflow/blank-line-activation.png) · [阅读编辑往返与保存](../../apps/reader/tests/e2e/document-blank-lines.spec.ts) · [文末十二行与撤销](../../apps/reader/tests/e2e/editor-blank-lines.spec.ts)
 
 在局域网预览中点击《步行路线2》的标题文字，再单独点击两个「啊」之间的第一个空行。各采样 40 帧，标题及四个「啊」的屏幕纵坐标均保持原位。隔离工作区另测真实 IBus 拼音。末行正在组合「中文」时用鼠标点击标题字母 a，然后在标题用拼音输入第二个字。保存后「中文」在原末行，新字在标题。后台刷新追加段落的回归同时核对原光标和选区。 [IBus 输入与保存结果](evidence/reader-editing-workflow/heading-ibus.json) · [标题激活回归](../../apps/reader/tests/e2e/document-heading-activation.spec.ts)
+
+## 两段之间写引用
+
+在两段之间已有的空行输入 `>` 时，旧版给引用上方和下段上方分别加了约 28 和 18 px，尚未按 Enter，下段就下移了 46 px。等字号、等行高的原生 CodeMirror 对照中，下段保持原位。另一处差异发生在重新打开文档时，旧版阅读排版会把只有引用标记的行折叠到零高度。
+
+现在同一个空行在阅读和编辑时都承接一行引用。在 18 px 字号和 1.85 倍行高下，从点空行、输入 `> ` 到写入短引文，下一段始终在 y=297.48。按 Enter 续写后落到 y=330.78，再按 Enter 退出空引用时保持原位。下图从左到右按相同坐标截取空行、刚写下标记和写入引文三种状态。浏览器用例同时核对窄屏折行、嵌套引用、连续空引用行的点击位置及保存后的 Markdown。 [三步画面对照](evidence/reader-editing-workflow/quote-line-height.png) · [逐键高度回归](../../apps/reader/tests/e2e/document-quote-height.spec.ts) · [已保存引用的高度与光标](../../apps/reader/tests/e2e/document-quote-layout.spec.ts)
+
+在局域网预览的《步行路线2》点入两段之间已保存的空引用。阅读、编辑、按 Esc 返回阅读，实测行高均为 33.296875 px。从按下鼠标开始连续采样 40 帧，上下正文的最大纵向位移为 0 px，期间没有发出正文写请求。
