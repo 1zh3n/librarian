@@ -585,6 +585,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .merge(super::session::routes())
         .merge(super::publication::routes())
         .merge(super::backup::routes())
+        .merge(super::mcp_settings::routes())
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(middleware::map_response(|mut response: Response| async {
             response

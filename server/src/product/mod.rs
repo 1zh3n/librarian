@@ -22,6 +22,7 @@ mod file_actions;
 mod imports;
 pub mod mcp_bridge;
 mod mcp_operations;
+mod mcp_settings;
 mod mutations;
 pub mod password_limits;
 mod publication;

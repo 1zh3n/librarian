@@ -15,6 +15,10 @@ pub(super) struct ReaderLink {
 }
 
 impl ReaderLinks {
+    pub(super) fn public_url(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+
     pub(super) fn load(metadata: &Metadata) -> Result<Self, String> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
