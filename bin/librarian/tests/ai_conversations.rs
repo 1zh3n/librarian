@@ -466,7 +466,32 @@ async fn deleted_conversation_cannot_replay_content_but_revision_can_be_undone()
     let op = format!("/ai/operations/{}", field(&edited, "operationId"));
     let stream = f.get(&format!("{op}/events")).await;
     assert!(stream.as_str().unwrap().contains("stream-private"));
+    // Older operation snapshots may contain extension fields unknown to the current view.
+    f.db().execute(
+        "UPDATE ai_operations SET entry=json_set(entry, '$.view.legacyExcerpt', 'snapshot-private') WHERE id=?",
+        [field(&edited, "operationId")],
+    ).unwrap();
     let queued = f.send(&c, "next", "chat", "excerpt-private").await;
+    f.db()
+        .execute_batch(
+            "CREATE TRIGGER interrupt_delete BEFORE DELETE ON ai_conversations
+         BEGIN SELECT RAISE(ABORT,'interrupt deletion'); END;",
+        )
+        .unwrap();
+    assert_eq!(
+        f.req(&f.user, "DELETE", &base(&c), Value::Null).await.0,
+        500
+    );
+    assert_eq!(f.get(&op).await["answer"], "answer-private");
+    assert!(f
+        .get(&format!("{op}/events"))
+        .await
+        .as_str()
+        .unwrap()
+        .contains("stream-private"));
+    f.db()
+        .execute_batch("DROP TRIGGER interrupt_delete")
+        .unwrap();
     f.ok(&f.user, "DELETE", &base(&c), Value::Null).await;
     f.reopen();
     assert_eq!(f.req(&f.user, "GET", &base(&c), Value::Null).await.0, 404);
@@ -518,6 +543,7 @@ async fn deleted_conversation_cannot_replay_content_but_revision_can_be_undone()
         "answer-private",
         "stream-private",
         "excerpt-private",
+        "snapshot-private",
     ] {
         assert!(
             !format!("{receipt} {recent} {replay} {stored}").contains(marker),
@@ -531,4 +557,135 @@ async fn deleted_conversation_cannot_replay_content_but_revision_can_be_undone()
     f.ok(&f.user, "POST", &format!("{op}/undo"), json!({}))
         .await;
     assert_eq!(fs::read(f.note()).unwrap(), ORIGINAL.as_bytes());
+}
+
+#[tokio::test]
+async fn upgrading_v8_keeps_unbound_operations_out_of_conversation_history() {
+    let mut f = Fixture::open().await;
+    let legacy = f
+        .ok(
+            &f.user,
+            "POST",
+            "/ai/operations",
+            json!({"workspaceId":f.ws,"mode":"chat","prompt":"legacy request"}),
+        )
+        .await;
+    let claim = f.claim().await;
+    assert!(claim["input"].get("history").is_none());
+    let result = f
+        .submit(&field(&claim, "leaseId"), json!({"answer":"legacy answer"}))
+        .await;
+    assert_eq!(result.0, 200);
+    f.app = Router::new();
+    {
+        let db = f.db();
+        db.execute_batch("PRAGMA foreign_keys=OFF").unwrap();
+        let mut stmt=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'ai_*' AND name NOT IN ('ai_operations','ai_events')").unwrap();
+        let tables = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        drop(stmt);
+        for table in tables {
+            db.execute(&format!("DROP TABLE {table}"), []).unwrap();
+        }
+        db.pragma_update(None, "user_version", 8).unwrap();
+    }
+    f.reopen();
+    let saved = f
+        .get(&format!("/ai/operations/{}", field(&legacy, "id")))
+        .await;
+    assert_eq!(saved["answer"], "legacy answer");
+    let conversations = f
+        .get(&format!("/ai/conversations?workspaceId={}", f.ws))
+        .await;
+    assert_eq!(conversations["items"], json!([]));
+    let c = f.conversation(&f.user, None).await;
+    f.send(&c, "first", "chat", "new request").await;
+    assert_eq!(f.claim().await["input"]["history"], json!([]));
+}
+
+#[tokio::test]
+async fn concurrent_cancel_and_write_agree_on_the_receipt_and_file_bytes() {
+    let f = Fixture::open().await;
+    let c = f.conversation(&f.user, None).await;
+    let turn = f.send(&c, "race", "edit", "change").await;
+    let lease = field(&f.claim().await, "leaseId");
+    let edit = f.edit(&lease, json!("concurrent update")).await;
+    let (stopped, result) = tokio::join!(f.cancel(&c, &turn), f.submit(&lease, edit));
+    let receipt = f
+        .get(&format!("/ai/operations/{}", field(&turn, "operationId")))
+        .await;
+    assert_eq!(stopped["operation"], receipt);
+    let bytes = fs::read(f.note()).unwrap();
+    match field(&receipt, "status").as_str() {
+        "succeeded" => {
+            assert_eq!(result, (200, receipt));
+            assert_eq!(bytes, b"concurrent update");
+        }
+        "canceled" => {
+            assert!(result.0 >= 400);
+            assert!(receipt["commitId"].is_null());
+            assert_eq!(bytes, ORIGINAL.as_bytes());
+        }
+        state => panic!("unexpected terminal state {state}"),
+    }
+}
+
+#[tokio::test]
+async fn oversized_visible_history_is_omitted_and_truncation_survives_refresh() {
+    let mut f = Fixture::open().await;
+    let c = f.conversation(&f.user, None).await;
+    f.send(&c, "a", "chat", "repeat").await;
+    let lease = field(&f.claim().await, "leaseId");
+    assert_eq!(
+        f.submit(&lease, json!({"answer":"x".repeat(256*1024)}))
+            .await
+            .0,
+        200
+    );
+    f.send(&c, "b", "chat", "new question").await;
+    let claim = f.claim().await;
+    assert_eq!(claim["input"]["history"], json!([]));
+    assert_eq!(claim["input"]["historyTruncated"], true);
+    f.reopen();
+    let turns = f.get(&turns(&c)).await;
+    assert_eq!(turns["items"][1]["historyTruncated"], true);
+}
+
+#[tokio::test]
+async fn a_committed_write_survives_interrupted_receipt_and_loss_of_write_permission() {
+    let mut f = Fixture::open().await;
+    let c = f.conversation(&f.user, None).await;
+    let turn = f.send(&c, "save", "edit", "change").await;
+    let lease = field(&f.claim().await, "leaseId");
+    let result = f.edit(&lease, json!("durable change")).await;
+    // Interrupt after the mutation journal and Git commit are durable, before the AI receipt.
+    f.db()
+        .execute_batch(
+            "CREATE TRIGGER interrupt_receipt BEFORE UPDATE OF status ON ai_operations
+         WHEN NEW.status='succeeded' BEGIN SELECT RAISE(ABORT,'interrupt receipt'); END;",
+        )
+        .unwrap();
+    assert_eq!(f.submit(&lease, result).await.0, 500);
+    assert_eq!(fs::read(f.note()).unwrap(), b"durable change");
+    f.db()
+        .execute_batch("DROP TRIGGER interrupt_receipt")
+        .unwrap();
+    f.app = Router::new();
+    let path = f.root.path().join("spaces.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    config["one"]["members"]["author"]["role"] = json!("read");
+    fs::write(path, config.to_string()).unwrap();
+    f.reopen();
+    let stopped = f.cancel(&c, &turn).await;
+    assert_eq!(stopped["operation"]["status"], "succeeded");
+    let id = field(&turn, "operationId");
+    assert!(f
+        .get(&format!("/ai/operations/{id}/diff?path=note.md"))
+        .await["diff"]
+        .as_str()
+        .unwrap()
+        .contains("durable change"));
 }
