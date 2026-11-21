@@ -1,4 +1,4 @@
-.PHONY: reader-bundle build build-e2e build-for-docker build-linux-ci docker build-server-releases build-server-releases-macos build-server-releases-freebsd build-cli-releases-rust build-cli-releases-freebsd build-cli-releases-rust-macos clean check fmt test test-e2e test-browser test-e2e-all test-e2e-release test-e2e-oidc starter-kit-previews bench generate website install uninstall bundle build-rs build-rs-cli run-rs
+.PHONY: reader-bundle build build-e2e build-for-docker build-linux-ci docker build-server-releases build-server-releases-macos build-server-releases-freebsd build-cli-releases-rust build-cli-releases-freebsd build-cli-releases-rust-macos clean check check-rust fmt test test-e2e test-browser test-e2e-all test-e2e-release test-e2e-oidc starter-kit-previews bench generate website install uninstall bundle build-rs build-rs-cli run-rs
 
 build:
 	npm run build
@@ -126,6 +126,10 @@ clean:
 reader-bundle:
 	npm run build -w @librarian/reader
 
+check-rust:
+	cargo fmt --all --check
+	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
 check: reader-bundle
 	npm run check
 	npx biome lint .
@@ -133,8 +137,7 @@ check: reader-bundle
 	npm run typecheck -w @librarian/reader
 	npm run lint -w @librarian/reader
 	npm run format:check -w @librarian/reader
-	cargo fmt --all --check
-	cargo clippy --workspace --all-targets --all-features -- -D warnings
+	$(MAKE) check-rust
 
 fmt:
 	npx biome format --write .

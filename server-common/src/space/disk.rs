@@ -536,6 +536,23 @@ fn is_syntax_error(err: &std::io::Error) -> bool {
         || msg.contains("bad file descriptor")
 }
 
+#[cfg(all(test, unix))]
+mod disk_test_support {
+    use super::DiskSpacePrimitives;
+    use crate::types::SpacePrimitives;
+
+    pub(super) fn names(sp: &DiskSpacePrimitives) -> Vec<String> {
+        let mut names: Vec<String> = sp
+            .fetch_file_list()
+            .unwrap()
+            .into_iter()
+            .map(|meta| meta.name)
+            .collect();
+        names.sort();
+        names
+    }
+}
+
 #[cfg(test)]
 mod plan_tests {
     use super::*;
@@ -672,17 +689,6 @@ mod plan_tests {
         assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
     }
 
-    fn names(sp: &DiskSpacePrimitives) -> Vec<String> {
-        let mut v: Vec<String> = sp
-            .fetch_file_list()
-            .unwrap()
-            .into_iter()
-            .map(|m| m.name)
-            .collect();
-        v.sort();
-        v
-    }
-
     /// A genuinely missing file must still report NotFound — only a *case
     /// mismatch* is silently ignored.
     #[test]
@@ -704,6 +710,7 @@ mod plan_tests {
     #[cfg(target_os = "macos")]
     mod fs_tests {
         use super::*;
+        use crate::space::disk::disk_test_support::names;
 
         #[test]
         fn write_recases_an_aliased_file() {
@@ -855,20 +862,10 @@ mod merge_eligible_tests {
 #[cfg(all(test, unix))]
 mod unix_walk_tests {
     use super::*;
+    use crate::space::disk::disk_test_support::names;
     use crate::types::SpacePrimitives;
     use std::os::unix::fs::symlink;
     use tempfile::tempdir;
-
-    fn names(sp: &DiskSpacePrimitives) -> Vec<String> {
-        let mut v: Vec<String> = sp
-            .fetch_file_list()
-            .unwrap()
-            .into_iter()
-            .map(|m| m.name)
-            .collect();
-        v.sort();
-        v
-    }
 
     #[test]
     fn symlink_to_in_space_file_is_listed() {
