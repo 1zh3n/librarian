@@ -72,7 +72,7 @@ fn extract(kind: &str, bytes: &[u8]) -> Parsed<Vec<Segment>> {
     match kind {
         "pdf" if pdf => {
             let doc = lopdf::Document::load_mem(bytes).map_err(|_| "invalid_file")?;
-            if doc.is_encrypted() || doc.encryption_state.is_some() {
+            if doc.is_encrypted() || doc.was_encrypted() {
                 return Err("encrypted_pdf");
             }
             for page in doc.get_pages().into_keys() {

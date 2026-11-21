@@ -531,6 +531,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .merge(super::ai::routes())
         .merge(super::accounts::routes())
         .merge(super::workspace::routes())
+        .merge(super::ai_materials::routes())
         .merge(super::delivery::routes())
         .merge(super::snapshots::routes())
         .merge(super::session::routes())

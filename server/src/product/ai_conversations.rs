@@ -316,6 +316,8 @@ struct CreateTurn {
     prompt: String,
     #[serde(default)]
     context: Vec<ContextRequest>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    material_ids: Vec<String>,
     retry_of_turn_id: Option<String>,
 }
 
@@ -439,6 +441,7 @@ fn create_turn(
             now
         ],
     )?;
+    super::ai_materials::bind_turn(&tx, &id, &op.view.id, &input.material_ids)?;
     tx.execute(
         "UPDATE ai_conversations SET updated_at=? WHERE id=?",
         params![now, id],
@@ -619,7 +622,12 @@ fn delete_conversation(
          AND json_extract(entry,'$.view.commitId') IS NULL",
         [&id],
     )?;
+    let materials = super::ai_materials::remove_conversation(&tx, &id)?;
     tx.execute("DELETE FROM ai_conversations WHERE id=?", [&id])?;
     tx.commit()?;
+    drop(conn);
+    for material in materials {
+        super::ai_materials::unlink(db, &material)?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
