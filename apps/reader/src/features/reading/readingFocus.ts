@@ -1,7 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { DevicePreferences } from "../../api/client";
+import type { DevicePreferences, DocumentSummary } from "../../api/client";
 
 type Focus = null | {
   activation: number;
@@ -121,6 +121,7 @@ type ReaderLayout = {
   savePreferences: (patch: Partial<DevicePreferences>) => Promise<DevicePreferences>;
   createdDocument: string | undefined;
   clearCreatedDocument: () => void;
+  renameDocument: ((document: DocumentSummary, origin: HTMLElement) => void) | undefined;
   navigationCancelled: (pathname: string) => void;
 };
 

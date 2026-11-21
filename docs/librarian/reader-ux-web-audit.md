@@ -75,3 +75,19 @@
 来源往返另外在独立 fixture 逐一复测 1440 和 390 px，并更新了上文两组画面和测量。两个视口返回前后的对话滚动分别为 462 和 658 px，引用链接均获得焦点，正文阅读块坐标分别保持在 457.5 和 845.5 px。收起辅助区回到打开它的段落。设置弹窗与新建弹窗都在提交等待及失败重试中核对过输入值，搜索弹窗内的 Alt+E 不会编辑背后的正文。 [弹窗回归](../../apps/reader/tests/e2e/document-dialog-input.spec.ts)
 
 本轮覆盖 Chromium 的键盘、指针、触屏模拟和文字缩放。AI 使用本地执行器替身，发布使用本地 Git 目标。实体手机软键盘、读屏、墨水屏与真实供应商接入沿发行计划复核。
+
+## 从正文落笔，到目录改名
+
+本轮从 `999a4531` 开始。用户希望写作时只看到光标，能就地预览；点中文字就在那个字符处输入，点纸面空白就在文末新起一行。引用和列表的非空项按 Enter 续写，空项按 Enter 退出当前层。
+
+在 Chromium 中，原版点击粗体第一个字的左半边，会把输入加在粗体外；点击粗体后普通文字的第一个字，又会把输入加进粗体。现在分别从文本节点起点映射到它自己的 Markdown 范围，用保存后读回的原文验证。点空白新增的换行可以单独撤销。即时预览参考 Typora 对光标所在语法的呈现，列表的缩进和编号沿用 CodeMirror 命令。 [正文走查](evidence/reader-editing-workflow/writing.png) · [格式边界用例](../../apps/reader/tests/e2e/document-edit-boundary.spec.ts) · [Typora 即时预览](https://support.typora.io/Quick-Start/) · [CodeMirror Markdown 命令](https://github.com/codemirror/lang-markdown/blob/main/src/commands.ts)
+
+桌面 X11 上用真实 IBus 拼音输入 `zhongwen`，首个 Enter 按输入法设置提交拼音原串，第二个 Enter 才写入换行和引用前缀。嵌套引用、任务列表、有序列表、围栏和撤销在浏览器另测。 [IBus 事件与原文](evidence/reader-editing-workflow/desktop-ibus-enter.json) · [按键回归](../../apps/reader/tests/e2e/editor-markdown.spec.ts)
+
+从「渡口走访手记」的目录里给另一篇「船工访谈」改文件名。重名时保留输入，成功后手记的滚动位置维持 650 px，原章节仍在视口 y=240。目标文档保留 ID、提纲和 Markdown，目录可同时看到自定义标题和新文件名。成员阅读地址按文档 ID 定位。其他文档内写死旧文件名的相对链接需要另行更新。 [改名窗口](evidence/reader-editing-workflow/rename-prompt.png) · [改名后](evidence/reader-editing-workflow/reading-after-rename.png) · [触屏](evidence/reader-editing-workflow/touch-rename.png) · [API 与位置记录](evidence/reader-editing-workflow/after.json)
+
+目录、空间设置、搜索、登录与文档工具复用 Reader 的 Lucide 图标。图形继承文字颜色，按钮负责名称和热区。HeroUI 提供按钮和选择控件的状态语义，应用可以自行提供业务图标。 [组件与真实热区用例](../../apps/reader/tests/e2e/document-icons.spec.ts) · [HeroUI 按钮](https://heroui.com/en/docs/react/migration/button) · [HeroUI 选择控件](https://heroui.com/en/docs/react/components/select)
+
+在第 11 站点进正文，第一帧就输入并打开搜索。原来的位置恢复会因缓冲区有新文字而中断，受控复现中标题从视口 y=210 跳到 y=704。修正后连续输入会映射回同一锚点，关闭搜索后仍看得到正在写的一段。 [首帧输入与返回用例](../../apps/reader/tests/e2e/document-redesign-acceptance.spec.ts)
+
+交付构建通过 164 项产品 Playwright、31 项编辑器 Spike Playwright、58 项 Vitest，以及类型、组件边界、lint、格式和 OpenAPI 一致性检查。对局域网 HTTPS 服务回读的资源清单与本地构建逐字节一致。使用普通试用账号从「河岸清晨」打开改名框、取消，再进入编辑和返回阅读，原地址可继续使用。

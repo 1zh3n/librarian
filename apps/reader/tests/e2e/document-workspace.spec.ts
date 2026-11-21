@@ -741,7 +741,10 @@ test("keeps an unsaved draft when the reader declines to open the new note", asy
   const current = await addDocument(page, workspace.id, "当前笔记.md", "原文内容\n");
   const currentRoute = `/workspaces/${workspace.id}/documents/${current.document.id}`;
   await page.goto(currentRoute);
-  await page.getByRole("article").getByText("原文内容").click();
+  await page
+    .getByRole("article")
+    .getByText("原文内容")
+    .click({ position: { x: 8, y: 16 } });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await expect(editor).toBeFocused();
   await page.route(`**/api/v1/documents/${current.document.id}`, async (route) => {

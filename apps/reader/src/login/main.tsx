@@ -1,3 +1,4 @@
+import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { Feedback } from "../ui/Feedback";
 import { Form, Field } from "../ui/Forms";
@@ -34,7 +35,9 @@ function Login({ status, username }: { status: string | undefined; username: str
   return (
     <main className={styles.page}>
       <section className={styles.panel} aria-labelledby="login-heading">
-        <div className={styles.mark} aria-hidden="true" />
+        <div className={styles.mark} aria-hidden="true">
+          <Icon name="book-open" />
+        </div>
         <h1 className={styles.heading} id="login-heading">
           登录 Librarian
         </h1>

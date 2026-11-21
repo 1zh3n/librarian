@@ -5,6 +5,10 @@
   outline-offset: -2px;
 }
 
+.directory[data-focus-visible]:not(:focus) {
+  outline: none;
+}
+
 .heading {
   display: flex;
   min-height: 32px;
@@ -46,6 +50,16 @@
   user-select: none;
 }
 
+.labels {
+  display: grid;
+  min-width: 0;
+}
+
+.labels small {
+  color: var(--ink-secondary);
+  font-weight: normal;
+}
+
 .label {
   min-width: 0;
   overflow: hidden;
@@ -75,10 +89,7 @@
 }
 
 .moreIcon {
-  width: 16px;
-  height: 16px;
-  mask: url("lucide-static/icons/ellipsis.svg") no-repeat center / contain;
-  background: currentColor;
+  font-size: 1rem;
 }
 
 .more[data-hovered] {

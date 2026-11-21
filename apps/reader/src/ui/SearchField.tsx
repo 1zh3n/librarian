@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { SearchField as HeroSearchField } from "@heroui/react/search-field";
 import type { Ref } from "react";
 
@@ -16,7 +17,7 @@ export function SearchField({
 }) {
   return (
     <HeroSearchField aria-label={label} className={classes.field}>
-      <span className={classes.searchIcon} aria-hidden="true" />
+      <Icon name="search" className={classes.searchIcon} />
       <HeroSearchField.Input
         ref={ref}
         placeholder={placeholder}

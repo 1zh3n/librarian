@@ -68,11 +68,13 @@ export function handleWorkspaceMenu(
 export function WorkspaceContextMenu({
   target,
   create,
+  rename,
   search,
   hasWorkspace,
   close,
 }: {
   target: WorkspaceMenuTarget;
+  rename: (() => void) | undefined;
   create: ((folder: string, origin: HTMLElement) => void) | undefined;
   search: (origin: HTMLElement) => void;
   hasWorkspace: boolean;
@@ -112,6 +114,19 @@ export function WorkspaceContextMenu({
               search(target.trigger);
             },
           },
+          ...(rename
+            ? [
+                {
+                  id: "rename",
+                  className: styles.menuItem,
+                  label: "重命名…",
+                  run: () => {
+                    close();
+                    rename();
+                  },
+                },
+              ]
+            : []),
         ]}
       />
     </ContextMenuPopover>

@@ -173,7 +173,10 @@ for (const width of [1440, 390]) {
       await page.reload();
       const article = page.getByRole("article");
       const body = page.getByRole("textbox", { name: "Markdown 正文" });
-      await article.locator("p").first().click();
+      await article
+        .locator("p")
+        .first()
+        .click({ position: { x: 8, y: 16 } });
       await expect(body).toBeFocused();
       await shot(page, `first-edit-${width}`);
       await body.press("Escape");
@@ -182,7 +185,7 @@ for (const width of [1440, 390]) {
       const original = await position(station);
       const lines = await paragraph.boundingBox();
       await shot(page, `deep-reading-${width}`);
-      await paragraph.click();
+      await paragraph.click({ position: { x: 8, y: 16 } });
       await expect(body).toBeFocused();
       expect(await page.evaluate(() => getSelection()?.anchorNode?.textContent)).toContain(
         "木桩边",
@@ -294,6 +297,33 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+test("typing on the first editor frame keeps the reading anchor when search takes focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openLongNote(page, "frame-input");
+  const station = await placeStation(page);
+  const original = await position(station);
+  const passage = station.locator("+ p");
+  const marker = "核对测点";
+  // Insert through the focused contenteditable during its first layout pass.
+  // Waiting for a Playwright keyboard round trip can miss the affected frame.
+  await page.getByRole("main").evaluate((main, text) => {
+    const observer = new MutationObserver(() => {
+      if (!main.querySelector('[contenteditable="true"][aria-label="Markdown 正文"]')) return;
+      observer.disconnect();
+      requestAnimationFrame(() => document.execCommand("insertText", false, text));
+    });
+    observer.observe(main, { childList: true, subtree: true });
+  }, marker);
+  await passage.click({ position: { x: 8, y: 16 } });
+  await expect(page.getByRole("textbox", { name: "Markdown 正文" })).toContainText(marker);
+  await page.getByRole("button", { name: "搜索文档" }).click();
+  await page.getByRole("searchbox").press("Escape");
+  await expect(passage).toContainText(marker);
+  expect(Math.abs((await position(station)) - original)).toBeLessThan(8);
+});
+
 test("no-result search and settings return to the deep passage with its unconfirmed edit", async ({
   page,
 }) => {
@@ -312,7 +342,7 @@ test("no-result search and settings return to the deep passage with its unconfir
   });
   try {
     const original = await position(station);
-    await paragraph.click();
+    await paragraph.click({ position: { x: 8, y: 16 } });
     const body = page.getByRole("textbox", { name: "Markdown 正文" });
     await body.press("Home");
     await page.keyboard.insertText(marker);

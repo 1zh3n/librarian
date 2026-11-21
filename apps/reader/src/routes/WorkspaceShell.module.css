@@ -101,12 +101,6 @@
   font-weight: 650;
 }
 
-.layoutOption[data-selected]::after {
-  margin-inline-start: auto;
-  padding-inline-end: 0.25rem;
-  content: "✓";
-}
-
 .preview {
   display: flex;
   width: 2.75rem;
@@ -132,13 +126,8 @@
   display: grid;
   flex: 1;
   place-items: center;
-}
-
-.previewBody::before {
-  width: 60%;
-  height: 5px;
-  border-block: 1px solid var(--border-strong);
-  content: "";
+  color: var(--border-strong);
+  font-size: 0.75rem;
 }
 
 .previewTools {
@@ -215,22 +204,8 @@
 }
 
 .workspaceArrow {
-  display: grid;
-  width: 1rem;
-  height: 1rem;
-  flex: none;
-  place-items: center;
+  font-size: 1rem;
   color: var(--ink-secondary);
-}
-
-.workspaceArrow::before {
-  width: 0.35rem;
-  height: 0.35rem;
-  translate: 0 -0.1rem;
-  rotate: 45deg;
-  border-inline-end: 1.5px solid currentcolor;
-  border-block-end: 1.5px solid currentcolor;
-  content: "";
 }
 
 .workspaceSettings {
@@ -280,9 +255,9 @@
   overflow-wrap: anywhere;
 }
 
-.spaceOption > [aria-hidden] {
+.layoutOption > [data-icon="check"],
+.spaceOption > [data-icon="check"] {
   margin-inline-start: auto;
-  padding-inline-start: 0.5rem;
 }
 
 .spaceOption[data-focused] {

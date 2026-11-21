@@ -1,0 +1,34 @@
+{
+  "stage": "before",
+  "baseURL": "http://127.0.0.1:4286",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "theme": "light",
+  "build": "999a4531",
+  "chromium": "145.0.7632.6",
+  "a": {
+    "id": "doc_1f0380ec4b484d9f976b2cc04369a4e1",
+    "path": "走访/渡口走访手记.md",
+    "revision": "78b28996d249b700eb87f7e537ce7e43d2e2633c2241d160c2c757cd1644bee9",
+    "sha256": "78b28996d249b700eb87f7e537ce7e43d2e2633c2241d160c2c757cd1644bee9"
+  },
+  "b": {
+    "id": "doc_719615a2951a4951b098cd76ea373232",
+    "path": "资料/访谈速记.md",
+    "revision": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971",
+    "sha256": "e952ebd68d6a46e971a6f6f2dc32e104b5bee336c1c3f6d8604557d8a27f1971"
+  },
+  "before": {
+    "url": "/workspaces/ws_6d936d862d2a4fe98c34f0c33ddb871b/documents/doc_1f0380ec4b484d9f976b2cc04369a4e1",
+    "scrollTop": 650,
+    "headingY": 240
+  },
+  "menu": [
+    "新建文档…",
+    "搜索文档…"
+  ],
+  "typed": "补记：明早回访时带上旧航线图。",
+  "renameEntry": false
+}

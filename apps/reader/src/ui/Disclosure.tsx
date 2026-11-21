@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { Disclosure as HeroDisclosure } from "@heroui/react/disclosure";
 import type { ReactNode } from "react";
 
@@ -27,7 +28,7 @@ export function Disclosure({
       <HeroDisclosure.Heading>
         <HeroDisclosure.Trigger className={triggerClassName ?? ""}>
           {title}
-          <HeroDisclosure.Indicator />
+          <Icon name="chevron-down" />
         </HeroDisclosure.Trigger>
       </HeroDisclosure.Heading>
       <HeroDisclosure.Content>

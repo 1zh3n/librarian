@@ -1,3 +1,4 @@
+import { Icon } from "../ui/Icon";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
@@ -15,6 +16,7 @@ import { ReaderDock } from "../ui/ReaderDock/ReaderDock";
 import { api, ApiError } from "../api/client";
 import type { DevicePreferences, DocumentSnapshot, DocumentSummary } from "../api/client";
 import { documentsQuery, sessionQuery, workspaceKeys, workspacesQuery } from "../api/queries";
+import { RenameDocumentDialog } from "../features/document/RenameDocumentDialog";
 import { CreateDocumentDialog } from "../features/document/CreateDocumentDialog";
 import { rememberRecentDocument } from "../features/navigation/recentDocuments";
 import {
@@ -104,6 +106,31 @@ export function WorkspaceShell() {
     trigger.focus({ preventScroll: true });
     setContextMenu({ trigger, folder, point });
   }, []);
+  const [renaming, setRenaming] = useState<{ document: DocumentSummary; origin: HTMLElement }>();
+  const canRename = Boolean(
+    workspace?.canWrite && workspace.canManage && workspace.revisionMode === "managed",
+  );
+  const menuDocumentId =
+    contextMenu?.trigger.closest<HTMLElement>("[data-context-document]")?.dataset.contextDocument;
+  const menuDocument = menuDocumentId
+    ? documents.find((doc) => doc.id === menuDocumentId)
+    : undefined;
+  function renameDocument(document: DocumentSummary, origin: HTMLElement) {
+    if (canRename && document.workspaceId === selected) setRenaming({ document, origin });
+  }
+  function closeRename() {
+    setRenaming(undefined);
+    if (!renaming) return;
+    const { origin, document } = renaming;
+    requestAnimationFrame(() => {
+      const trigger = origin.isConnected
+        ? origin
+        : layout.current?.querySelector<HTMLElement>(
+            `[data-context-document="${CSS.escape(document.id)}"]`,
+          );
+      trigger?.focus({ preventScroll: true });
+    });
+  }
   const [settings, setSettings] = useState(false);
   const dialogOrigin = useRef<Element | null>(null);
   const [settingsError, setSettingsError] = useState(false);
@@ -317,6 +344,7 @@ export function WorkspaceShell() {
         layoutSelection,
         savePreferences: save,
         createdDocument,
+        renameDocument: canRename ? renameDocument : undefined,
         clearCreatedDocument,
         navigationCancelled,
       }}
@@ -356,7 +384,9 @@ export function WorkspaceShell() {
           )}
           <div className={styles.breadcrumb} title={active?.path}>
             {activeFolder && <span className={styles.breadcrumbFolder}>{activeFolder} / </span>}
-            <span className={styles.breadcrumbTitle}>{active?.title ?? workspace?.name}</span>
+            <span className={styles.breadcrumbTitle}>
+              {active?.path.split("/").at(-1) ?? workspace?.name}
+            </span>
           </div>
           {authenticated && (
             <div className={styles.topActions}>
@@ -381,7 +411,9 @@ export function WorkspaceShell() {
                           <>
                             <span aria-hidden="true" className={styles.preview} data-preset={id}>
                               {navigation && <span className={styles.previewNavigation} />}
-                              <span className={styles.previewBody} />
+                              <span className={styles.previewBody}>
+                                <Icon name="align-left" />
+                              </span>
                               {id !== "reading" && <span className={styles.previewTools} />}
                             </span>
                             {label}
@@ -459,7 +491,7 @@ export function WorkspaceShell() {
                         className={styles.workspace}
                       >
                         <span className={styles.workspaceName}>{workspace.name}</span>
-                        <span className={styles.workspaceArrow} aria-hidden="true" />
+                        <Icon name="chevron-down" className={styles.workspaceArrow} />
                       </Button>
                     }
                     choiceGroup={{
@@ -470,12 +502,6 @@ export function WorkspaceShell() {
                         id: item.id,
                         label: item.name,
                         className: styles.spaceOption,
-                        content: (
-                          <>
-                            {item.name}
-                            {item.id === workspace.id && <span aria-hidden="true">✓</span>}
-                          </>
-                        ),
                         run: () => {
                           if (item.id !== selected || creating)
                             void navigate({
@@ -511,7 +537,7 @@ export function WorkspaceShell() {
                         });
                       }}
                     >
-                      <span aria-hidden="true">⚙</span>
+                      <Icon name="settings" />
                     </Button>
                   </Tooltip>
                 </div>
@@ -594,6 +620,11 @@ export function WorkspaceShell() {
           <WorkspaceContextMenu
             target={contextMenu}
             hasWorkspace={Boolean(workspace)}
+            rename={
+              canRename && menuDocument
+                ? () => renameDocument(menuDocument, contextMenu.trigger)
+                : undefined
+            }
             create={
               canCreate &&
               ((!creating && !accountSettings) ||
@@ -606,6 +637,13 @@ export function WorkspaceShell() {
               setSearch(true);
             }}
             close={() => setContextMenu(undefined)}
+          />
+        )}
+        {renaming?.document.workspaceId === selected && (
+          <RenameDocumentDialog
+            document={renaming.document}
+            allowed={canRename}
+            close={closeRename}
           />
         )}
         {createDocumentFor?.workspace === selected && (

@@ -1,0 +1,14 @@
+.icon {
+  display: inline-block;
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+  vertical-align: middle;
+  pointer-events: none;
+}
+
+.icon > svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}

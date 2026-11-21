@@ -105,7 +105,17 @@ export function readerCaretOffset(
 ) {
   const hasBom = source.startsWith("\uFEFF");
   const raw = hasBom ? source.slice(1) : source;
-  const offset = boundary(raw, blockElements(analysis), root, point.node, point.offset, false);
+  // At an inline boundary, the first character belongs to the span that was
+  // clicked. Its opening or the preceding span's closing markup is invisible.
+  const atStartOfText = point.node.nodeType === Node.TEXT_NODE && point.offset === 0;
+  const offset = boundary(
+    raw,
+    blockElements(analysis),
+    root,
+    point.node,
+    point.offset,
+    atStartOfText,
+  );
   return offset === undefined ? undefined : offset + Number(hasBom);
 }
 

@@ -349,7 +349,10 @@ test("a read-only member returns from an unavailable source to the original answ
 test("keeps the live editor selection as AI context after focus exits", async ({ page }) => {
   const markdown = "正文前缀。片段甲乙。结束。\n";
   const { document } = await createNote(page, "AiEditorSelection.md", markdown);
-  await page.getByRole("article").getByText("正文前缀。片段甲乙。结束。").click();
+  await page
+    .getByRole("article")
+    .getByText("正文前缀。片段甲乙。结束。")
+    .click({ position: { x: 8, y: 16 } });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+Home");
   const from = markdown.indexOf("片段甲乙");
@@ -387,7 +390,10 @@ test("AI commits preserve the active local draft and expose diff and undo", asyn
     if (route.request().method() === "PUT") await held;
     await route.continue();
   });
-  await page.getByRole("article").getByText("共同原件").click();
+  await page
+    .getByRole("article")
+    .getByText("共同原件")
+    .click({ position: { x: 8, y: 16 } });
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   await editor.press("Control+End");
   await page.keyboard.insertText("本地草稿");

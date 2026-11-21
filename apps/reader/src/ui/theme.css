@@ -103,9 +103,9 @@
   text-align: start;
 }
 
-.reader-select svg {
-  inline-size: 1em;
-  flex: none;
+.reader-select[aria-expanded="true"] [data-icon="chevron-down"],
+.disclosure__trigger[aria-expanded="true"] [data-icon="chevron-down"] {
+  transform: rotate(180deg);
 }
 
 .reader-select-menu {

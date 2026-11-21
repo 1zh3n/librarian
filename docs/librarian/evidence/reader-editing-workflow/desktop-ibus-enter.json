@@ -1,0 +1,101 @@
+{
+  "measuredAtUtc": "2026-11-21T14:58:13.751Z",
+  "environment": {
+    "platform": "Arch Linux, Xvfb 1280×900, X11 / GTK3",
+    "browser": "Chrome for Testing 145.0.7632.6",
+    "ime": "IBus 1.5.34 / Intelligent Pinyin 1.16.5 (libpinyin)",
+    "input": "xdotool XTEST, isolated D-Bus, IBUS_ENABLE_SYNC_MODE=2",
+    "reader": "Shared checkout target/debug/examples/reader_fixture at http://127.0.0.1:4287",
+    "baseCommit": "999a4531455eb0e69b194c9d577754c3d0b84461",
+    "servedReaderShellSha256": "8cbe36d0b29c424381ea22af1a03a63a687995b942f0fb40395e69aa3a513f46",
+    "fixtureExecutableSha256": "60f3127f859cb55985521f042296d38ddeae2dcdbd4f3caec34d059f84f7e0e7",
+    "loadedGuardAsset": {
+      "path": "/assets/DocumentRoute-K9xKmEse.js",
+      "sha256": "1be0e67734f1856bd697a6ac8f1e4e179b0e70566610b215c8ca1f3f9871340d",
+      "verified": "浏览器加载的产物含最终 IME guard，并在捕获阶段监听 keydown。"
+    },
+    "editorSourceSha256AtProbe": {
+      "apps/reader/src/editor/codemirror/adapter.ts": "520e247af7271ff38b0952163f8a7eb0457a5613fdffd5c3d261745f1fffcb1b",
+      "apps/reader/src/editor/codemirror/composition.ts": "f18f4d2dff6912bb5513ccf03bf40fa97a2fca3032a3e61c7de11b95e708654e",
+      "apps/reader/src/editor/codemirror/markdownEnter.ts": "6f2d62cb185c96c1bda8b6988ac7c5f87ea07af39045a08118c7f717f2c94f99"
+    }
+  },
+  "steps": [
+    "在可写文档打开即时预览（Alt+E），Control+End 定位到已有引用行末。",
+    "通过 XTEST 逐键输入 zhongwen，等待可信 compositionupdate 显示“中文”；再等 750 ms，回读文档 API。",
+    "通过 XTEST 按 Return（keydown 和 keyup 间隔 120 ms），等自动保存并回读 API。",
+    "再次通过 XTEST 按 Return，等自动保存并回读 API。"
+  ],
+  "markdownBeforeInput": "> 测试：",
+  "preedit": {
+    "display": "> 测试：中文",
+    "markdown": "> 测试："
+  },
+  "markdownAfterCompositionEnter": "> 测试：zhongwen",
+  "markdownAfterNormalEnter": "> 测试：zhongwen\n> ",
+  "observedTrustedEvents": [
+    {
+      "phase": "pinyin",
+      "type": "compositionstart",
+      "data": "",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中文",
+      "trusted": true
+    },
+    {
+      "phase": "composingEnter",
+      "type": "keydown",
+      "code": "Enter",
+      "key": "Process",
+      "keyCode": 229,
+      "isComposing": true,
+      "trusted": true
+    },
+    {
+      "phase": "composingEnter",
+      "type": "compositionupdate",
+      "data": "zhongwen",
+      "trusted": true
+    },
+    {
+      "phase": "composingEnter",
+      "type": "beforeinput",
+      "inputType": "insertCompositionText",
+      "data": "zhongwen",
+      "isComposing": true,
+      "trusted": true
+    },
+    {
+      "phase": "composingEnter",
+      "type": "input",
+      "inputType": "insertCompositionText",
+      "data": "zhongwen",
+      "isComposing": true,
+      "trusted": true
+    },
+    {
+      "phase": "normalEnter",
+      "type": "keydown",
+      "code": "Enter",
+      "key": "Enter",
+      "keyCode": 13,
+      "isComposing": false,
+      "trusted": true
+    },
+    {
+      "phase": "normalEnter",
+      "type": "keyup",
+      "code": "Enter",
+      "key": "Enter",
+      "keyCode": 13,
+      "isComposing": false,
+      "trusted": true
+    }
+  ],
+  "result": "通过。第一次 Enter 提交拼音原串，未新增换行；第二次 Enter 只新增一个 LF 和一级引用前缀。",
+  "imeEventNote": "IBus 对组合期间的 Return 报告 code=Enter、key=Process、keyCode=229。此轮覆盖该系统输入路径；最终 guard 中 key=Enter 的组合分支未由这个原生事件触发。"
+}

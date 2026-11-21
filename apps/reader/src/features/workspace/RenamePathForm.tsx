@@ -1,36 +1,15 @@
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { Form, Field } from "../../ui/Forms";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
-import { api, ApiError } from "../../api/client";
-import { operationId } from "../../api/operationId";
-import { workspaceKeys } from "../../api/queries";
+import { useState } from "react";
+import { ApiError } from "../../api/client";
+import { useRenamePath } from "./useRenamePath";
 import styles from "./Management.module.css";
 
 export function RenamePathForm({ workspace }: { workspace: string }) {
-  const client = useQueryClient();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const previous = useRef<{ operationId: string; from: string; to: string } | undefined>(undefined);
-  const rename = useMutation({
-    mutationFn: () => {
-      const input = { from: from.trim(), to: to.trim() };
-      const last = previous.current;
-      const request =
-        last?.from === input.from && last.to === input.to
-          ? last
-          : { ...input, operationId: operationId() };
-      previous.current = request;
-      return api.renameWorkspacePath(workspace, request);
-    },
-    onSuccess: async () => {
-      previous.current = undefined;
-      setFrom("");
-      setTo("");
-      await client.invalidateQueries({ queryKey: workspaceKeys.workspace(workspace) });
-    },
-  });
+  const rename = useRenamePath(workspace);
   const ready = from.trim() && to.trim() && from.trim() !== to.trim();
 
   return (
@@ -39,7 +18,16 @@ export function RenamePathForm({ workspace }: { workspace: string }) {
       className={styles.form}
       onSubmit={(event) => {
         event.preventDefault();
-        if (ready && !rename.isPending) rename.mutate();
+        if (ready && !rename.isPending)
+          rename.mutate(
+            { from: from.trim(), to: to.trim() },
+            {
+              onSuccess: () => {
+                setFrom("");
+                setTo("");
+              },
+            },
+          );
       }}
     >
       <p className={styles.status}>
