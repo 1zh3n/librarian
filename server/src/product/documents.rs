@@ -15,6 +15,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 use silverbullet_server_common::{revision::sha256_hex, FileMeta, SpaceError};
 
@@ -158,7 +159,7 @@ impl DocumentService {
                 .space
                 .read_file_range(&path, 0, size)
                 .ok()
-                .and_then(|(prefix, _)| title_from_front_matter(&prefix))
+                .and_then(|(prefix, _)| title_from_markdown(&prefix))
         };
         let id = self.metadata.document_id(workspace, &path)?;
         Ok(summary(state, workspace, id, path, title))
@@ -172,7 +173,7 @@ impl DocumentService {
         markdown: &str,
     ) -> Result<DocumentSummary, ApiError> {
         let id = self.metadata.document_id(workspace, &path)?;
-        let title = title_from_front_matter(markdown.as_bytes());
+        let title = title_from_markdown(markdown.as_bytes());
         Ok(summary(state, workspace, id, path, title))
     }
 
@@ -185,7 +186,7 @@ impl DocumentService {
         markdown: String,
         revision: String,
     ) -> DocumentSnapshot {
-        let title = title_from_front_matter(markdown.as_bytes());
+        let title = title_from_markdown(markdown.as_bytes());
         DocumentSnapshot {
             link: self.reader_links.document(workspace, &id),
             document_id: id.clone(),
@@ -507,7 +508,13 @@ pub(super) fn outline_path(path: &str) -> String {
     format!("{}.outline.md", path.strip_suffix(".md").unwrap_or(path))
 }
 
-pub(super) fn title_from_front_matter(bytes: &[u8]) -> Option<String> {
+/// The document's display title: front matter first, then the first H1.
+/// Callers fall back to the file name when this returns `None`.
+pub(super) fn title_from_markdown(bytes: &[u8]) -> Option<String> {
+    front_matter_title(bytes).or_else(|| first_h1_text(bytes))
+}
+
+fn front_matter_title(bytes: &[u8]) -> Option<String> {
     let prefix = &bytes[..bytes.len().min(METADATA_LIMIT)];
     let prefix = prefix.strip_prefix(b"\xef\xbb\xbf").unwrap_or(prefix);
     let mut lines = prefix.split_inclusive(|&byte| byte == b'\n');
@@ -529,6 +536,34 @@ pub(super) fn title_from_front_matter(bytes: &[u8]) -> Option<String> {
         end += line.len();
     }
     None
+}
+
+fn first_h1_text(bytes: &[u8]) -> Option<String> {
+    let prefix = &bytes[..bytes.len().min(METADATA_LIMIT)];
+    let prefix = prefix.strip_prefix(b"\xef\xbb\xbf").unwrap_or(prefix);
+    // The prefix can end in the middle of a multi-byte character. The H1 is
+    // near the start, so replacing a split character at the boundary is safe.
+    let markdown = String::from_utf8_lossy(prefix);
+    let parser = Parser::new_ext(&markdown, Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+    let mut in_h1 = false;
+    let mut title = String::new();
+    for event in parser {
+        match event {
+            Event::Start(Tag::Heading {
+                level: HeadingLevel::H1,
+                ..
+            }) => {
+                in_h1 = true;
+                title.clear();
+            }
+            Event::End(TagEnd::Heading(HeadingLevel::H1)) if in_h1 => break,
+            Event::Text(value) | Event::Code(value) if in_h1 => title.push_str(&value),
+            Event::SoftBreak | Event::HardBreak if in_h1 => title.push(' '),
+            _ => {}
+        }
+    }
+    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!title.is_empty()).then_some(title)
 }
 
 fn is_front_matter_delimiter(line: &[u8]) -> bool {
@@ -693,4 +728,91 @@ async fn save_outline(
     run(move || service.save_outline(&account, &document, request))
         .await
         .map(Json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::title_from_markdown;
+
+    #[test]
+    fn front_matter_title_wins_over_the_first_heading() {
+        let markdown = b"---\ntitle: Front matter\n---\n\n# Body heading\n";
+        assert_eq!(
+            title_from_markdown(markdown).as_deref(),
+            Some("Front matter")
+        );
+    }
+
+    #[test]
+    fn the_first_h1_is_the_title_without_front_matter() {
+        let markdown = b"Intro\n\n# First *real* `title`\n\n## Later\n";
+        assert_eq!(
+            title_from_markdown(markdown).as_deref(),
+            Some("First real title")
+        );
+    }
+
+    #[test]
+    fn h2_and_fenced_headings_are_ignored() {
+        let markdown = b"```md\n# Not a title\n```\n\n## Only an h2\n\n# Real title\n";
+        assert_eq!(title_from_markdown(markdown).as_deref(), Some("Real title"));
+    }
+
+    #[test]
+    fn setext_h1_is_a_title() {
+        assert_eq!(
+            title_from_markdown(b"Setext title\n============\n").as_deref(),
+            Some("Setext title")
+        );
+    }
+
+    #[test]
+    fn inline_markup_is_reduced_to_visible_text() {
+        let markdown = b"# Hello <kbd>World</kbd> `code` [link](https://example.com)\n";
+        assert_eq!(
+            title_from_markdown(markdown).as_deref(),
+            Some("Hello World code link")
+        );
+    }
+
+    #[test]
+    fn yaml_comments_are_not_headings() {
+        let markdown = b"---\n# yaml comment\n---\n\n# Real title\n";
+        assert_eq!(title_from_markdown(markdown).as_deref(), Some("Real title"));
+    }
+
+    #[test]
+    fn empty_titles_fall_through_to_none() {
+        assert_eq!(title_from_markdown(b"#\n\n# Later\n"), None);
+        assert_eq!(title_from_markdown(b"## Only h2\n"), None);
+        assert_eq!(title_from_markdown(b"no heading\n"), None);
+    }
+
+    #[test]
+    fn chinese_h1_is_the_title() {
+        let markdown = "# MCP 设置、图片与阅读模式评估\n\n2026-11-22 · 设计评估与实施建议\n";
+        assert_eq!(
+            title_from_markdown(markdown.as_bytes()).as_deref(),
+            Some("MCP 设置、图片与阅读模式评估")
+        );
+    }
+
+    #[test]
+    fn a_split_utf8_at_the_prefix_boundary_does_not_hide_the_title() {
+        let mut markdown = String::from("# Title\n");
+        markdown.push_str(&"x".repeat(super::METADATA_LIMIT - markdown.len() - 1));
+        markdown.push('中');
+        assert_eq!(
+            title_from_markdown(markdown.as_bytes()).as_deref(),
+            Some("Title")
+        );
+    }
+
+    #[test]
+    fn bom_and_crlf_are_handled() {
+        assert_eq!(
+            title_from_markdown(b"\xef\xbb\xbf# Title\r\n").as_deref(),
+            Some("Title")
+        );
+    }
 }
