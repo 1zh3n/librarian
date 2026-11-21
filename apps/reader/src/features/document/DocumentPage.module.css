@@ -32,6 +32,12 @@
   background: var(--paper);
 }
 
+.citationNotice {
+  margin-inline-end: auto;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
 .iconButton,
 .closePane {
   display: inline-grid;
@@ -632,7 +638,8 @@
   .toolPane {
     grid-column: 3;
     width: min(var(--tool-width, 320px), calc(100% - 1.25rem));
-    margin-inline: 1.25rem 0;
+    justify-self: end;
+    margin-inline: 0;
   }
 }
 

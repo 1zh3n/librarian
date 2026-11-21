@@ -4,7 +4,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { api, ApiError } from "../../api/client";
 import type { AiContext, AiOperation, AiTask, DocumentSummary } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form, TextArea, TextField, ToggleButton } from "../../ui/primitives";
+import { Button, ToggleButton } from "../../ui/Button";
+import { Form, TextAreaField } from "../../ui/Forms";
+import { Feedback } from "../../ui/Feedback";
+import { citationHash } from "../document/sourceVisit";
+import type { AiTranscriptVisit } from "../document/sourceVisit";
 import { ContextUnavailable, explicitReferences, referenceContext } from "./aiContext";
 import { followOperation, isActiveOperation } from "./operationEvents";
 import styles from "./AiPanel.module.css";
@@ -29,7 +33,11 @@ export function AiPanel({
   documents,
   writable,
   resolveContext,
+  returnVisit,
+  onSourceVisit,
 }: {
+  returnVisit?: AiTranscriptVisit | undefined;
+  onSourceVisit?: (visit: AiTranscriptVisit) => void;
   id?: string;
   workspace: string;
   documentId?: string;
@@ -39,7 +47,7 @@ export function AiPanel({
   resolveContext?: () => Promise<AiContext[]>;
 }) {
   const client = useQueryClient();
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(returnVisit?.draft ?? "");
   const [local, setLocal] = useState<Turn[]>([]);
   const history = useQuery({
     queryKey: [...workspaceKeys.workspace(workspace), "ai", "operations", documentId ?? null],
@@ -48,7 +56,8 @@ export function AiPanel({
     enabled: active,
   });
   const byId = new Map<string, Turn>();
-  for (const operation of history.data ?? []) byId.set(operation.id, { operation, prompt: "" });
+  for (const operation of history.data ?? [])
+    byId.set(operation.id, { operation, prompt: returnVisit?.questions.get(operation.id) ?? "" });
   for (const turn of local) byId.set(turn.operation.id, turn);
   const turns = Array.from(byId.values());
   const hasTurns = turns.length > 0;
@@ -59,7 +68,21 @@ export function AiPanel({
   const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
   const refreshedCommits = useRef(new Set<string>());
   const transcript = useRef<HTMLDivElement>(null);
-  const tail = useRef(true);
+  const tail = useRef(!returnVisit);
+  const sourceLink = useRef<HTMLAnchorElement>(null);
+  const restoredLink = useRef<AiTranscriptVisit>(undefined);
+  const hasSource = turns.some(({ operation }) =>
+    operation.sources.some((source) => source.id === returnVisit?.sourceId),
+  );
+  useLayoutEffect(() => {
+    if (!returnVisit) restoredLink.current = undefined;
+    if (!active || !returnVisit || !hasSource || restoredLink.current === returnVisit) return;
+    const log = transcript.current;
+    if (!log || !sourceLink.current) return;
+    log.scrollTop = returnVisit.scrollTop;
+    sourceLink.current.focus({ preventScroll: true });
+    restoredLink.current = returnVisit;
+  }, [active, returnVisit, hasSource]);
   const references = explicitReferences(prompt, documents);
   const referenceError = references.missing.length
     ? `未找到引用 ${references.missing.map((path) => `@${path}`).join("、")}`
@@ -184,7 +207,7 @@ export function AiPanel({
       data-document-ai={Boolean(documentId) || undefined}
       aria-label={documentId ? "文档 AI" : "Workspace AI"}
     >
-      {!hasTurns && history.isError && <p role="alert">无法读取 AI 操作记录。</p>}
+      {!hasTurns && history.isError && <Feedback tone="error">无法读取 AI 操作记录。</Feedback>}
       {hasTurns && (
         <div
           className={styles.transcript}
@@ -205,7 +228,7 @@ export function AiPanel({
                     unavailable={markUnavailable}
                   />
                 ) : statuses[operation.status] ? (
-                  <p role="alert">{statuses[operation.status]}</p>
+                  <Feedback tone="error">{statuses[operation.status]}</Feedback>
                 ) : null}
                 {operation.answer && <p className={styles.answer}>{operation.answer}</p>}
                 {operation.sources.length > 0 && (
@@ -215,8 +238,31 @@ export function AiPanel({
                         <Link
                           to="/workspaces/$workspaceId/documents/$documentId"
                           params={{ workspaceId: workspace, documentId: source.documentId }}
-                          hash={source.blockId ?? ""}
+                          hash={citationHash(source, source.documentId === documentId)}
+                          hashScrollIntoView={false}
                           title={source.revision}
+                          ref={returnVisit?.sourceId === source.id ? sourceLink : undefined}
+                          onClick={(event) => {
+                            if (
+                              event.defaultPrevented ||
+                              event.button !== 0 ||
+                              event.ctrlKey ||
+                              event.metaKey ||
+                              event.altKey ||
+                              event.shiftKey
+                            )
+                              return;
+                            onSourceVisit?.({
+                              sourceId: source.id,
+                              scrollTop: transcript.current?.scrollTop ?? 0,
+                              draft: prompt,
+                              questions: new Map(
+                                turns
+                                  .filter((turn) => turn.prompt)
+                                  .map((turn) => [turn.operation.id, turn.prompt]),
+                              ),
+                            });
+                          }}
                         >
                           {source.path}
                         </Link>
@@ -250,7 +296,9 @@ export function AiPanel({
                     undo={() => void applyAction({ kind: "undo", operation })}
                   />
                 )}
-                {actionError?.id === operation.id && <p role="alert">{actionError.message}</p>}
+                {actionError?.id === operation.id && (
+                  <Feedback tone="error">{actionError.message}</Feedback>
+                )}
               </div>
             ))}
           </div>
@@ -264,14 +312,17 @@ export function AiPanel({
           void submit("chat");
         }}
       >
-        <TextField aria-label="提示词" value={prompt} onChange={setPrompt} isDisabled={submitting}>
-          <TextArea
-            className={styles.prompt}
-            placeholder="输入提示词，使用 @ 引用文件或目录"
-            rows={2}
-            maxLength={16_384}
-          />
-        </TextField>
+        <TextAreaField
+          aria-label="提示词"
+          value={prompt}
+          onChange={setPrompt}
+          disabled={submitting}
+          inputClassName={styles.prompt}
+          placeholder="输入提示词，使用 @ 引用文件或目录"
+          rows={2}
+          maxLength={16_384}
+        />
+
         {references.documents.length > 0 && (
           <ul className={styles.references} aria-label="指定的上下文">
             {references.documents.slice(0, 24).map(({ id: document, path }) => (
@@ -279,7 +330,9 @@ export function AiPanel({
             ))}
           </ul>
         )}
-        {(referenceError || submitError) && <p role="alert">{referenceError || submitError}</p>}
+        {(referenceError || submitError) && (
+          <Feedback tone="error">{referenceError || submitError}</Feedback>
+        )}
         <div className={styles.actions}>
           <Button
             className={styles.button}
@@ -342,11 +395,13 @@ function OperationProgress({
   );
   return (
     <>
-      <output className={styles.status}>{progress || statuses[status]}</output>
+      <Feedback tone="status" className={styles.status}>
+        {progress || statuses[status]}
+      </Feedback>
       {connection !== "connected" && (
-        <output className={styles.status}>
+        <Feedback tone="status" className={styles.status}>
           {connection === "retrying" ? "连接中断，正在重新连接…" : "无法继续读取此操作。"}
-        </output>
+        </Feedback>
       )}
       {preview && <p className={styles.answer}>{preview}</p>}
     </>
@@ -372,7 +427,7 @@ function OperationChanges({
   });
   return (
     <>
-      <output>已修改 {operation.changes.length} 个文件</output>
+      <Feedback tone="status">已修改 {operation.changes.length} 个文件</Feedback>
       <div className={styles.actions}>
         <ToggleButton className={styles.button} isSelected={expanded} onChange={setExpanded}>
           查看改动
@@ -383,7 +438,7 @@ function OperationChanges({
           </Button>
         )}
       </div>
-      {operation.undoCommitId && <output>已撤销并保存为新版本</output>}
+      {operation.undoCommitId && <Feedback tone="success">已撤销并保存为新版本</Feedback>}
       {expanded && (
         <section className={styles.changeList} aria-label="AI 改动">
           <ul>
@@ -399,8 +454,8 @@ function OperationChanges({
               </li>
             ))}
           </ul>
-          {path && diff.isPending && <output>正在读取差异…</output>}
-          {path && diff.isError && <p role="alert">无法读取版本差异。</p>}
+          {path && diff.isPending && <Feedback tone="status">正在读取差异…</Feedback>}
+          {path && diff.isError && <Feedback tone="error">无法读取版本差异。</Feedback>}
           {diff.data && (
             <pre className={styles.diff} aria-label="版本差异">
               {diff.data}

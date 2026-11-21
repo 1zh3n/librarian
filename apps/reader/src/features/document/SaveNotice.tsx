@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Button } from "../../ui/primitives";
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
 import type { EditorSession } from "../../editor/codemirror/adapter";
 import type { MarkdownSnapshot, SaveController } from "./saveController";
 import styles from "./DocumentPage.module.css";
@@ -31,7 +32,12 @@ export function SaveNotice({
     };
   }, [editor, saves]);
 
-  if (status === "saved") return <output className={styles.saved}>已保存</output>;
+  if (status === "saved")
+    return (
+      <Feedback className={styles.saved} tone="success">
+        已保存
+      </Feedback>
+    );
   if (status !== "conflict" && status !== "error") return null;
   const subject = kind === "body" ? "正文" : "提纲";
   const description =
@@ -41,7 +47,7 @@ export function SaveNotice({
         ? `${subject}保存失败。未保存的内容仍在编辑器中。`
         : `${subject}尚未保存。网络恢复后会重试。`;
   return (
-    <div className={styles.saveError} role="alert">
+    <Feedback className={styles.saveError} tone="error">
       <span>{description}</span>
       {status === "error" && (
         <Button
@@ -66,6 +72,6 @@ export function SaveNotice({
       >
         下载草稿
       </Button>
-    </div>
+    </Feedback>
   );
 }

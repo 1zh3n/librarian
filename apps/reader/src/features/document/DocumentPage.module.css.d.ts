@@ -2,6 +2,7 @@ declare const styles: {
   readonly page: string;
   readonly title: string;
   readonly documentTools: string;
+  readonly citationNotice: string;
   readonly iconButton: string;
   readonly closePane: string;
   readonly icon: string;

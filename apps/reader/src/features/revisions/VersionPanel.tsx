@@ -1,6 +1,7 @@
+import { Feedback } from "../../ui/Feedback";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button, ToggleButton } from "../../ui/primitives";
+import { Button, ToggleButton } from "../../ui/Button";
 import { api, ApiError } from "../../api/client";
 import type { RestoredDocument } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
@@ -51,11 +52,11 @@ export function VersionPanel({
     version.data.commitId !== restore.data?.commitId;
   return (
     <section className={styles.panel} aria-label="版本历史">
-      {history.isPending && <output>正在读取历史…</output>}
+      {history.isPending && <Feedback tone="status">正在读取历史…</Feedback>}
       {history.isError && (
-        <p role="alert">{disabled ? "此空间未启用版本历史" : "无法读取版本历史"}</p>
+        <Feedback tone="error">{disabled ? "此空间未启用版本历史" : "无法读取版本历史"}</Feedback>
       )}
-      {first?.uncommitted && <output>当前修改等待归档</output>}
+      {first?.uncommitted && <Feedback tone="status">当前修改等待归档</Feedback>}
       {first && first.revisions.length === 0 && !first.uncommitted && <p>这篇文档暂无版本</p>}
       <ol className={styles.versions}>
         {history.data?.pages
@@ -87,8 +88,10 @@ export function VersionPanel({
           加载更早版本
         </Button>
       )}
-      {selected && version.isFetching && !version.data && <output>正在读取差异…</output>}
-      {selected && version.isError && <p role="alert">无法读取版本差异</p>}
+      {selected && version.isFetching && !version.data && (
+        <Feedback tone="status">正在读取差异…</Feedback>
+      )}
+      {selected && version.isError && <Feedback tone="error">无法读取版本差异</Feedback>}
       {version.data && (
         <pre className={styles.diff} aria-label="版本差异">
           {version.data.diff}
@@ -104,15 +107,15 @@ export function VersionPanel({
         </Button>
       )}
       {restore.isError && (
-        <p role="alert">
+        <Feedback tone="error">
           {restore.error instanceof ApiError && restore.error.code === "already_current"
             ? "这一版和当前正文相同"
             : restore.error instanceof ApiError && restore.error.status === 409
               ? "正文已更新。请刷新后重试恢复。"
               : "无法恢复版本，请先保存本地修改。"}
-        </p>
+        </Feedback>
       )}
-      {restore.isSuccess && <output>已恢复并保存为新版本</output>}
+      {restore.isSuccess && <Feedback tone="success">已恢复并保存为新版本</Feedback>}
     </section>
   );
 }

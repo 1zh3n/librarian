@@ -1,0 +1,15 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "source": "水位-1440.md",
+  "runner": "fixture",
+  "passageTopBeforeOpening": 457.515625,
+  "passageTopBeforeLeaving": 457.515625,
+  "passageTopAfterReturn": 457.515625,
+  "transcriptScrollBeforeLeaving": 462,
+  "transcriptScrollAfterReturn": 462,
+  "focused": true,
+  "draft": "尚未发送的追问"
+}

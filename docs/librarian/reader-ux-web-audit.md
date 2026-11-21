@@ -15,7 +15,7 @@
 | 中 · 打开共享阅读地址 | 16 篇长标题在正文之前平铺；桌面正文标题从 y=356 才开始。 | 默认收起文档目录，标题位于 y=166。当前篇目有标识，键盘选下一篇后聚焦新标题。单篇阅读地址直接展示正文。 [改前](evidence/reader-ux-web/snapshot-before.png) · [改后](evidence/reader-ux-web/snapshot-after.png) |
 | 中 · 确认或取消 | 文档名称已填好，「创建文档」仍和「取消」同为透明背景与相同文字颜色。 | 为 Reader 显式主操作统一使用主题强调色，并区分悬停和禁用。 [创建前](evidence/reader-ux-web/create-before.png) · [创建后](evidence/reader-ux-web/create-after.png) |
 
-## 其余页面与下一轮
+## 首轮走查时保留的问题
 
 | 页面或流程 | 本轮观察 | 后续优先级 |
 | --- | --- | --- |
@@ -26,6 +26,22 @@
 
 桌面逐页测量涵盖常规设置、成员、外部导入、备份与发布、账号、新建空间、Workspace AI 与共享阅读。同一套 Web 在窄屏保留可读性、菜单、设置和输入入口。 [桌面基线](evidence/reader-ux-web/desktop-pages-before.json) · [桌面修订版](evidence/reader-ux-web/desktop-pages-after.json)
 
-## 联合验收
+## 首轮联合验收
 
 在此工作树构建 Reader 并由 Rust fixture 提供静态资源和 API。完整产品 Playwright 85 项、编辑器 Spike Playwright 16 项、Vitest 52 项全部通过。类型、lint、格式、OpenAPI 生成结果一致性和生产构建均通过。浏览器版 Zola 发布验证使用本机 Zola。 [目录前后对照](evidence/reader-ux-web/context-comparison.png) · [长标题前后对照](evidence/reader-ux-web/heading-comparison.png)
+
+
+## 从 AI 回答核对来源再返回
+
+开发继续在独立工作树 `librarian/.superpowers/sdd/reader-ux-worktree`、分支 `feat/librarian-reader-ux` 上进行。本轮起点为 `c1059e72`。clone 与 origin 均为 `git@github.com:1zh3n/librarian.git`，upstream 为 `https://github.com/silverbulletmd/silverbullet.git`。核对了 Rust 产品路由、Space 与文件适配器、revision 读写路径以及 §13.7 的桌面拼音、即时预览、Markdown 原字节和读写锚定记录。 [Spike 验收](phase-0-evidence.md) · [单文档验收](phase-1-evidence.md)
+
+在 Chromium 的独立 Rust fixture 中，读到长文中段，向文档 AI 提问，收到执行器替身的真实来源回执，再输入一条未发送的追问。将对话卷回第一条回答，用 Enter 打开引文，然后按浏览器后退。旧分支回到文章开头并收起辅助区。修订后回到发起核对的引用链接，正文和对话各自恢复滚动，追问仍在输入框内。桌面与窄屏采用同一条操作链。改前图取自失败用例轨迹，播放器对图片做了缩放。
+
+| 视口 | 实装画面和操作数据 |
+| --- | --- |
+| 1440 × 900 | [改前](evidence/reader-ux-web/source-back-1440-before.jpeg) · [返回后](evidence/reader-ux-web/source-back-1440-after.png) · [正文、对话与键盘焦点](evidence/reader-ux-web/source-back-1440-after.json) |
+| 390 × 844 | [改前](evidence/reader-ux-web/source-back-390-before.jpeg) · [返回后](evidence/reader-ux-web/source-back-390-after.png) · [正文、对话与键盘焦点](evidence/reader-ux-web/source-back-390-after.json) |
+
+## 登录纠错
+
+输错密码后，用户名留在原字段，错误信息关联到两个字段，焦点移到已清空的密码框。可直接重输密码并返回带查询参数的原地址。限流状态保留独立提示。 [改前](evidence/reader-ux-web/login-before.png) · [改后](evidence/reader-ux-web/login-after.png) · [键盘操作](evidence/reader-ux-web/login-keyboard-after.json)

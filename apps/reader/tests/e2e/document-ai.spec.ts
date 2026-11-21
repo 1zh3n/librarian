@@ -152,6 +152,200 @@ test("document AI sends selection and displays only actual sources", async ({ pa
   await expect(sources).not.toContainText("北岸/未读.md");
 });
 
+for (const width of [1440, 390]) {
+  test(`returns from an AI source to the same answer and reading passage at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 });
+    const markdown = Array.from({ length: 75 }, (_, i) => `第${i + 1}段，沿河向北记录水位。`).join(
+      "\n\n",
+    );
+    const { document, pathToNote } = await createNote(page, `来源往返-${width}.md`, markdown);
+    const reference = await addNote(
+      page,
+      document.document.workspaceId,
+      `水位-${width}.md`,
+      "北岸的水尺读数。",
+    );
+    const passage = page.getByRole("article").getByText("第40段，沿河向北记录水位。");
+    await passage.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    const passageTop = () => passage.evaluate((el) => el.getBoundingClientRect().top);
+    const beforeOpening = await passageTop();
+    await passage.evaluate((element) => {
+      const range = new Range();
+      range.selectNodeContents(element);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+    await openDocumentTool(page, "AI");
+    const question = "核对北岸水位的来源";
+    const task = await send(page, question);
+    expect(task.input.context?.[0]?.from).toBe(markdown.indexOf("第40段"));
+    const source = await readSource(page, task, reference.document.id);
+    await complete(page, task, {
+      answer:
+        "北岸读数已核对。\n" +
+        Array.from({ length: 32 }, (_, index) => `第${index + 1}次观测的两岸水位记录一致。`).join(
+          "\n",
+        ),
+      sourceIds: [source.source.id],
+    });
+    const panel = page.getByRole("region", { name: "文档 AI" });
+    const link = panel.getByRole("link", { name: reference.document.path, exact: true });
+    await expect(link).toBeVisible();
+    // Later turns make the first answer independently scrollable.
+    const later = await send(page, "补充说明");
+    await complete(page, later, { answer: "第二次水位观测。\n".repeat(90) });
+    await expect(panel.getByText("第二次水位观测。", { exact: false })).toBeVisible();
+    const draft = panel.getByRole("textbox", { name: "提示词" });
+    await draft.fill("尚未发送的追问");
+    await link.focus();
+    await link.scrollIntoViewIfNeeded();
+    const transcriptTop = () =>
+      link.evaluate((el) => {
+        let parent = el.parentElement;
+        while (parent && getComputedStyle(parent).overflowY !== "auto")
+          parent = parent.parentElement;
+        if (!parent) throw new Error("Missing transcript scroll container");
+        return parent.scrollTop;
+      });
+    const beforeLink = await passageTop();
+    const beforeTranscript = await transcriptTop();
+    expect(beforeTranscript).toBeGreaterThan(32);
+    await link.press("Enter");
+    await expect(page.getByRole("article")).toContainText("北岸的水尺读数。");
+    await page.goBack();
+    await expect(page).toHaveURL(pathToNote);
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText(question, { exact: true })).toBeVisible();
+    await expect(link).toBeFocused();
+    await expect(draft).toHaveValue("尚未发送的追问");
+    await expect
+      .poll(async () => Math.abs((await transcriptTop()) - beforeTranscript))
+      .toBeLessThan(3);
+    await expect.poll(async () => Math.abs((await passageTop()) - beforeLink)).toBeLessThan(3);
+    await test
+      .info()
+      .attach("returned-to-answer", { body: await page.screenshot(), contentType: "image/png" });
+    await test.info().attach("source-return-position", {
+      contentType: "application/json",
+      body: JSON.stringify(
+        {
+          viewport: page.viewportSize(),
+          source: source.source.path,
+          runner: "fixture",
+          passageTopBeforeOpening: beforeOpening,
+          passageTopBeforeLeaving: beforeLink,
+          passageTopAfterReturn: await passageTop(),
+          transcriptScrollBeforeLeaving: beforeTranscript,
+          transcriptScrollAfterReturn: await transcriptTop(),
+          focused: await link.evaluate((el) => el.ownerDocument.activeElement === el),
+          draft: await draft.inputValue(),
+        },
+        null,
+        2,
+      ),
+    });
+    const followup = await send(page, "继续核对所选段落");
+    expect(followup.input.context).toEqual(task.input.context);
+    await complete(page, followup, { answer: "核对完毕。" });
+    await draft.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect.poll(async () => Math.abs((await passageTop()) - beforeOpening)).toBeLessThan(3);
+  });
+}
+
+test("follows a citation to a passage in the current document and returns with Back", async ({
+  page,
+}) => {
+  const markdown = Array.from({ length: 90 }, (_, i) => `观测笔记第${i + 1}段。`).join("\n\n");
+  const { document, pathToNote, apiUrl, origin } = await createNote(page, "原文定位.md", markdown);
+  const paragraph = page.getByRole("article").getByText("观测笔记第65段。", { exact: true });
+  await paragraph.evaluate((element) => {
+    element.scrollIntoView({ block: "center" });
+    const range = new Range();
+    range.selectNodeContents(element);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+  await openDocumentTool(page, "AI");
+  const task = await send(page, "核对这段");
+  const source = await readSource(page, task, document.document.id);
+  expect(source.markdown).toBe("观测笔记第65段。");
+  await complete(page, task, { answer: "来源是原文第65段。", sourceIds: [source.source.id] });
+  const link = page.getByRole("list", { name: "引用来源" }).getByRole("link");
+  await page.getByRole("main").evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await link.click();
+  await expect(paragraph).toBeInViewport();
+  await expect(paragraph).toBeFocused();
+  await page.goBack();
+  await expect(page).toHaveURL(pathToNote);
+  await expect(link).toBeFocused();
+
+  const href = await link.getAttribute("href");
+  if (!href) throw new Error("Missing passage link");
+  const changed = await page.request.put(apiUrl, {
+    headers: { origin },
+    data: { baseRevision: document.revision, markdown: "观测记录已重新编排。" },
+  });
+  expect(changed.ok()).toBe(true);
+  await page.goto(href);
+  await page.reload();
+  await expect(page.getByRole("article")).toContainText("观测记录已重新编排。");
+  await expect(page.getByRole("status").filter({ hasText: "引用时的正文已更新" })).toBeVisible();
+});
+
+test("a read-only member returns from an unavailable source to the original answer", async ({
+  page,
+}) => {
+  const { document, pathToNote, origin } = await createNote(
+    page,
+    "来源已移除.md",
+    "原问题仍然保留。",
+    "另一空间",
+  );
+  const reference = await addNote(
+    page,
+    document.document.workspaceId,
+    "旧记录.md",
+    "旧记录的内容。",
+  );
+  await page.context().clearCookies();
+  const login = await page.request.post("/.auth/librarian/login", {
+    headers: { origin },
+    form: {
+      username: "offline-reader",
+      password: "offline-reader-test-password",
+    },
+    maxRedirects: 0,
+  });
+  expect(login.status()).toBe(303);
+  await page.reload();
+  await openDocumentTool(page, "AI");
+  await expect(page.getByRole("button", { name: "修改", exact: true })).toHaveCount(0);
+  const task = await send(page, "看旧记录");
+  const source = await readSource(page, task, reference.document.id);
+  await complete(page, task, { answer: "记录保存在旧文件。", sourceIds: [source.source.id] });
+  await page.route(`**/api/v1/documents/${reference.document.id}`, (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "not_found", message: "Missing document" }),
+    }),
+  );
+  const link = page.getByRole("link", { name: reference.document.path, exact: true });
+  await link.click();
+  await expect(page.getByRole("alert")).toContainText("此文档不存在");
+  await page.goBack();
+  await expect(page).toHaveURL(pathToNote);
+  await expect(link).toBeFocused();
+  await expect(page.getByText("记录保存在旧文件。")).toBeVisible();
+});
+
 test("keeps the live editor selection as AI context after focus exits", async ({ page }) => {
   const markdown = "正文前缀。片段甲乙。结束。\n";
   const { document } = await createNote(page, "AiEditorSelection.md", markdown);
@@ -259,6 +453,15 @@ test("context falls back to the active semantic block and outline stays independ
     sourceIds: [selected.source.id, outline.source.id],
   });
   await expect(page.getByRole("list", { name: "引用来源" })).toContainText("AiSemantic.outline.md");
+  const outlineSource = page.getByRole("link", { name: "AiSemantic.outline.md", exact: true });
+  await outlineSource.click();
+  await expect(page.getByRole("tab", { name: "提纲", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("textbox", { name: "Markdown 提纲" })).toBeVisible();
+  await page.goBack();
+  await expect(outlineSource).toBeFocused();
   await openDocumentTool(page, "提纲");
   await expect(page.getByRole("textbox", { name: "Markdown 提纲" })).toContainText(
     "检查水位与鸟类。",

@@ -1,3 +1,4 @@
+import { Feedback } from "../../ui/Feedback";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { api } from "../../api/client";
@@ -44,11 +45,13 @@ export function DocumentReferencesPanel({
   return (
     <section className={styles.metadata} aria-label="文档引用">
       {references.isPending ? (
-        <output className={styles.referenceNotice}>正在查找引用…</output>
+        <Feedback tone="status" className={styles.referenceNotice}>
+          正在查找引用…
+        </Feedback>
       ) : references.isError ? (
-        <p className={styles.referenceNotice} role="alert">
+        <Feedback className={styles.referenceNotice} tone="error">
           无法读取引用
-        </p>
+        </Feedback>
       ) : (
         <>
           <ReferenceList title="本篇引用" items={references.data.outgoing} />

@@ -1,13 +1,16 @@
+import { Feedback } from "../../ui/Feedback";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useNavigate } from "@tanstack/react-router";
+import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Button, Group, Menu, MenuItem, MenuTrigger, Popover } from "../../ui/primitives";
-import { Tabs } from "../../ui/Tabs";
+import { Button } from "../../ui/Button";
+import { ActionMenu } from "../../ui/Menu";
+import { DocumentToolPanel, useDocumentTools } from "./DocumentToolPanel";
+import type { Tool } from "./DocumentToolPanel";
 import { api, ApiError } from "../../api/client";
 import type { AiContext, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
 import { documentQuery, documentsQuery, outlineQuery, workspaceKeys } from "../../api/queries";
-import { captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
+import { blockAtOffset, captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { reanalyzeMarkdown } from "../../markdown/reanalyze";
@@ -35,28 +38,24 @@ import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
 import type { OutlineSession } from "./OutlineCanvas";
 import type { MarkdownWrite } from "./saveController";
+import { parseCitationHash } from "./sourceVisit";
+import type { AiTranscriptVisit, SourceVisit } from "./sourceVisit";
 import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
-const documentTabs = [
-  { id: "outline", label: "提纲", icon: "align-left" },
-  { id: "ai", label: "AI", icon: "sparkles" },
-  { id: "history", label: "版本", icon: "history" },
-  { id: "references", label: "引用", icon: "link" },
-] as const;
-type DocumentTab = (typeof documentTabs)[number]["id"];
-type Tool = DocumentTab | "contents" | "metadata";
-
-function isDocumentTab(value: unknown): value is DocumentTab {
-  return documentTabs.some(({ id }) => id === value);
-}
+type SourceNavigation = {
+  visit: SourceVisit | undefined;
+  onSourceVisit: (visit: SourceVisit) => void;
+};
 
 export function DocumentPage({
   workspace,
   document,
   writable,
-}: {
+  visit,
+  onSourceVisit,
+}: SourceNavigation & {
   workspace: string;
   document: string;
   writable: boolean;
@@ -66,35 +65,43 @@ export function DocumentPage({
     if (result.isError) {
       const missing = result.error instanceof ApiError && result.error.status === 404;
       return (
-        <p role="alert" className={styles.message}>
+        <Feedback tone="error" className={styles.message}>
           {missing ? "此文档不存在" : "无法读取文档"}
-        </p>
+        </Feedback>
       );
     }
-    return <output className={styles.message}>正在打开文档…</output>;
+    return (
+      <Feedback tone="status" className={styles.message}>
+        正在打开文档…
+      </Feedback>
+    );
   }
 
-  return <DocumentWorkspace workspace={workspace} snapshot={result.data} writable={writable} />;
+  return (
+    <DocumentWorkspace
+      workspace={workspace}
+      snapshot={result.data}
+      writable={writable}
+      visit={visit}
+      onSourceVisit={onSourceVisit}
+    />
+  );
 }
 
 function DocumentWorkspace({
   workspace,
   snapshot,
   writable,
-}: {
+  visit: returnVisit,
+  onSourceVisit,
+}: SourceNavigation & {
   workspace: string;
   snapshot: DocumentSnapshot;
   writable: boolean;
 }) {
   const { id: documentId, title } = snapshot.document;
-  const {
-    focus,
-    preferences,
-    layoutSelection,
-    createdDocument,
-    clearCreatedDocument,
-    navigationCancelled,
-  } = useReaderLayout();
+  const { focus, preferences, createdDocument, clearCreatedDocument, navigationCancelled } =
+    useReaderLayout();
   const navigate = useNavigate();
   const documents = useQuery(documentsQuery(workspace)).data;
   const path = snapshot.document.path;
@@ -165,65 +172,50 @@ function DocumentWorkspace({
     analysis: analyzeMarkdown(snapshot.markdown, documentId),
   }));
   const analysis = reading.analysis;
+  const location = useLocation();
+  const locationHash = location.hash;
+  const citation = useMemo(() => parseCitationHash(locationHash), [locationHash]);
   const [mode, setMode] = useState<Mode>("read");
   const modeRef = useRef<Mode>("read");
-  const [normalTool, setNormalTool] = useState<{
-    layout: typeof preferences.layout;
-    selection: number;
-    tool: Tool | undefined;
-  }>();
-  const [focusTool, setFocusTool] = useState<{ activation: number; tool: Tool | undefined }>();
   const [restoringVersion, setRestoringVersion] = useState(false);
   const [outlineRequested, setOutlineRequested] = useState(false);
   const [outlineSession, setOutlineSession] = useState<OutlineSession>();
   const outlineEnabled = outlineRequested || snapshot.document.outlineEnabled;
-  const defaultTool =
-    preferences.layout === "review"
-      ? "history"
-      : preferences.layout === "research"
-        ? "ai"
-        : preferences.layout === "writing" && outlineEnabled
-          ? "outline"
-          : undefined;
-  const tool = focus.active
-    ? focusTool?.activation === focus.activation
-      ? focusTool?.tool
-      : undefined
-    : normalTool?.layout === preferences.layout && normalTool.selection === layoutSelection
-      ? normalTool.tool
-      : defaultTool;
+  const initialTool = returnVisit
+    ? "ai"
+    : citation
+      ? citation.outline && outlineEnabled
+        ? "outline"
+        : "paper"
+      : "layout";
+  const { tool, rememberedTab, chooseTool } = useDocumentTools(
+    outlineEnabled,
+    location.state.__TSR_key,
+    initialTool,
+  );
   const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
   const toolAnchor = useRef<ReturnType<typeof captureReaderAnchor>>(undefined);
   const toolPane = useRef<HTMLElement>(null);
   const openToolButton = useRef<HTMLButtonElement>(null);
-  const [lastTab, setLastTab] = useState<DocumentTab>();
-  const initialTab = outlineEnabled ? "outline" : "ai";
-  const rememberedTab =
-    lastTab === "outline" && !outlineEnabled ? initialTab : (lastTab ?? initialTab);
   const paneId = `document-tools-${documentId}`;
   const toolbar = useRef<HTMLDivElement>(null);
   const inlineVisit = useRef<{
     anchor: ReturnType<typeof captureReaderAnchor>;
-    source: string;
+    revision: string;
     scrollTop: number;
     opener: HTMLElement | undefined;
     passage: string | undefined;
-  }>(undefined);
+  }>(
+    returnVisit?.inline
+      ? { ...returnVisit.inline, revision: returnVisit.revision, opener: undefined }
+      : undefined,
+  );
   const [contentsInitial, setContentsInitial] = useState<string>();
   const contentsDestination = useRef<HTMLElement | null>(null);
   const moveToTool = useRef(false);
   const returnFromTool = useRef(false);
-  const chooseTool = useCallback(
-    (next: Tool | undefined) => {
-      if (focus.activation !== undefined)
-        setFocusTool({ activation: focus.activation, tool: next });
-      else setNormalTool({ layout: preferences.layout, selection: layoutSelection, tool: next });
-    },
-    [focus.activation, layoutSelection, preferences.layout],
-  );
   function setTool(next: Tool | undefined) {
     if (next === tool) return;
-    if (isDocumentTab(next)) setLastTab(next);
     const viewport = canvas.current?.closest("main");
     if (next === "contents" && viewport) setContentsInitial(headingAtReadingPosition(viewport));
     toolAnchor.current =
@@ -239,7 +231,7 @@ function DocumentWorkspace({
         const active = window.document.activeElement;
         inlineVisit.current ??= {
           anchor: toolAnchor.current,
-          source: reading.source,
+          revision: snapshot.revision,
           scrollTop: viewport.scrollTop,
           passage:
             savedSelection.current?.range.startContainer.parentElement?.closest<HTMLElement>(
@@ -254,7 +246,12 @@ function DocumentWorkspace({
   }
   const outline = useQuery({ ...outlineQuery(workspace, documentId), enabled: outlineEnabled });
   const canvas = useRef<HTMLDivElement>(null);
-  const savedEditorSelection = useRef<{ source: string; anchor: number; head: number }>(undefined);
+  const savedEditorSelection = useRef<{
+    source: string;
+    anchor: number;
+    head: number;
+    blockId?: string;
+  }>(undefined);
   const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
   const restoringEditor = useRef(false);
 
@@ -329,7 +326,8 @@ function DocumentWorkspace({
           viewport,
           analysis.blocks,
           visit.anchor,
-          visit.source === reading.source,
+          visit.revision === body.saves.confirmed().revision &&
+            body.saves.confirmed().markdown === reading.source,
         );
       }
       if (visit) {
@@ -340,26 +338,108 @@ function DocumentWorkspace({
     if (anchor && modeRef.current === "read" && !(tool && inlineVisit.current)) {
       return restoreReaderAnchor(viewport, analysis.blocks, anchor, true);
     }
-  }, [tool, analysis.blocks, reading.source]);
+  }, [tool, analysis.blocks, reading.source, body]);
+
+  function rememberSource(transcript: AiTranscriptVisit) {
+    const viewport = canvas.current?.closest("main");
+    if (!viewport) return;
+    const inline = inlineVisit.current;
+    onSourceVisit({
+      documentId,
+      revision: snapshot.revision,
+      transcript,
+      selection: snapshot.markdown === reading.source ? selectedContext(reading.source) : undefined,
+      reading: {
+        anchor: captureReaderAnchor(viewport, analysis.blocks),
+        scrollTop: viewport.scrollTop,
+      },
+      inline: inline && {
+        anchor: inline.anchor,
+        scrollTop: inline.scrollTop,
+        passage: inline.passage,
+      },
+    });
+  }
+
+  const handledVisit = useRef<SourceVisit>(undefined);
+  useLayoutEffect(() => {
+    if (!returnVisit) {
+      handledVisit.current = undefined;
+      return;
+    }
+    if (handledVisit.current === returnVisit) return;
+    const range = returnVisit.selection;
+    savedEditorSelection.current =
+      range && returnVisit.revision === snapshot.revision
+        ? {
+            source: snapshot.markdown,
+            anchor: range.from,
+            head: range.to,
+            ...(range.blockId && { blockId: range.blockId }),
+          }
+        : undefined;
+    inlineVisit.current = returnVisit.inline && {
+      ...returnVisit.inline,
+      revision: returnVisit.revision,
+      opener: undefined,
+    };
+  }, [returnVisit, snapshot.revision, snapshot.markdown]);
 
   useEffect(() => {
-    const pane = toolPane.current;
-    function closeDocumentTool(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.isComposing || event.key !== "Escape" || !tool) return;
-      event.preventDefault();
-      savedSelection.current = undefined;
-      savedEditorSelection.current = undefined;
-      const viewport = canvas.current?.closest("main");
-      toolAnchor.current =
-        viewport && modeRef.current === "read"
-          ? captureReaderAnchor(viewport, analysis.blocks)
-          : undefined;
-      returnFromTool.current = true;
-      chooseTool(undefined);
+    const viewport = canvas.current?.closest("main");
+    if (!returnVisit || tool !== "ai" || !viewport || handledVisit.current === returnVisit) return;
+    // The shell resets the scroller when document identity changes.
+    let stop: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      const { anchor, scrollTop } = returnVisit.reading;
+      viewport.scrollTop = scrollTop;
+      if (anchor)
+        stop = restoreReaderAnchor(
+          viewport,
+          analysis.blocks,
+          anchor,
+          returnVisit.revision === snapshot.revision,
+        );
+      handledVisit.current = returnVisit;
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      stop?.();
+    };
+  }, [tool, returnVisit, analysis.blocks, snapshot.revision]);
+
+  const handledCitation = useRef<typeof citation>(undefined);
+  useLayoutEffect(() => {
+    if (!citation || returnVisit) {
+      handledCitation.current = undefined;
+      return;
     }
-    pane?.addEventListener("keydown", closeDocumentTool);
-    return () => pane?.removeEventListener("keydown", closeDocumentTool);
-  }, [analysis.blocks, chooseTool, tool]);
+    if (handledCitation.current === citation) return;
+    const destination = citation.outline && outlineEnabled ? "outline" : undefined;
+    if (tool !== destination) return;
+    const frame = requestAnimationFrame(() => {
+      const surface = canvas.current;
+      if (!surface) return;
+      const block = citation.block ? renderedBlock(surface, citation.block) : undefined;
+      const from =
+        citation.from !== undefined && citation.revision === snapshot.revision
+          ? blockAtOffset(analysis.blocks, citation.from)
+          : undefined;
+      const target =
+        destination === "outline"
+          ? toolPane.current
+          : (block ??
+            (from && renderedBlock(surface, from.id)) ??
+            surface.querySelector("article"));
+      if (target) {
+        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: destination || from || block ? "center" : "start" });
+      }
+      handledCitation.current = citation;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [citation, returnVisit, analysis.blocks, outlineEnabled, snapshot.revision, tool]);
 
   const rememberReadingSelection = useCallback(() => {
     if (modeRef.current !== "read") return;
@@ -447,28 +527,34 @@ function DocumentWorkspace({
         : outlineSession.saves.flush(),
     ]);
   }, [body, outlineSession]);
-  async function resolveAiContext(): Promise<AiContext[]> {
-    const confirmed = body.saves.confirmed();
-    const source = mode === "read" ? reading.source : body.editor.source();
+  function selectedContext(source: string) {
     const root = canvas.current;
     const stored = savedSelection.current;
-    const editor =
+    const editor: { anchor: number; head: number; blockId?: string } | undefined =
       mode === "read"
         ? savedEditorSelection.current?.source === source
           ? savedEditorSelection.current
           : undefined
         : body.editor.selection();
     const range = editor
-      ? { from: Math.min(editor.anchor, editor.head), to: Math.max(editor.anchor, editor.head) }
+      ? {
+          from: Math.min(editor.anchor, editor.head),
+          to: Math.max(editor.anchor, editor.head),
+          ...(editor.blockId && { blockId: editor.blockId }),
+        }
       : root && stored?.source === source
         ? readerSelection(root, stored.range, source, analysis)
         : undefined;
-    const local =
-      range && range.from < range.to
-        ? range
-        : source === reading.source && selectedBlock
-          ? { from: selectedBlock.from, to: selectedBlock.to, blockId: selectedBlock.id }
-          : undefined;
+    return range && range.from < range.to
+      ? range
+      : source === reading.source && selectedBlock
+        ? { from: selectedBlock.from, to: selectedBlock.to, blockId: selectedBlock.id }
+        : undefined;
+  }
+  async function resolveAiContext(): Promise<AiContext[]> {
+    const confirmed = body.saves.confirmed();
+    const source = mode === "read" ? reading.source : body.editor.source();
+    const local = selectedContext(source);
     if (!local) return [{ documentId }];
     if (local.to - local.from > 65_536) {
       throw new ContextUnavailable("所选范围过长，请缩小范围后重试。");
@@ -722,6 +808,16 @@ function DocumentWorkspace({
       }
     >
       <div className={styles.documentTools} ref={toolbar}>
+        {citation?.revision && citation.revision !== snapshot.revision && (
+          <Feedback tone="status" className={styles.citationNotice}>
+            引用时的正文已更新，当前显示最新版本。
+          </Feedback>
+        )}
+        {citation?.outline && !outlineEnabled && (
+          <Feedback tone="status" className={styles.citationNotice}>
+            引用的提纲已移除。
+          </Feedback>
+        )}
         {!tool && (
           <Button
             ref={openToolButton}
@@ -736,132 +832,113 @@ function DocumentWorkspace({
           </Button>
         )}
         {(writable || semantic.length > 0 || analysis.headings.length > 0) && (
-          <MenuTrigger>
-            <Button
-              aria-label="文档更多"
-              className={styles.iconButton}
-              isDisabled={restoringVersion}
-            >
-              <span className={styles.icon} data-icon="ellipsis" aria-hidden="true" />
-            </Button>
-            <Popover className={styles.menu}>
-              <Menu
-                onAction={(key) => {
-                  if (key === "contents") setTool("contents");
-                  if (key === "source") enterEditor(mode === "source" ? "preview" : "source");
-                  if (key === "metadata") setTool("metadata");
-                  if (key === "semantic") moveSemantic(0);
-                  if (key === "outline") {
-                    setOutlineRequested(true);
-                    setTool("outline");
-                  }
-                }}
+          <ActionMenu
+            label="文档更多"
+            popoverClassName={styles.menu}
+            trigger={
+              <Button
+                aria-label="文档更多"
+                className={styles.iconButton}
+                isDisabled={restoringVersion}
               >
-                {mode === "read" && analysis.headings.length > 0 && (
-                  <MenuItem id="contents">文档目录</MenuItem>
-                )}
-                {writable && (
-                  <MenuItem id="source">{mode === "source" ? "即时预览" : "完整源码"}</MenuItem>
-                )}
-                {writable && <MenuItem id="metadata">文档属性</MenuItem>}
-                {writable && !outlineEnabled && <MenuItem id="outline">添加提纲</MenuItem>}
-                {mode === "read" && semantic.length > 0 && (
-                  <MenuItem id="semantic">聚焦此处</MenuItem>
-                )}
-              </Menu>
-            </Popover>
-          </MenuTrigger>
+                <span className={styles.icon} data-icon="ellipsis" aria-hidden="true" />
+              </Button>
+            }
+            items={[
+              ...(mode === "read" && analysis.headings.length
+                ? [{ id: "contents", label: "文档目录", run: () => setTool("contents") }]
+                : []),
+              ...(writable
+                ? [
+                    {
+                      id: "source",
+                      label: mode === "source" ? "即时预览" : "完整源码",
+                      run: () => enterEditor(mode === "source" ? "preview" : "source"),
+                    },
+                    { id: "metadata", label: "文档属性", run: () => setTool("metadata") },
+                  ]
+                : []),
+              ...(writable && !outlineEnabled
+                ? [
+                    {
+                      id: "outline",
+                      label: "添加提纲",
+                      run: () => {
+                        setOutlineRequested(true);
+                        setTool("outline");
+                      },
+                    },
+                  ]
+                : []),
+              ...(mode === "read" && semantic.length
+                ? [{ id: "semantic", label: "聚焦此处", run: () => moveSemantic(0) }]
+                : []),
+            ]}
+          />
         )}
       </div>
       <div className={styles.documentGrid} data-tool={tool} data-reading-grid>
-        <section
-          className={styles.toolPane}
+        <DocumentToolPanel
           ref={toolPane}
           id={paneId}
-          data-tabbed={isDocumentTab(tool) || undefined}
-          hidden={!tool}
-          aria-label="文档辅助区"
-          tabIndex={-1}
-        >
-          <Button
-            className={styles.closePane}
-            aria-label="收起文档辅助区"
-            onPress={() => {
-              savedSelection.current = undefined;
-              savedEditorSelection.current = undefined;
-              setTool(undefined);
-            }}
-          >
-            <span className={styles.icon} data-icon="panel-right-close" aria-hidden="true" />
-          </Button>
-          <div hidden={!isDocumentTab(tool)}>
-            <Tabs
-              className={styles.toolTabs}
-              selectedKey={isDocumentTab(tool) ? tool : rememberedTab}
-              onSelectionChange={(key) => {
-                if (isDocumentTab(tool) && isDocumentTab(key)) setTool(key);
-              }}
-            >
-              <Tabs.List className={styles.tabList} aria-label="文档工具">
-                {documentTabs
-                  .filter(({ id }) => id !== "outline" || outlineEnabled)
-                  .map(({ id, label, icon }) => (
-                    <Tabs.Tab key={id} id={id} className={styles.toolTab}>
-                      <span className={styles.icon} data-icon={icon} aria-hidden="true" />
-                      {label}
-                    </Tabs.Tab>
-                  ))}
-              </Tabs.List>
-              {outlineEnabled && (
-                <Tabs.Panel id="outline" className={styles.tabPanel} shouldForceMount>
-                  {outline.data && (
-                    <OutlineCanvas
-                      snapshot={outline.data}
-                      visible={tool === "outline"}
-                      focusOnCreate={outlineRequested && !snapshot.document.outlineEnabled}
-                      writable={writable}
-                      write={writeOutline}
-                      confirmed={confirmOutline}
-                      readCurrent={() => api.getOutline(documentId)}
-                      register={setOutlineSession}
-                    />
-                  )}
-                  {outline.isError && (
-                    <p role="alert" className={styles.sideError}>
-                      无法打开提纲
-                    </p>
-                  )}
-                  {outline.isPending && <output className={styles.sideError}>正在打开提纲…</output>}
-                </Tabs.Panel>
-              )}
-              <Tabs.Panel id="ai" className={styles.tabPanel} shouldForceMount>
-                <AiPanel
-                  active={tool === "ai"}
-                  workspace={workspace}
-                  documentId={documentId}
-                  documents={documents ?? []}
-                  writable={writable}
-                  resolveContext={resolveAiContext}
-                />
-              </Tabs.Panel>
-              <Tabs.Panel id="history" className={styles.tabPanel}>
-                {tool === "history" && (
-                  <VersionPanel
-                    workspace={workspace}
-                    documentId={documentId}
+          tool={tool}
+          rememberedTab={rememberedTab}
+          onSelect={setTool}
+          onClose={() => {
+            savedSelection.current = undefined;
+            savedEditorSelection.current = undefined;
+            setTool(undefined);
+          }}
+          outline={
+            outlineEnabled ? (
+              <>
+                {outline.data && (
+                  <OutlineCanvas
+                    snapshot={outline.data}
+                    visible={tool === "outline"}
+                    focusOnCreate={outlineRequested && !snapshot.document.outlineEnabled}
                     writable={writable}
-                    onRestore={restore}
+                    write={writeOutline}
+                    confirmed={confirmOutline}
+                    readCurrent={() => api.getOutline(documentId)}
+                    register={setOutlineSession}
                   />
                 )}
-              </Tabs.Panel>
-              <Tabs.Panel id="references" className={styles.tabPanel}>
-                {tool === "references" && (
-                  <DocumentReferencesPanel workspace={workspace} document={documentId} />
+                {outline.isError && (
+                  <Feedback tone="error" className={styles.sideError}>
+                    无法打开提纲
+                  </Feedback>
                 )}
-              </Tabs.Panel>
-            </Tabs>
-          </div>
-          {tool === "contents" && (
+                {outline.isPending && (
+                  <Feedback tone="status" className={styles.sideError}>
+                    正在打开提纲…
+                  </Feedback>
+                )}
+              </>
+            ) : undefined
+          }
+          ai={
+            <AiPanel
+              active={tool === "ai"}
+              workspace={workspace}
+              documentId={documentId}
+              documents={documents ?? []}
+              writable={writable}
+              resolveContext={resolveAiContext}
+              returnVisit={returnVisit?.transcript}
+              onSourceVisit={rememberSource}
+            />
+          }
+          history={
+            <VersionPanel
+              workspace={workspace}
+              documentId={documentId}
+              writable={writable}
+              onRestore={restore}
+            />
+          }
+          references={<DocumentReferencesPanel workspace={workspace} document={documentId} />}
+          contents={
             <DocumentContents
               headings={analysis.headings}
               initial={contentsInitial}
@@ -882,8 +959,8 @@ function DocumentWorkspace({
                 }
               }}
             />
-          )}
-          {tool === "metadata" && (
+          }
+          metadata={
             <MetadataPanel
               editor={body.editor}
               onApply={() => {
@@ -901,8 +978,8 @@ function DocumentWorkspace({
                 enterEditor("source", 0);
               }}
             />
-          )}
-        </section>
+          }
+        />
         <div
           className={styles.canvas}
           data-editable={writable || undefined}
@@ -927,7 +1004,7 @@ function DocumentWorkspace({
         </div>
       </div>
       {mode === "read" && selectedBlock && (
-        <Group className={styles.semanticControls} aria-label="语义聚焦">
+        <fieldset className={styles.semanticControls} aria-label="语义聚焦">
           <Button
             className={styles.actionButton}
             isDisabled={semanticIndex === 0}
@@ -967,7 +1044,7 @@ function DocumentWorkspace({
           <Button className={styles.actionButton} onPress={() => setSemanticBlock(undefined)}>
             清除聚焦
           </Button>
-        </Group>
+        </fieldset>
       )}
       <div className={styles.saveNotices}>
         <SaveNotice saves={body.saves} editor={body.editor} kind="body" />
