@@ -28,6 +28,13 @@
   --focus: var(--accent);
 }
 
+/* These containers also receive HeroUI's focus flag when a descendant owns focus. */
+:is([data-slot="tabs"], [data-slot="tabs-panel"], [data-slot="select"])[data-focus-visible]:not(
+    :focus
+  ) {
+  outline: none;
+}
+
 :root[data-eink="true"] {
   --accent-foreground: var(--paper);
 }

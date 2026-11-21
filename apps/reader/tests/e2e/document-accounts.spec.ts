@@ -294,3 +294,36 @@ test("lets a member replace their password and starts a fresh browser session", 
     await memberContext.close();
   }
 });
+
+test("keyboard focus marks the import or publish control and a directly focused static panel", async ({
+  page,
+}) => {
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const workspaces = (await (await page.request.get("/api/v1/workspaces")).json()) as Workspace[];
+  const workspace = workspaces.find(({ name }) => name === "田野笔记");
+  if (!workspace) throw new Error("Missing managed Workspace fixture");
+
+  for (const { hash, label, role, name } of [
+    { hash: "delivery", label: "外部导入", role: "button", name: "选择文件" },
+    { hash: "release-site", label: "站点发布", role: "button", name: /发布目标/ },
+    { hash: "release-backup", label: "Git 备份", role: "tabpanel", name: "Git 备份" },
+  ] as const) {
+    await page.goto(`/workspaces/${workspace.id}/manage#${hash}`);
+    const control = page.getByRole(role, { name, exact: true });
+    await expect(control).toBeVisible();
+    await page.getByRole("tab", { name: label, exact: true }).press("Tab");
+    await expect(control).toBeFocused();
+    await expect(control).toHaveCSS("outline-style", "solid");
+    await expect(control).toHaveCSS("outline-width", "2px");
+    const outlinedAncestors = await control.evaluate((node) => {
+      const outlined: string[] = [];
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+        if (getComputedStyle(parent).outlineStyle !== "none") {
+          outlined.push(parent.getAttribute("data-slot") ?? parent.tagName);
+        }
+      }
+      return outlined;
+    });
+    expect.soft(outlinedAncestors, label).toEqual([]);
+  }
+});
