@@ -24,8 +24,15 @@ test("the create command keeps the source directory at its label and its far edg
   const form = page.getByRole("form", { name: "新建空间" });
   const name = form.getByRole("textbox", { name: "空间名称" });
   for (const side of ["label", "edge"]) {
+    // Keep a scrollable menu in the edge case even on a fresh fixture.
+    if (side === "edge") await page.setViewportSize({ width: 1280, height: 320 });
     await picker.click();
     const command = page.getByRole("menuitem", { name: "新建空间", exact: true });
+    await command.scrollIntoViewIfNeeded();
+    if (side === "edge") {
+      const menu = page.getByRole("menu", { name: "空间" });
+      expect(await menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    }
     const point = await command.evaluate((item, side) => {
       const row = item.getBoundingClientRect();
       const text = document.createRange();
@@ -34,14 +41,14 @@ test("the create command keeps the source directory at its label and its far edg
       return { x: side === "label" ? label.left + 4 : row.right - 3, y: row.top + row.height / 2 };
     }, side);
     await page.mouse.move(point.x, point.y);
-    expect
-      .soft(
-        await page.evaluate(
-          ({ x, y }) => getComputedStyle(document.elementFromPoint(x, y)!).cursor,
-          point,
-        ),
-      )
-      .toBe("pointer");
+    const hit = await command.evaluate((item, { x, y }) => {
+      const target = document.elementFromPoint(x, y);
+      return {
+        onCommand: item.contains(target),
+        cursor: target && getComputedStyle(target).cursor,
+      };
+    }, point);
+    expect(hit, side).toEqual({ onCommand: true, cursor: "pointer" });
     await page.mouse.click(point.x, point.y);
     await expect(page).toHaveURL("/workspaces/new");
     await expect(form).toBeVisible();
