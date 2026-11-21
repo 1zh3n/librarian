@@ -393,6 +393,26 @@ impl Intent {
     }
 }
 
+/// Reconcile an AI receipt after the directory transaction was durably completed.
+pub(in crate::product) fn completed(
+    metadata: &Metadata,
+    account: &str,
+    workspace: &str,
+    request: &super::Apply,
+) -> Result<Option<ActionResult>, ApiError> {
+    let Some(intent) = Intent::get(metadata, &request.operation_id)? else {
+        return Ok(None);
+    };
+    if intent.account != account
+        || intent.workspace != workspace
+        || intent.token != request.token
+        || intent.plan.input != request.input
+    {
+        return Err(reused());
+    }
+    Ok((intent.status == "done").then(|| intent.result(false)))
+}
+
 fn reused() -> ApiError {
     ApiError::new(
         StatusCode::CONFLICT,

@@ -45,14 +45,14 @@ pub(super) enum Kind {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Input {
-    action: Action,
-    source_kind: Kind,
-    source_path: String,
-    expected_document_id: Option<String>,
+    pub(super) action: Action,
+    pub(super) source_kind: Kind,
+    pub(super) source_path: String,
+    pub(super) expected_document_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    expected_folder_id: Option<String>,
-    target_workspace: Option<String>,
-    target_path: Option<String>,
+    pub(super) expected_folder_id: Option<String>,
+    pub(super) target_workspace: Option<String>,
+    pub(super) target_path: Option<String>,
 }
 
 impl Input {
@@ -66,21 +66,21 @@ impl Input {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ActionResult {
-    operation_id: String,
-    workspace_id: String,
-    path: String,
+    pub(super) operation_id: String,
+    pub(super) workspace_id: String,
+    pub(super) path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    document_id: Option<String>,
-    undoable: bool,
+    pub(super) document_id: Option<String>,
+    pub(super) undoable: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Apply {
-    operation_id: String,
-    token: String,
+pub(super) struct Apply {
+    pub(super) operation_id: String,
+    pub(super) token: String,
     #[serde(flatten)]
-    input: Input,
+    pub(super) input: Input,
 }
 
 #[derive(Deserialize)]
@@ -89,9 +89,9 @@ struct Undo {
     operation_id: String,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AccessChanges {
+pub(super) struct AccessChanges {
     gained_read: usize,
     gained_write: usize,
     lost: usize,
@@ -101,10 +101,10 @@ struct AccessChanges {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Preview {
-    token: String,
-    file_count: usize,
-    access: AccessChanges,
+pub(super) struct Preview {
+    pub(super) token: String,
+    pub(super) file_count: usize,
+    pub(super) access: AccessChanges,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -363,26 +363,36 @@ async fn preview(
     run(move || {
         let _guard = service.metadata.workspace_guard()?;
         let account = Account::authenticate(&service.spaces, &headers, true)?;
-        let scopes = Scopes::open(&service, &account, &workspace, &input)?;
-        let source = scopes.source.endpoint()?;
-        let target = scopes.target.as_ref().map(Scope::endpoint).transpose()?;
-        let _source_lock = product_read(source.state)?;
-        let _target_lock = target
-            .as_ref()
-            .filter(|target| target.workspace != source.workspace)
-            .map(|target| product_read(target.state))
-            .transpose()?;
-        let inventory = storage::inspect(
-            &service.metadata,
-            &source,
-            target.as_ref(),
-            &input,
-            &folder_key(&service),
-        )?;
-        scopes.preview(&service, &account, &input, &inventory)
+        preview_action(&service, &account, &workspace, &input)
     })
     .await
     .map(Json)
+}
+
+/// The caller holds the workspace guard through authorization and the file operation.
+pub(super) fn preview_action(
+    service: &DocumentService,
+    account: &Account,
+    workspace: &str,
+    input: &Input,
+) -> Result<Preview, ApiError> {
+    let scopes = Scopes::open(service, account, workspace, input)?;
+    let source = scopes.source.endpoint()?;
+    let target = scopes.target.as_ref().map(Scope::endpoint).transpose()?;
+    let _source_lock = product_read(source.state)?;
+    let _target_lock = target
+        .as_ref()
+        .filter(|target| target.workspace != source.workspace)
+        .map(|target| product_read(target.state))
+        .transpose()?;
+    let inventory = storage::inspect(
+        &service.metadata,
+        &source,
+        target.as_ref(),
+        input,
+        &folder_key(service),
+    )?;
+    scopes.preview(service, account, input, &inventory)
 }
 
 async fn apply(
@@ -397,28 +407,38 @@ async fn apply(
     run(move || {
         let _guard = service.metadata.workspace_guard()?;
         let account = Account::authenticate(&service.spaces, &headers, true)?;
-        let scopes = Scopes::open(&service, &account, &workspace, &request.input)?;
-        let source = scopes.source.endpoint()?;
-        let target = scopes.target.as_ref().map(Scope::endpoint).transpose()?;
-        storage::apply(
-            &service.metadata,
-            account.username(),
-            &source,
-            target.as_ref(),
-            &request,
-            &folder_key(&service),
-            |inventory| {
-                let current = scopes.preview(&service, &account, &request.input, inventory)?;
-                if current.token == request.token {
-                    Ok(())
-                } else {
-                    Err(changed())
-                }
-            },
-        )
+        apply_action(&service, &account, &workspace, &request)
     })
     .await
     .map(Json)
+}
+
+/// The caller holds the workspace guard through authorization and the file operation.
+pub(super) fn apply_action(
+    service: &DocumentService,
+    account: &Account,
+    workspace: &str,
+    request: &Apply,
+) -> Result<ActionResult, ApiError> {
+    let scopes = Scopes::open(service, account, workspace, &request.input)?;
+    let source = scopes.source.endpoint()?;
+    let target = scopes.target.as_ref().map(Scope::endpoint).transpose()?;
+    storage::apply(
+        &service.metadata,
+        account.username(),
+        &source,
+        target.as_ref(),
+        request,
+        &folder_key(service),
+        |inventory| {
+            let current = scopes.preview(service, account, &request.input, inventory)?;
+            if current.token == request.token {
+                Ok(())
+            } else {
+                Err(changed())
+            }
+        },
+    )
 }
 
 async fn undo(

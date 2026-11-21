@@ -146,14 +146,18 @@ impl Site {
     }
     async fn propose(&self, who: &str, action: Value) -> Value {
         let url = self.claim(who).await;
-        let payload = json!({"answer":"请核对","sourceIds":[],"edits":[],"action":action});
+        let mut payload = json!({"answer":"请核对","sourceIds":[],"edits":[],"action":action});
         let (status, op) = self.http("runner", "PUT", &url, payload.clone()).await;
         assert_eq!(status, 200, "{op}");
         assert_eq!(op["status"], "needs_confirmation");
         assert_eq!(
-            self.http("runner", "PUT", &url, payload).await,
+            self.http("runner", "PUT", &url, payload.clone()).await,
             (200, op.clone())
         );
+        payload["action"]["targetPath"] = "other.md".into();
+        let (status, changed) = self.http("runner", "PUT", &url, payload).await;
+        assert_eq!(status, 409, "{changed}");
+        assert_eq!(changed["code"], "result_changed");
         op
     }
     async fn decide(&self, who: &str, verb: &str, op: &Value) -> (u16, Value) {
@@ -325,4 +329,40 @@ async fn directory_moves_or_copies_all_children_and_empty_directories_after_conf
         assert_eq!(docs[0]["id"] == f.doc, kind == "move");
         assert_eq!(f.files("source/field").exists(), kind == "copy");
     }
+}
+
+#[tokio::test]
+async fn completed_file_action_recovers_the_same_ai_receipt_after_a_lost_acknowledgement() {
+    let mut f = Site::open().await;
+    let op = f.propose("copier", f.action("copy", false)).await;
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch("CREATE TRIGGER lose_ack BEFORE UPDATE ON ai_operations WHEN NEW.status='succeeded' BEGIN SELECT RAISE(FAIL,'fixture interruption'); END;").unwrap();
+    assert_eq!(f.decide("copier", "confirm", &op).await.0, 500);
+    assert_eq!(fs::read(f.files("target/empty/Copy.md")).unwrap(), ORIGINAL);
+    db.execute_batch("DROP TRIGGER lose_ack").unwrap();
+    drop(db);
+    f.app = Router::new();
+    let config_file = f.root.path().join("spaces.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_file).unwrap()).unwrap();
+    config["target"]["members"]["copier"]["role"] = "read".into();
+    fs::write(config_file, config.to_string()).unwrap();
+    f.app = librarian::Product::open(f.root.path(), 0).unwrap().router();
+    let (status, recovered) = f
+        .http(
+            "copier",
+            "GET",
+            &format!("/ai/operations/{}", op["id"].as_str().unwrap()),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, 200, "{recovered}");
+    assert_eq!(recovered["status"], "succeeded");
+    let id = recovered["transferResult"]["documentId"].as_str().unwrap();
+    assert_ne!(id, f.doc);
+    let (status, current) = f
+        .http("copier", "GET", &format!("/documents/{id}"), Value::Null)
+        .await;
+    assert_eq!(status, 200, "{current}");
+    assert_eq!(current["document"]["path"], "empty/Copy.md");
+    assert_eq!(fs::read_dir(f.files("target/empty")).unwrap().count(), 1);
 }
