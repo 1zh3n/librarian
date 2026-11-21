@@ -198,6 +198,10 @@ struct Item {
     object: Identity,
     revision: Option<String>,
     document: Option<String>,
+    #[serde(default)]
+    target_path: Option<String>,
+    #[serde(default)]
+    copy_only: bool,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
@@ -216,6 +220,123 @@ impl Inventory {
     fn dirs(&self) -> impl DoubleEndedIterator<Item = &Item> {
         self.items.iter().filter(|item| item.revision.is_none())
     }
+}
+
+fn add_referenced_images(
+    source: &Endpoint<'_>,
+    input: &Input,
+    inventory: &mut Inventory,
+) -> Result<(), ApiError> {
+    if input.source_kind != Kind::Document {
+        return Ok(());
+    }
+    let Some(target_path) = input.target_path.as_deref() else {
+        return Ok(());
+    };
+    let source_dir = input
+        .source_path
+        .rsplit_once('/')
+        .map_or("", |(dir, _)| dir);
+    let target_dir = target_path.rsplit_once('/').map_or("", |(dir, _)| dir);
+    let target_workspace = input
+        .target_workspace
+        .as_deref()
+        .unwrap_or(source.workspace);
+    if source.workspace == target_workspace && source_dir == target_dir {
+        return Ok(());
+    }
+    let markdown = String::from_utf8(source.bytes(&input.source_path)?).map_err(|_| {
+        ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unsupported_image_reference",
+            "Markdown must be UTF-8 before moving image references",
+        )
+    })?;
+    let parser = pulldown_cmark::Parser::new_ext(
+        &markdown,
+        pulldown_cmark::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS,
+    );
+    for event in parser {
+        match event {
+            pulldown_cmark::Event::Html(html) | pulldown_cmark::Event::InlineHtml(html)
+                if html.to_ascii_lowercase().contains("<img") =>
+            {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "unsupported_image_reference",
+                    "Moving a document with a local HTML img is not supported",
+                ));
+            }
+            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Image { dest_url, .. }) => {
+                if dest_url.starts_with("http://")
+                    || dest_url.starts_with("https://")
+                    || dest_url.starts_with("data:")
+                    || dest_url.starts_with('#')
+                    || dest_url.starts_with("mailto:")
+                    || dest_url.starts_with('/')
+                {
+                    continue;
+                }
+                let Some(source_path) = resolve_relative(source_dir, &dest_url) else {
+                    return Err(ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "unsupported_image_reference",
+                        "Image reference escapes the workspace",
+                    ));
+                };
+                let Some(destination) = resolve_relative(target_dir, &dest_url) else {
+                    return Err(ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "unsupported_image_reference",
+                        "Image reference escapes the target workspace",
+                    ));
+                };
+                if source_path == destination && source.workspace == target_workspace {
+                    continue;
+                }
+                let metadata = source.attr(&source_path)?.ok_or_else(|| {
+                    ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "unsupported_image_reference",
+                        "Referenced image does not exist",
+                    )
+                })?;
+                let bytes = source.bytes(&source_path)?;
+                inventory.items.push(Item {
+                    path: source_path,
+                    object: Identity::from(&metadata),
+                    revision: Some(sha256_hex(&bytes)),
+                    document: None,
+                    target_path: Some(destination),
+                    copy_only: true,
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn resolve_relative(base: &str, path: &str) -> Option<String> {
+    let path = percent_encoding::percent_decode_str(path)
+        .decode_utf8()
+        .ok()?;
+    let mut parts = base
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            part if part.contains('\\') || part.contains(':') => return None,
+            part => parts.push(part.to_owned()),
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 fn source_tree(
@@ -309,6 +430,8 @@ fn source_tree(
             object,
             revision,
             document,
+            target_path: None,
+            copy_only: false,
         });
     }
     items.sort_unstable_by(|a, b| a.path.cmp(&b.path));
@@ -320,6 +443,12 @@ fn source_tree(
 
 fn destination(input: &Input, path: &str) -> String {
     mapped_path(&input.source_path, input.target_path.as_deref(), path)
+}
+
+fn item_destination(input: &Input, item: &Item) -> String {
+    item.target_path
+        .clone()
+        .unwrap_or_else(|| destination(input, &item.path))
 }
 
 fn mapped_path(original: &str, target: Option<&str>, path: &str) -> String {
@@ -341,6 +470,7 @@ pub(super) fn inspect(
     folder_key: &str,
 ) -> Result<Inventory, ApiError> {
     let mut inventory = source_tree(metadata, source, input, Some(folder_key))?;
+    add_referenced_images(source, input, &mut inventory)?;
     if let Some(target) = target {
         let dst = input
             .target_path
@@ -642,6 +772,7 @@ fn require_tx(tx: Option<ManagedWrite<'_>>) -> Result<ManagedWrite<'_>, ApiError
 fn removal_edits(inventory: &Inventory) -> Vec<FileEdit> {
     inventory
         .files()
+        .filter(|item| !item.copy_only)
         .map(|i| FileEdit {
             path: i.path.clone(),
             base_revision: i.revision.clone(),
@@ -663,7 +794,7 @@ fn additions(source: &Endpoint<'_>, plan: &Plan) -> Result<Vec<FileEdit>, ApiErr
         .files()
         .map(|item| {
             Ok(FileEdit {
-                path: destination(&plan.input, &item.path),
+                path: item_destination(&plan.input, item),
                 base_revision: None,
                 contents: Some(file_contents(source, item)?),
             })
@@ -872,7 +1003,7 @@ fn verify_outputs(
         let path = if restoring {
             plan.restored_path(&item.path)
         } else {
-            destination(&plan.input, &item.path)
+            item_destination(&plan.input, item)
         };
         let attr = endpoint.attr(&path)?.ok_or_else(changed)?;
         if !attr.is_file()
@@ -998,7 +1129,8 @@ fn set_status(metadata: &Metadata, intent: &Intent, status: &str) -> Result<(), 
 }
 
 fn verify_source(metadata: &Metadata, source: &Endpoint<'_>, plan: &Plan) -> Result<(), ApiError> {
-    let current = source_tree(metadata, source, &plan.input, None).map_err(stale)?;
+    let mut current = source_tree(metadata, source, &plan.input, None).map_err(stale)?;
+    add_referenced_images(source, &plan.input, &mut current).map_err(stale)?;
     if current.items != plan.inventory.items {
         return Err(changed());
     }
@@ -1006,7 +1138,9 @@ fn verify_source(metadata: &Metadata, source: &Endpoint<'_>, plan: &Plan) -> Res
 }
 
 fn stale(err: ApiError) -> ApiError {
-    if err.is_file_conflict() || err.code() == "path_exists" {
+    if err.code() == "unsupported_image_reference" {
+        err
+    } else if err.is_file_conflict() || err.code() == "path_exists" {
         changed()
     } else {
         err

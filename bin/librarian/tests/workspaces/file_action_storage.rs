@@ -112,6 +112,156 @@ async fn file_action_cross_workspace_keeps_folder_bytes_id_and_snapshot_scope() 
 }
 
 #[tokio::test]
+async fn moving_one_document_copies_its_local_image_without_rewriting_markdown() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let ws = source["id"].as_str().unwrap();
+    let created = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/PhotoNote.md",
+                "markdown": "![bird](media/bird.png)\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
+    let id = created.1["document"]["id"].as_str().unwrap();
+    let shared = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/OtherPhoto.md",
+                "markdown": "![bird](media/bird.png)\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(shared.0, StatusCode::CREATED, "{}", shared.1);
+    fs::create_dir(f.folder(&source).join("archive")).unwrap();
+    f.file_action(
+        ws,
+        &json!({
+            "action": "move",
+            "sourceKind": "document",
+            "sourcePath": "field/PhotoNote.md",
+            "expectedDocumentId": id,
+            "targetPath": "archive/PhotoNote.md",
+            "targetWorkspace": ws,
+        }),
+        "6a5c1f6a-9e66-4f0e-9c40-6a74e2c5a3d1",
+    )
+    .await;
+    let root = f.folder(&source);
+    assert_eq!(
+        fs::read(root.join("archive/PhotoNote.md")).unwrap(),
+        b"![bird](media/bird.png)\n"
+    );
+    assert_eq!(
+        fs::read(root.join("archive/media/bird.png")).unwrap(),
+        PHOTO
+    );
+    assert_eq!(fs::read(root.join("field/media/bird.png")).unwrap(), PHOTO);
+    assert!(!root.join("field/PhotoNote.md").exists());
+}
+
+#[tokio::test]
+async fn moving_a_document_rejects_missing_or_html_image_references() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let ws = source["id"].as_str().unwrap();
+    for (path, markdown) in [
+        ("field/Missing.md", "![missing](media/missing.png)\n"),
+        ("field/Html.md", "<img src=\"media/bird.png\">\n"),
+    ] {
+        let created = f
+            .request(
+                &f.admin,
+                "POST",
+                &format!("/workspaces/{ws}/documents"),
+                json!({"path": path, "markdown": markdown, "baseRevision": null}),
+            )
+            .await;
+        assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
+    }
+    for path in ["field/Missing.md", "field/Html.md"] {
+        let (status, error) = f
+            .request(
+                &f.admin,
+                "POST",
+                &format!("/workspaces/{ws}/file-actions/preview"),
+                json!({
+                    "action": "move",
+                    "sourceKind": "document",
+                    "sourcePath": path,
+                    "targetPath": "archive/moved.md",
+                    "targetWorkspace": ws,
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+        assert_eq!(error["code"], "unsupported_image_reference", "{error}");
+    }
+}
+
+#[tokio::test]
+async fn moving_one_document_to_another_workspace_copies_its_local_image() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let src = source["id"].as_str().unwrap();
+    let (_, target) = f
+        .request(
+            &f.admin,
+            "POST",
+            "/workspaces",
+            json!({"name":"图片目标空间"}),
+        )
+        .await;
+    let dst = target["id"].as_str().unwrap();
+    let created = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{src}/documents"),
+            json!({
+                "path": "field/PhotoNote.md",
+                "markdown": "![bird](media/bird.png)\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
+    let id = created.1["document"]["id"].as_str().unwrap();
+    fs::create_dir(f.folder(&target).join("archive")).unwrap();
+    f.file_action(
+        src,
+        &json!({
+            "action": "move",
+            "sourceKind": "document",
+            "sourcePath": "field/PhotoNote.md",
+            "expectedDocumentId": id,
+            "targetPath": "archive/PhotoNote.md",
+            "targetWorkspace": dst,
+        }),
+        "15ebcc21-6b18-4ee9-a747-87ce29f7e9dc",
+    )
+    .await;
+    assert_eq!(
+        fs::read(f.folder(&target).join("archive/media/bird.png")).unwrap(),
+        PHOTO
+    );
+    assert_eq!(
+        fs::read(f.folder(&source).join("field/media/bird.png")).unwrap(),
+        PHOTO
+    );
+}
+
+#[tokio::test]
 async fn file_action_copy_delete_undo_retain_separate_identities_and_new_occupant() {
     let mut f = Fixture::open();
     let source = f.legacy().await;
