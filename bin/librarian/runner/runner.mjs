@@ -19,6 +19,14 @@ const TASK_DIAGNOSTICS = {
   DOCUMENT_UNAVAILABLE: "引用的文档已不可用，请重新选择后重试。",
   workspace_manage_required: "当前账户缺少管理此工作区的权限。",
 };
+const GLOBAL_DIAGNOSTICS = {
+  INVALID_TOOL_CALL: "操作中有未能执行的工具调用，已取消本次写入。",
+  MIXED_CHANGES: "请将不同工作区的写入、文件转移和工作区管理操作分开发送。",
+  UNKNOWN_WORKSPACE: "请先从当前可访问的工作区中选择目标。",
+  read_only: "当前账户缺少写入此工作区的权限。",
+  path_exists: "目标路径已有同名文件或目录，请选择其他路径。",
+  file_action_changed: "源或目标已变更，请重新核对后再操作。",
+};
 
 function closedLease(error) {
   return error.code === "lease_inactive" || [401, 403, 404, 410].includes(error.status);
@@ -35,6 +43,9 @@ function classify(error) {
     case "TRANSPORT":
     case "SERVER":
     case "API_TRANSPORT":
+    case "read_only":
+    case "path_exists":
+    case "file_action_changed":
     case "API_ERROR":
       return "unavailable";
     default:
@@ -201,6 +212,7 @@ async function runLease(claim, api, settings, shutdown) {
         ca: settings.ca,
         taskKind: claim.taskKind,
         mode: probe ? undefined : claim.input.mode,
+        scope: claim.input?.scope,
         prompt: chat?.prompt,
       },
       chat?.tools ?? [],
@@ -220,9 +232,13 @@ async function runLease(claim, api, settings, shutdown) {
     if (signal.aborted || error.code === "lease_inactive" || [401, 410].includes(error.status)) return;
     // A lost result receipt may already have committed; allow server-side recovery.
     // A definitive rejection can concern the proposed action on an otherwise active lease.
-    if (submitting && ![400, 403, 404, 413, 422].includes(error.status)) throw error;
+    const global = claim.input?.scope === "global";
+    const globalConflict = global && error.status === 409 &&
+      ["revision_conflict", "path_exists", "file_action_changed"].includes(error.code);
+    if (submitting && !globalConflict && ![400, 403, 404, 413, 422].includes(error.status)) throw error;
     const code = classify(error);
-    const text = TASK_DIAGNOSTICS[error.code] ?? DIAGNOSTICS[code];
+    const actionText = global ? GLOBAL_DIAGNOSTICS[error.code] : undefined;
+    const text = actionText ?? TASK_DIAGNOSTICS[error.code] ?? DIAGNOSTICS[code];
     try {
       await client("fail", "POST", claim.taskKind === "probe" ? { code, text } : { text });
     } catch (failure) {

@@ -44,7 +44,8 @@ export function apiClient(librarianUrl, identity) {
         if (!response.ok) {
           const { code } = await response.json().catch(() => ({}));
           throw new TaskError(
-            ["not_found", "lease_inactive", "revision_conflict", "workspace_manage_required"].includes(code)
+            ["not_found", "lease_inactive", "revision_conflict", "workspace_manage_required",
+              "read_only", "path_exists", "file_action_changed"].includes(code)
               ? code
               : "API_ERROR",
             response.status,

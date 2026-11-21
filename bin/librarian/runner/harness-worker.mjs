@@ -36,7 +36,7 @@ function request(kind, data) {
   });
 }
 
-async function execute({ provider, selection, ca, taskKind, mode, tools, prompt }) {
+async function execute({ provider, selection, ca, taskKind, mode, scope, tools, prompt }) {
   const probe = taskKind === "probe";
   const defaultBudget = probe ? 64 : 8192;
   const limit = selection.maxOutputTokens;
@@ -166,6 +166,12 @@ async function execute({ provider, selection, ca, taskKind, mode, tools, prompt 
       const events = agent.session.snapshotEvents();
       const end = events.findLast((e) => e.type === "turn/end")?.data.reason;
       if (end?.kind !== "completed") throw new TaskError(end?.error?.code ?? "INCOMPLETE");
+      // Harness can complete after rejecting an unknown tool or its arguments before dispatch.
+      // In a global edit this would submit the successful part of a multi-action request.
+      if (scope === "global" && mode === "edit" &&
+        events.some(e => e.type === "tool/result" && e.data.message.isError)) {
+        throw new TaskError("INVALID_TOOL_CALL");
+      }
       return events
         .findLast((e) => e.type === "assistant/message")
         ?.data.message.content.filter((b) => b.type === "text")
@@ -208,6 +214,7 @@ try {
     "UNSUPPORTED_CONTENT",
     "INCOMPLETE",
     "INVALID_ANSWER",
+    "INVALID_TOOL_CALL",
     "UNKNOWN",
     "TRANSPORT",
     "SERVER",
