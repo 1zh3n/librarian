@@ -20,6 +20,18 @@ declare const styles: {
   readonly detail: string;
   readonly controls: string;
   readonly section: string;
+  readonly modelFacts: string;
+  readonly modelFactsBody: string;
+  readonly modelDisclosureHint: string;
+  readonly modelDisclosureTrigger: string;
+  readonly modelDisclosureTitle: string;
+  readonly modelDisclosure: string;
+  readonly modelId: string;
+  readonly modelSummary: string;
+  readonly aiDisclosureBody: string;
+  readonly aiDisclosureTrigger: string;
+  readonly aiDisclosureHint: string;
+  readonly aiDisclosure: string;
   readonly refresh: string;
 };
 export default styles;

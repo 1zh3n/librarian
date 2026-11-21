@@ -5,6 +5,7 @@ import { ApiError, getAiSettings, setAiGlobalEnabled, setAiPreference } from "..
 import type { AiSettingsView, ModelSelection } from "../../api/client";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Forms";
+import { Disclosure } from "../../ui/Disclosure";
 import { AiConnectionForm } from "./AiConnectionForm";
 import { ModelChoices, availableChoice, choiceLabel } from "./ModelChoices";
 import styles from "./ReadingSettings.module.css";
@@ -120,6 +121,8 @@ export function AiSettings({
   const [savedSelection, setSavedSelection] = useState<ModelSelection>();
   const [editing, setEditing] = useState<string>();
   const [epoch, setEpoch] = useState(0);
+  const [showConnections, setShowConnections] = useState(true);
+  const [showGlobal, setShowGlobal] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const lock = useRef(false);
@@ -184,72 +187,89 @@ export function AiSettings({
         {view.dispatchMode === "legacy" ? "现有执行器" : "受管执行器"}
       </p>
       <fieldset className={styles.controls} disabled={busy} aria-busy={busy}>
-        {isAdmin && (
-          <section aria-label="管理连接" className={styles.section}>
-            {view.connections.length > 0 && (
-              <Select
-                className={styles.field}
-                label="管理连接"
-                value={connection?.id ?? "new"}
-                entries={[
-                  ...view.connections.map((item) => ({ value: item.id, label: item.label })),
-                  { value: "new", label: "新增连接" },
-                ]}
-                onChange={(id) => {
-                  setEditing(id);
-                  setSavedSelection(undefined);
-                  setError("");
-                  setMessage("");
-                }}
-              />
-            )}
-            <AiConnectionForm
-              key={JSON.stringify([connection?.id, epoch])}
-              connection={connection}
-              initialChoice={
-                connection && savedSelection?.connectionId === connection.id
-                  ? savedSelection
-                  : undefined
-              }
-              settings={view}
-              active={active}
-              saved={(id, choice) => {
-                setSavedSelection(id && choice ? { connectionId: id, ...choice } : undefined);
-                setEditing(id);
-                setEpoch((n) => n + 1);
-              }}
-              write={write}
-              refreshSettings={() => query.refetch()}
-              applySnapshot={applySnapshot}
-            />
-          </section>
-        )}
         <PreferenceForm key={JSON.stringify([view.preference, epoch])} view={view} write={write} />
+        {isAdmin && (
+          <Disclosure
+            title="连接配置"
+            expanded={showConnections}
+            onChange={setShowConnections}
+            className={styles.aiDisclosure}
+            triggerClassName={styles.aiDisclosureTrigger}
+            bodyClassName={styles.aiDisclosureBody}
+          >
+            <section aria-label="管理连接" className={styles.section}>
+              {view.connections.length > 0 && (
+                <Select
+                  className={styles.field}
+                  label="管理连接"
+                  value={connection?.id ?? "new"}
+                  entries={[
+                    ...view.connections.map((item) => ({ value: item.id, label: item.label })),
+                    { value: "new", label: "新增连接" },
+                  ]}
+                  onChange={(id) => {
+                    setEditing(id);
+                    setSavedSelection(undefined);
+                    setError("");
+                    setMessage("");
+                  }}
+                />
+              )}
+              <AiConnectionForm
+                key={JSON.stringify([connection?.id, epoch])}
+                connection={connection}
+                initialChoice={
+                  connection && savedSelection?.connectionId === connection.id
+                    ? savedSelection
+                    : undefined
+                }
+                settings={view}
+                active={active}
+                saved={(id, choice) => {
+                  setSavedSelection(id && choice ? { connectionId: id, ...choice } : undefined);
+                  setEditing(id);
+                  setEpoch((n) => n + 1);
+                }}
+                write={write}
+                refreshSettings={() => query.refetch()}
+                applySnapshot={applySnapshot}
+              />
+            </section>
+          </Disclosure>
+        )}
         {isAdmin ? (
-          <section aria-label="全局 AI" className={styles.section}>
-            <h3>全局 AI</h3>
-            <p className={styles.detail}>受管执行器{view.runnerOnline ? "在线" : "离线"}</p>
-            <Button
-              className={styles.refresh}
-              isDisabled={query.isFetching}
-              onPress={() => void query.refetch()}
-            >
-              刷新服务状态
-            </Button>
-            {view.defaultSelection && (
-              <p className={styles.detail}>
-                全局默认 · {choiceLabel(view.connections, view.defaultSelection)}
-              </p>
-            )}
-            <Button
-              className={styles.refresh}
-              onPress={() =>
-                void write(() => setAiGlobalEnabled(!view.globalEnabled), "全局 AI 状态已更新。")
-              }
-            >
-              {view.globalEnabled ? "暂停全局 AI" : "恢复全局 AI"}
-            </Button>
-          </section>
+          <Disclosure
+            title="全局 AI 与执行器"
+            expanded={showGlobal}
+            onChange={setShowGlobal}
+            className={styles.aiDisclosure}
+            triggerClassName={styles.aiDisclosureTrigger}
+            bodyClassName={styles.aiDisclosureBody}
+          >
+            <section aria-label="全局 AI" className={styles.section}>
+              <p className={styles.detail}>受管执行器{view.runnerOnline ? "在线" : "离线"}</p>
+              <Button
+                className={styles.refresh}
+                isDisabled={query.isFetching}
+                onPress={() => void query.refetch()}
+              >
+                刷新服务状态
+              </Button>
+              {view.defaultSelection && (
+                <p className={styles.detail}>
+                  全局默认 · {choiceLabel(view.connections, view.defaultSelection)}
+                </p>
+              )}
+              <Button
+                className={styles.refresh}
+                onPress={() =>
+                  void write(() => setAiGlobalEnabled(!view.globalEnabled), "全局 AI 状态已更新。")
+                }
+              >
+                {view.globalEnabled ? "暂停全局 AI" : "恢复全局 AI"}
+              </Button>
+            </section>
+          </Disclosure>
         ) : (
           <p className={styles.detail}>模型连接由服务器管理员配置。</p>
         )}

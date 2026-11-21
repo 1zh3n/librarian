@@ -95,7 +95,9 @@ test("top_bar_discovers_models_before_first_chat", async ({ page }) => {
     .info()
     .attach("desktop-catalog", { body: await page.screenshot(), contentType: "image/png" });
   await expect(dialog.getByText("model-a", { exact: true })).toBeVisible();
-  await expect(dialog.getByText(/输入.*text.*image/)).toBeVisible();
+  const capability = dialog.getByRole("button", { name: /模型能力/ });
+  await expect(capability).toContainText("输入 文本、图片");
+  await expect(capability).toContainText("输出 文本");
   const effort = dialog.getByRole("button", { name: /思考等级/ });
   await expect(effort).toContainText("供应商默认");
   await expect(effort).toContainText("quick");

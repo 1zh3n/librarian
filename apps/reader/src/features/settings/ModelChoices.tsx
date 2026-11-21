@@ -5,10 +5,35 @@ import type {
   ThinkingSelection,
 } from "../../api/client";
 import { Select } from "../../ui/Forms";
+import { Disclosure } from "../../ui/Disclosure";
 import styles from "./ReadingSettings.module.css";
 
 export type ModelChoice = Pick<ModelSelection, "modelId" | "thinking">;
 const defaultThinking: ThinkingSelection = { mode: "provider_default" };
+
+const modalityLabels: Record<string, string> = {
+  text: "文本",
+  image: "图片",
+  audio: "音频",
+  video: "视频",
+};
+
+function modalityText(values: string[] | undefined) {
+  return values?.length
+    ? values.map((value) => modalityLabels[value] ?? value).join("、")
+    : undefined;
+}
+
+function compactTokens(value: number | undefined) {
+  if (value === undefined) return undefined;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(value);
+}
+
+function exactTokens(value: number | undefined) {
+  return value?.toLocaleString("zh-CN");
+}
 
 export function availableChoice(
   models: DiscoveredModel[],
@@ -89,17 +114,67 @@ export function ModelChoices({
           }
         />
       </div>
-      <div className={styles.detail}>
-        {model.name && <p>{model.id}</p>}
-        {!!model.inputModalities?.length && <p>输入 · {model.inputModalities.join("、")}</p>}
-        {!!model.outputModalities?.length && <p>输出 · {model.outputModalities.join("、")}</p>}
-        {model.contextWindow != null && (
-          <p>上下文窗口 · {model.contextWindow.toLocaleString()} tokens</p>
-        )}
-        {model.maxOutputTokens != null && (
-          <p>最大输出 · {model.maxOutputTokens.toLocaleString()} tokens</p>
-        )}
-        {!levels.length && <p>供应商未提供思考等级。</p>}
+      <div className={styles.modelSummary}>
+        {model.name && <p className={styles.modelId}>{model.id}</p>}
+        {(() => {
+          const input = modalityText(model.inputModalities);
+          const output = modalityText(model.outputModalities);
+          const context = compactTokens(model.contextWindow);
+          const hasFacts = Boolean(
+            input || output || context !== undefined || model.maxOutputTokens !== undefined,
+          );
+          if (!hasFacts) {
+            return <p className={styles.detail}>供应商未提供模型能力信息。</p>;
+          }
+          const summary = [
+            input && `输入 ${input}`,
+            output && `输出 ${output}`,
+            context && `${context} 上下文`,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <Disclosure
+              title={
+                <span className={styles.modelDisclosureTitle}>
+                  <span>模型能力</span>
+                  <span className={styles.modelDisclosureHint}>{summary}</span>
+                </span>
+              }
+              className={styles.modelDisclosure}
+              triggerClassName={styles.modelDisclosureTrigger}
+              bodyClassName={styles.modelFactsBody}
+            >
+              <dl className={styles.modelFacts} aria-label="模型能力">
+                {input && (
+                  <div>
+                    <dt>输入</dt>
+                    <dd>{input}</dd>
+                  </div>
+                )}
+                {output && (
+                  <div>
+                    <dt>输出</dt>
+                    <dd>{output}</dd>
+                  </div>
+                )}
+                {model.contextWindow !== undefined && (
+                  <div>
+                    <dt>上下文窗口</dt>
+                    <dd>{exactTokens(model.contextWindow)} tokens</dd>
+                  </div>
+                )}
+                {model.maxOutputTokens !== undefined && (
+                  <div>
+                    <dt>最大输出</dt>
+                    <dd>{exactTokens(model.maxOutputTokens)} tokens</dd>
+                  </div>
+                )}
+              </dl>
+            </Disclosure>
+          );
+        })()}
+        {!levels.length && <p className={styles.detail}>供应商未提供思考等级。</p>}
       </div>
     </>
   );

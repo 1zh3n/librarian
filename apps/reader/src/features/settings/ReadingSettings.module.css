@@ -12,17 +12,19 @@
 .modal {
   container-type: inline-size;
   width: min(100%, 38rem);
-  max-height: calc(100dvh - 2rem);
-  scroll-padding-block: 0.5rem;
-  overflow: auto;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
 }
 
 .modalWide {
+  container-type: inline-size;
   width: min(100%, 44rem);
+}
+
+.modal,
+.modalWide {
+  block-size: min(82dvh, 46rem);
   max-height: calc(100dvh - 2rem);
+  scrollbar-gutter: stable;
+  scroll-padding-block: 0.5rem;
   overflow: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -53,10 +55,14 @@
 }
 
 .tabList {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
   max-width: 100%;
   flex-wrap: wrap;
   padding: 0;
   border-block-end: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .tab {
@@ -226,6 +232,132 @@
 .section + .section {
   border-block-start: 1px solid var(--border);
   padding-block-start: 1rem;
+}
+
+.aiDisclosure {
+  display: grid;
+  gap: 0.5rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.aiDisclosure:first-of-type {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.aiDisclosureTrigger {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  text-align: start;
+}
+
+.aiDisclosureHint {
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.aiDisclosureBody {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.modelSummary {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.modelId {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  overflow-wrap: anywhere;
+}
+
+.modelDisclosure {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  padding-block-start: 0.25rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.modelDisclosureTrigger {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: var(--ui-size);
+  text-align: start;
+}
+
+.modelDisclosureTitle {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.modelDisclosureHint {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.modelFactsBody {
+  padding-block: 0.35rem;
+}
+
+.modelFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.875rem;
+  margin: 0;
+}
+
+.modelFacts > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.modelFacts dt {
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+.modelFacts dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--ui-size);
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 22rem) {
+  .modelFacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @container (max-width: 13rem) {
