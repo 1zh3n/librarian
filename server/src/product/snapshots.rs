@@ -12,7 +12,7 @@ use axum::{
     },
     http::{header, HeaderMap, StatusCode},
     response::Response,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -54,7 +54,10 @@ pub(super) fn migrate(tx: &Transaction<'_>) -> rusqlite::Result<()> {
 
 pub(super) fn routes() -> Router<Arc<DocumentService>> {
     Router::new()
-        .route("/workspaces/{workspace}/snapshots", post(create))
+        .route(
+            "/workspaces/{workspace}/snapshots",
+            get(list_snapshots).post(create),
+        )
         .route("/snapshots/{snapshot}", get(read).delete(revoke))
         .route("/snapshots/{snapshot}/assets/{*path}", get(asset))
 }
@@ -119,6 +122,18 @@ struct Snapshot {
 struct ShareLink {
     id: String,
     url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShareLinkSummary {
+    id: String,
+    url: String,
+    kind: Kind,
+    audience: Audience,
+    expires_at: Option<i64>,
+    commit_id: Option<String>,
+    document_count: usize,
 }
 
 #[derive(Deserialize)]
@@ -240,6 +255,55 @@ async fn create(
     .await
 }
 
+async fn list_snapshots(
+    State(service): State<Arc<DocumentService>>,
+    Path(workspace): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ShareLinkSummary>>, ApiError> {
+    let account = Account::authenticate(&service.spaces, &headers, false)?;
+    run(move || {
+        let _workspace = service.metadata.workspace_guard()?;
+        service.scope(&account, &workspace, true)?;
+        active_workspace(&service.metadata, &workspace)?;
+        let workspace_expiry = workspace_expiry(&service.metadata, &workspace)?;
+        let connection = service.metadata.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT key, expires_at, commit_id, manifest
+             FROM reader_snapshots
+             WHERE workspace_id = ?1 AND active = 1
+             ORDER BY rowid DESC",
+        )?;
+        let rows = statement.query_map([&workspace], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut links = Vec::new();
+        for row in rows {
+            let (key, expires_at, commit_id, manifest) = row?;
+            let manifest: Manifest = serde_json::from_str(&manifest).map_err(ApiError::internal)?;
+            let expires_at = expires_at.into_iter().chain(workspace_expiry).min();
+            if super::workspace::expired(expires_at) {
+                continue;
+            }
+            links.push(ShareLinkSummary {
+                url: format!("/r/{key}"),
+                id: key,
+                kind: manifest.kind,
+                audience: manifest.audience,
+                expires_at,
+                commit_id,
+                document_count: manifest.documents.len(),
+            });
+        }
+        Ok(Json(links))
+    })
+    .await
+}
+
 fn create_locked(
     metadata: &Metadata,
     state: &ServerState,
@@ -353,7 +417,14 @@ fn lookup(metadata: &Metadata, key: &str) -> Result<Snapshot, ApiError> {
     })
 }
 
-fn secret_key(id: &str) -> Result<String, ApiError> {
+fn snapshot_key(id: &str) -> Result<String, ApiError> {
+    if id.len() == 64
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Ok(id.to_owned());
+    }
     if id.len() != 32
         || !id
             .bytes()
@@ -382,7 +453,7 @@ fn with_snapshot<T>(
     id: &str,
     read: impl FnOnce(Snapshot, &ServerState) -> Result<T, ApiError>,
 ) -> Result<T, ApiError> {
-    let key = secret_key(id)?;
+    let key = snapshot_key(id)?;
     let initial = lookup(&service.metadata, &key)?;
     let instance = workspace_instance(service, &initial.workspace)?;
     let state = state(&instance)?;
@@ -641,7 +712,7 @@ async fn revoke(
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     run(move || {
         let _workspace = service.metadata.workspace_guard()?;
-        let key = secret_key(&id)?;
+        let key = snapshot_key(&id)?;
         let snapshot = lookup(&service.metadata, &key)?;
         let (instance, _) = service.scope(&account, &snapshot.workspace, true)?;
         let state = state(&instance)?;

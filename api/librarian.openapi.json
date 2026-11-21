@@ -3329,6 +3329,44 @@
       }
     },
     "/workspaces/{workspace}/snapshots": {
+      "get": {
+        "operationId": "listSnapshots",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotLinkSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
       "post": {
         "operationId": "createSnapshot",
         "responses": {
@@ -7802,6 +7840,57 @@
           },
           "url": {
             "type": "string"
+          }
+        }
+      },
+      "SnapshotLinkSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "kind",
+          "audience",
+          "expiresAt",
+          "commitId",
+          "documentCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "current",
+              "release"
+            ]
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "members",
+              "share"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "commitId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentCount": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },

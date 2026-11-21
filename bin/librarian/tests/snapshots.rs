@@ -363,6 +363,74 @@ async fn current_tracks_the_document_and_release_preserves_selected_git_bytes_af
 }
 
 #[tokio::test]
+async fn listed_links_survive_restart_and_revoke_by_public_key() {
+    let mut f = Fixture::new();
+    let (workspace, document, _) = f.scope().await;
+    let current = f
+        .create(
+            &workspace,
+            json!({"kind": "current", "documentIds": [document]}),
+        )
+        .await;
+    let release = f
+        .create(
+            &workspace,
+            json!({"kind": "release", "audience": "share", "documentIds": [document]}),
+        )
+        .await;
+    let path = format!("/workspaces/{workspace}/snapshots");
+    let listed = f.get_json(&path, Some(&f.writer)).await;
+    assert_eq!(listed.as_array().unwrap().len(), 2);
+    let newest = &listed[0];
+    assert_eq!(newest["kind"], "release");
+    assert_eq!(newest["audience"], "share");
+    assert_eq!(newest["documentCount"], 1);
+    assert!(newest["expiresAt"].is_null());
+    let key = newest["id"].as_str().unwrap();
+    assert_eq!(key.len(), 64);
+    assert_eq!(newest["url"], format!("/r/{key}"));
+    assert_eq!(
+        f.get_json(&format!("/snapshots/{key}"), None).await["kind"],
+        "release"
+    );
+
+    f.restart();
+    let after = f.get_json(&path, Some(&f.writer)).await;
+    let keys = after
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|link| link["id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(keys.len(), 2);
+    let current_key = after
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|link| link["kind"] == "current")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, _, _) = f
+        .request(
+            "DELETE",
+            &format!("/snapshots/{current_key}"),
+            Some(&f.writer),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let remaining = f.get_json(&path, Some(&f.writer)).await;
+    assert_eq!(remaining.as_array().unwrap().len(), 1);
+    assert_eq!(remaining[0]["kind"], "release");
+    f.denied("GET", &path, Some(&f.reader), StatusCode::FORBIDDEN)
+        .await;
+    assert_eq!(current.len(), 43);
+    assert_eq!(release.len(), 43);
+}
+
+#[tokio::test]
 async fn member_permissions_are_live_and_share_revocation_covers_direct_assets() {
     let f = Fixture::new();
     let (workspace, document, _) = f.scope().await;

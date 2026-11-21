@@ -62,6 +62,7 @@ export type DeliveryToken = components["schemas"]["DeliveryToken"];
 type IssuedDeliveryToken = components["schemas"]["IssuedDeliveryToken"];
 export type CreateSnapshot = components["schemas"]["CreateSnapshot"];
 export type SnapshotLink = components["schemas"]["SnapshotLink"];
+export type SnapshotLinkSummary = components["schemas"]["SnapshotLinkSummary"];
 export type Snapshot = components["schemas"]["ReaderSnapshot"];
 
 export type BackupSettings = components["schemas"]["BackupSettings"];
@@ -567,6 +568,9 @@ export const api = {
     return request<Publication>(`/publications/${encodeURIComponent(id)}/confirm`, undefined, {
       method: "POST",
     });
+  },
+  listSnapshots(workspace: string, signal?: AbortSignal) {
+    return request<SnapshotLinkSummary[]>(`${workspacePath(workspace)}/snapshots`, signal);
   },
   createSnapshot(workspace: string, body: CreateSnapshot) {
     return request<SnapshotLink>(`${workspacePath(workspace)}/snapshots`, undefined, {

@@ -763,7 +763,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    get: operations["listSnapshots"];
     put?: never;
     post: operations["createSnapshot"];
     delete?: never;
@@ -1930,6 +1930,17 @@ export interface components {
     SnapshotLink: {
       id: string;
       url: string;
+    };
+    SnapshotLinkSummary: {
+      id: string;
+      url: string;
+      /** @enum {string} */
+      kind: "current" | "release";
+      /** @enum {string} */
+      audience: "members" | "share";
+      expiresAt: number | null;
+      commitId: string | null;
+      documentCount: number;
     };
     SnapshotDocumentSummary: {
       id: string;
@@ -5117,6 +5128,37 @@ export interface operations {
         };
         content: {
           "application/octet-stream": string;
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listSnapshots: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SnapshotLinkSummary"][];
         };
       };
       /** @description Request could not be completed */
