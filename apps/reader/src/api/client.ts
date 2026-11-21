@@ -82,6 +82,8 @@ type RestoreRevision = operations["restoreDocument"]["requestBody"]["content"]["
 type ErrorBody = components["schemas"]["ApiError"];
 type BrowserSession = components["schemas"]["BrowserSession"];
 export type AccountSummary = components["schemas"]["AccountSummary"];
+export type McpSettings = components["schemas"]["McpSettings"];
+export type McpGrant = components["schemas"]["McpGrant"];
 type CreateAccount = components["schemas"]["CreateAccount"];
 type UpdateAccount = components["schemas"]["UpdateAccount"];
 type ReplaceAccountPassword = components["schemas"]["ReplaceAccountPassword"];
@@ -387,6 +389,23 @@ export const api = {
   },
   listAccounts(signal?: AbortSignal) {
     return request<AccountSummary[]>("/accounts", signal);
+  },
+  getMcpSettings(signal?: AbortSignal) {
+    return request<McpSettings>("/mcp/settings", signal);
+  },
+  setMcpEnabled(enabled: boolean) {
+    return request<McpSettings>("/mcp/settings", undefined, {
+      method: "PUT",
+      body: { enabled },
+    });
+  },
+  listMcpGrants(signal?: AbortSignal) {
+    return request<McpGrant[]>("/mcp/grants", signal);
+  },
+  revokeMcpGrant(id: string) {
+    return request<void>(`/mcp/grants/${encodeURIComponent(id)}`, undefined, {
+      method: "DELETE",
+    });
   },
   createAccount(body: CreateAccount) {
     return request<AccountSummary>("/accounts", undefined, { method: "POST", body });
