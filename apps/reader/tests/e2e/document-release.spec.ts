@@ -62,7 +62,7 @@ test("shows the deployment path when no backup target is configured", async ({ p
   await expect(panel.getByRole("button", { name: "立即备份" })).toHaveCount(0);
 });
 
-test("configures a Workspace backup and reloads its confirmed Git receipt", async ({ page }) => {
+test("retries unsaved backup settings and reloads the confirmed Git receipt", async ({ page }) => {
   const workspace = await workspaceAsAdmin(page, "浏览器本地备份");
   const { commitId } = await deliver(page, workspace.id, "browser-backup");
   await page.goto(`/workspaces/${workspace.id}/manage`);
@@ -76,7 +76,30 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
   await page.getByRole("option", { name: "本地备份" }).click();
   await panel.getByRole("button", { name: /备份粒度/ }).click();
   await page.getByRole("option", { name: "逐操作" }).click();
-  await panel.getByRole("button", { name: "保存备份设置" }).click();
+  const settingsPath = `**/api/v1/workspaces/${workspace.id}/backup`;
+  const save = panel.getByRole("button", { name: "保存备份设置" });
+  await page.route(settingsPath, (route) =>
+    route.request().method() === "PUT" ? route.abort("connectionreset") : route.continue(),
+  );
+  await save.press("Enter");
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel.getByRole("button", { name: /备份目标/ })).toContainText("本地备份");
+  await expect(panel.getByRole("button", { name: /备份粒度/ })).toContainText("逐操作");
+  await expect(panel.getByRole("button", { name: "立即备份" })).toBeDisabled();
+  await expect(panel.getByRole("alert")).toContainText("重试保存");
+
+  await page.unroute(settingsPath);
+  const response = page.waitForResponse(
+    (entry) => entry.request().method() === "PUT" && entry.url().endsWith("/backup"),
+  );
+  await save.press("Enter");
+  const confirmed = await response;
+  expect(confirmed.ok()).toBe(true);
+  expect(await confirmed.json()).toMatchObject({
+    targetId: "fixture-backup",
+    mode: "each-operation",
+  });
+  await expect(panel.getByRole("alert")).toHaveCount(0);
   await expect(panel.getByText("备份设置已保存")).toBeVisible();
   await expect(panel).toContainText("已选择目标，尚未备份");
   await expect(panel).toContainText("workspace-backup");
@@ -90,6 +113,42 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
   await page.reload();
   await expect(panel.getByText("备份已完成")).toBeVisible();
   await expect(panel.getByRole("button", { name: /逐操作.*备份粒度/ })).toBeVisible();
+
+  // Hold the confirmed settings response while the user edits the next draft.
+  const mode = panel.getByRole("button", { name: /备份粒度/ });
+  await mode.click();
+  await page.getByRole("option", { name: "按批聚合" }).click();
+  let releaseResponse!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  await page.route(settingsPath, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const result = await route.fetch();
+    await hold;
+    await route.fulfill({ response: result });
+  });
+  try {
+    await save.press("Enter");
+    await expect(panel.getByRole("button", { name: "正在保存…" })).toBeDisabled();
+    await mode.press("Enter");
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await expect(mode).toContainText("逐操作");
+  } finally {
+    releaseResponse();
+  }
+  await expect(save).toBeEnabled();
+  await expect(mode).toContainText("逐操作");
+  await expect(panel.getByRole("button", { name: "立即备份" })).toBeDisabled();
+  await expect(panel.getByText("备份设置已保存")).toHaveCount(0);
+  const stored = await page.request.get(`/api/v1/workspaces/${workspace.id}/backup`);
+  expect(await stored.json()).toMatchObject({ targetId: "fixture-backup", mode: "grouped" });
+  await page.unroute(settingsPath);
+  await save.press("Enter");
+  await expect(panel.getByText("备份设置已保存")).toBeVisible();
+  await page.reload();
+  await expect(mode).toContainText("逐操作");
 
   // Supply persisted failed and interrupted states while keeping retries on the real product API.
   for (const { status, label } of [

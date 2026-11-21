@@ -34,13 +34,14 @@ export function BackupPanel({ workspace }: { workspace: string }) {
 
   const settings = useMutation({
     mutationFn: (body: SaveBackupSettings) => api.saveBackup(workspace, body),
-    onSuccess: (result) => {
+    onSuccess: (result, submitted) => {
       client.setQueryData(key, result);
-      setEdited(undefined);
+      setEdited((draft) =>
+        draft?.targetId === submitted.targetId && draft.mode === submitted.mode ? undefined : draft,
+      );
       operation.current = undefined;
     },
     onError: () => {
-      setEdited(undefined);
       void client.invalidateQueries({ queryKey: key, exact: true });
     },
   });
@@ -153,7 +154,7 @@ export function BackupPanel({ workspace }: { workspace: string }) {
           )}
           {settings.isError && (
             <Feedback tone="error" className={styles.status}>
-              无法保存备份设置。
+              无法确认备份设置，请重试保存。
             </Feedback>
           )}
           <div className={styles.actions}>

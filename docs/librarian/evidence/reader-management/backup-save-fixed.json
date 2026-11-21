@@ -1,0 +1,33 @@
+{
+  "phase": "fixed",
+  "viewport": [
+    1440,
+    900
+  ],
+  "submissions": [
+    {
+      "targetId": "fixture-backup",
+      "mode": "each-operation"
+    },
+    {
+      "targetId": "fixture-backup",
+      "mode": "each-operation"
+    }
+  ],
+  "error": "无法确认备份设置，请重试保存。",
+  "target": "本地备份",
+  "mode": "逐操作",
+  "backupDisabled": true,
+  "confirmed": {
+    "targetId": "fixture-backup",
+    "mode": "each-operation"
+  },
+  "readyAfterSave": true,
+  "afterSlowResponse": {
+    "confirmedMode": "grouped",
+    "visibleDraft": "逐操作",
+    "backupDisabled": true,
+    "reportsSaved": 0
+  },
+  "afterReload": "逐操作"
+}

@@ -1,6 +1,6 @@
 # 管理与只读阅读的组件迁移验收
 
-**结论**　指定集成包在 4282 的 19 项管理与快照产品用例全部通过，五条逐页操作路径均能到达预期结果。旧固定稿通过停服冷启动、原地址升级与移除后断网复核。仍需修正两项迁移前已有的问题。Git 备份设置提交失败会丢失草稿，导入与发布有多余的容器焦点框。[集成回归明细](evidence/reader-management/after-regression.json)
+**结论**　两项问题均已验证完成。Git 备份保存失败会保留草稿，慢响应也会保留提交后更新的选择。管理 Tabs 的键盘焦点只落在当前控件或直接受焦的面板。旧固定稿通过停服冷启动、原地址升级与移除后断网复核。[最终同状态验证](#最终同状态验证) · [旧副本验证](#跨版本的旧副本)
 
 ## 范围与对照
 
@@ -24,15 +24,15 @@
 
 基线针对管理与快照的 19 项产品浏览器用例全部通过，含只读成员仅能查导入记录、旧管理页锚点、固定稿附件、撤销地址、登出及换号清理离线副本。另延迟账号创建请求，实测等待中按钮显示「正在创建…」并禁用，重复 Enter 仅产生一个 POST。[19 项回归明细](evidence/reader-management/before-regression.json) · [必填、键盘、悬停、按下和等待状态](evidence/reader-management/before-states.json)
 
-## 集成包复测
+## 修复前集成包复测
 
 在 4282 运行 4290 验收进程的同一份 fixture 二进制，两边返回相同的静态资源清单。共享工作树的 `dist` 在并行构建中已变化，因此以运行中的二进制和资源摘要标识这次验收。fixture SHA-256 为 `b2481eeeea6f1737d66b5538cf093ba176ee6f2707886a656e3064aeab94e62b`，资源清单 SHA-256 为 `03584b18388cda6f8e8a3c74dd0a74623cdb415c8b868cf40f1dbb5ee6ded05e`。
 
 | 路径与判定 | 相同操作在集成包上的结果 | 同状态画面 |
 | --- | --- | --- |
-| 外部导入 · 重试通过，焦点画面需修 | 键盘选择、空文件校验、丢回执后同请求重试均通过。错误提示增加红色左边线，保留文字恢复办法。「重试导入」仍在 y=440，高 40 px。按钮聚焦时整个设置容器也有蓝框。 | [迁移前](evidence/reader-management/before-import-retry.png) · [集成后](evidence/reader-management/after-import-retry.png) |
-| Git 备份 · 操作通过，草稿需修 | 下拉现用图标箭头。打开后，已选项有底色，End 指向的候选项有焦点环；Esc 取消并还焦。保存设置的 PUT 断线后，「本地备份／逐操作」仍被重置为「请选择备份目标／按批聚合」。重新选择后，保存与实际 Git 备份均完成。 | [迁移前](evidence/reader-management/before-backup-choice.png) · [集成后](evidence/reader-management/after-backup-choice.png) |
-| 站点发布 · 纠错通过，焦点画面需修 | Space 勾选后标记可辨。无效 Git 版本提交失败，目标、版本输入和选中的一篇都保留。修改提交 ID 后 Zola 发布完成并产生对应链接。主操作仍在 y=761；错误态同时描边两层容器，难以判断下一次键盘操作的位置。 | [迁移前](evidence/reader-management/before-publication-error.png) · [集成后](evidence/reader-management/after-publication-error.png) |
+| 外部导入 · 重试通过，发现容器焦点框 | 键盘选择、空文件校验、丢回执后同请求重试均通过。错误提示增加红色左边线，保留文字恢复办法。「重试导入」仍在 y=440，高 40 px。按钮聚焦时整个设置容器也有蓝框。 | [迁移前](evidence/reader-management/before-import-retry.png) · [集成后](evidence/reader-management/after-import-retry.png) |
+| Git 备份 · 操作通过，发现草稿丢失 | 下拉现用图标箭头。打开后，已选项有底色，End 指向的候选项有焦点环；Esc 取消并还焦。保存设置的 PUT 断线后，「本地备份／逐操作」仍被重置为「请选择备份目标／按批聚合」。重新选择后，保存与实际 Git 备份均完成。 | [迁移前](evidence/reader-management/before-backup-choice.png) · [集成后](evidence/reader-management/after-backup-choice.png) |
+| 站点发布 · 纠错通过，发现容器焦点框 | Space 勾选后标记可辨。无效 Git 版本提交失败，目标、版本输入和选中的一篇都保留。修改提交 ID 后 Zola 发布完成并产生对应链接。主操作仍在 y=761；错误态同时描边两层容器，难以判断下一次键盘操作的位置。 | [迁移前](evidence/reader-management/before-publication-error.png) · [集成后](evidence/reader-management/after-publication-error.png) |
 | 账号 · 通过 | 空表单提交后用户名获得焦点，必填错误边框从灰色变为红褐色。重复用户名就近报错，修改后创建成功并清空密码。等待时按钮显示「正在创建…」、保留焦点并阻止第二次提交；实测只有一个 POST。 | [迁移前](evidence/reader-management/before-account-error.png) · [集成后](evidence/reader-management/after-account-error.png) · [交互状态](evidence/reader-management/after-states.json) |
 | 只读固定稿、离线 · 通过 | 两篇目录的触发器在两个版本中均为 756×44 px，正文及当前篇标记位置一致。Enter 展开、选第二篇、焦点进入新标题。网络错误后重试保存成功，断网能读显式保存的固定稿。 | [迁移前](evidence/reader-management/before-snapshot-directory.png) · [集成后](evidence/reader-management/after-snapshot-directory.png) |
 
@@ -42,9 +42,22 @@
 
 在旧版创建并保存两篇固定稿，保留数据根与独立 Chromium 资料。关停 4282 服务再冷启浏览器，原地址从旧缓存显示「河岸记录甲」和「正在读取离线副本」。恢复服务时使用原数据根与集成包的 Web 资源；同一地址加载新入口 `reader-BdfCvtBF.js`，仍显示已保存，键盘可进入「河岸记录乙」。按 Enter 移除副本后断网再请求原内容，读取失败。[旧地址与原始提交](evidence/reader-management/legacy-before.json) · [断网、升级与移除结果](evidence/reader-management/legacy-after.json) · [停服时从旧缓存打开第一篇](evidence/reader-management/old-cache-offline.png) · [恢复服务后用新界面打开第二篇](evidence/reader-management/old-address-upgraded.png)
 
-### 交回实施者的两项问题
+## 最终同状态验证
 
-1. **备份设置保存失败丢失草稿。** 网络恢复后，保留并再次提交用户选中的目标与粒度，核对响应中的设置和后续备份回执。目标确已失效时，应说明需要重选的字段。
-2. **管理页的键盘焦点框扩散到标签容器。** 用键盘从外部导入进入重试，再到发布页提交错误版本，核对实际焦点和外框。子控件操作时应能识别当前操作对象；标签面板自身真正接收焦点时仍应有可见提示。
+用 `a2963d45`（含 Tabs 修复）加本次 BackupPanel 修订独立构建，在 4282 的真实 Rust fixture 与 Chromium、1440×900 浅色下重放。该包的资源清单 SHA-256 为 `0956baa19a840a5c3c1426706c764c6e27f42993968b5fd3c538027749e068b0`。
 
-这两项在迁移前和指定集成包中都已复现。此次验收只提交报告、截图和测量。
+**Git 备份保存与重试 · 验证完成。** 先在原集成包加产品回归，首次 PUT 断线后，期望「本地备份」，实际为「请选择备份目标」。修订后仍显示「本地备份／逐操作」，错误旁提示重试，「立即备份」保持禁用。直接重试的两个 PUT 请求体相同，服务端确认设置后才允许启动，本地 Git 回执包含实际版本，刷新后可再查。[断线时修前画面](evidence/reader-management/backup-save-broken.png) · [断线时修后画面](evidence/reader-management/backup-save-fixed.png) · [请求与确认值](evidence/reader-management/backup-save-fixed.json)
+
+另一个回归先在仅修复断线的版本上失败。服务端保存「按批聚合」后暂缓响应；此时选择器仍可操作，用户改选「逐操作」。旧实现收到响应后又显示「按批聚合」。最终版将回执写入已保存设置，仅在当前草稿与本次提交相符时清理草稿。实测服务端是「按批聚合」，界面是「逐操作」，无「已保存」提示且启动按钮禁用。再次保存后刷新仍显示「逐操作」。[旧回执抵达后的新选择](evidence/reader-management/backup-newer-selection.png) · [产品回归用例](../../apps/reader/tests/e2e/document-release.spec.ts)
+
+**管理 Tabs 键盘焦点 · 验证完成。** 从以下标签按一次 Tab，每个实际受焦对象均有 2 px 实线。统计从它的父元素向上至页面根的计算外框，三个场景均归零。
+
+| 从标签按 Tab | 实际受焦对象 | 带框祖先个数 | 同状态画面 |
+| --- | --- | --- | --- |
+| 外部导入 | 选择文件按钮 | 1 → 0 | [修前](evidence/reader-management/tabs-broken-import.png) · [修后](evidence/reader-management/tabs-fixed-import.png) |
+| 站点发布 | 发布目标选择器 | 3 → 0 | [修前](evidence/reader-management/tabs-broken-site.png) · [修后](evidence/reader-management/tabs-fixed-site.png) |
+| Git 备份（未配置目标） | 提示配置方法的静态面板 | 2 → 0 | [修前](evidence/reader-management/tabs-broken-backup.png) · [修后](evidence/reader-management/tabs-fixed-backup.png) |
+
+导入丢回执后聚焦「重试导入」以及发布提交无效版本后的两种历史问题画面也已复拍，设置区外框均已消失。[焦点实测修前](evidence/reader-management/tabs-broken.json) · [焦点实测修后](evidence/reader-management/tabs-fixed.json) · [导入重试](evidence/reader-management/verified-import-retry.png) · [发布纠错](evidence/reader-management/verified-publication-error.png)
+
+该联合构建的管理、账号、导入、备份、发布与离线产品回归 20/20 通过。Reader 生产构建与类型检查通过，变更的两个 TypeScript 文件通过 Oxlint 和 Oxfmt。[最终 20 项回归结果](evidence/reader-management/final-regression.json)

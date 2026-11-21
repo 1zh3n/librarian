@@ -1,0 +1,17 @@
+{
+  "phase": "broken",
+  "viewport": [
+    1440,
+    900
+  ],
+  "submissions": [
+    {
+      "targetId": "fixture-backup",
+      "mode": "each-operation"
+    }
+  ],
+  "error": "无法保存备份设置。",
+  "target": "请选择备份目标",
+  "mode": "按批聚合",
+  "backupDisabled": true
+}

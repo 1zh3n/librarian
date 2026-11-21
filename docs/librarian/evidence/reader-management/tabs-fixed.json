@@ -1,0 +1,29 @@
+[
+  {
+    "tab": "外部导入",
+    "focus": "选择文件",
+    "focusOutline": [
+      "2px",
+      "solid"
+    ],
+    "outlinedAncestors": []
+  },
+  {
+    "tab": "站点发布",
+    "focus": "发布目标",
+    "focusOutline": [
+      "2px",
+      "solid"
+    ],
+    "outlinedAncestors": []
+  },
+  {
+    "tab": "Git 备份",
+    "focus": "Git 备份",
+    "focusOutline": [
+      "2px",
+      "solid"
+    ],
+    "outlinedAncestors": []
+  }
+]
