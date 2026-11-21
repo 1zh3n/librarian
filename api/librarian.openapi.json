@@ -717,7 +717,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["publications"],
+                  "required": [
+                    "publications"
+                  ],
                   "properties": {
                     "publications": {
                       "type": "array",
@@ -3435,6 +3437,48 @@
           }
         ]
       }
+    },
+    "/ai/settings/discover": {
+      "post": {
+        "operationId": "discoverAiModels",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiDiscoveryInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Discovered model catalog and a short-lived discovery ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDiscovery"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5221,6 +5265,98 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "AiDiscoveryInput": {
+        "type": "object",
+        "required": [
+          "provider",
+          "baseUrl",
+          "apiKey"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek"
+            ]
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "apiKey": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true
+          }
+        }
+      },
+      "DiscoveredModel": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "inputModalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputModalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "effort": {
+            "type": "object",
+            "required": [
+              "supportedLevels"
+            ],
+            "properties": {
+              "supportedLevels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "defaultLevel": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "AiDiscovery": {
+        "type": "object",
+        "required": [
+          "discoveryId",
+          "fetchedAt",
+          "models"
+        ],
+        "properties": {
+          "discoveryId": {
+            "type": "string"
+          },
+          "fetchedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp in seconds"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredModel"
             }
           }
         }

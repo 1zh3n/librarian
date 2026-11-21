@@ -804,6 +804,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/ai/settings/discover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["discoverAiModels"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1223,6 +1239,33 @@ export interface components {
       documents: components["schemas"]["SnapshotDocumentSummary"][];
       document: components["schemas"]["SnapshotDocument"];
       attachmentPaths: string[];
+    };
+    AiDiscoveryInput: {
+      /** @enum {string} */
+      provider: "deepseek";
+      /** Format: uri */
+      baseUrl: string;
+      /** Format: password */
+      apiKey: string;
+    };
+    DiscoveredModel: {
+      id: string;
+      name?: string;
+      inputModalities?: string[];
+      outputModalities?: string[];
+      effort?: {
+        supportedLevels: string[];
+        defaultLevel?: string;
+      };
+    };
+    AiDiscovery: {
+      discoveryId: string;
+      /**
+       * Format: int64
+       * @description Unix timestamp in seconds
+       */
+      fetchedAt: number;
+      models: components["schemas"]["DiscoveredModel"][];
     };
   };
   responses: never;
@@ -3886,6 +3929,39 @@ export interface operations {
         };
         content: {
           "application/octet-stream": string;
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  discoverAiModels: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiDiscoveryInput"];
+      };
+    };
+    responses: {
+      /** @description Discovered model catalog and a short-lived discovery ticket */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiDiscovery"];
         };
       };
       /** @description Request could not be completed */

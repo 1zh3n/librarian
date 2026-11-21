@@ -10,6 +10,9 @@ export type DocumentHistory = components["schemas"]["DocumentHistory"];
 export type VersionDiff = components["schemas"]["VersionDiff"];
 export type RestoredDocument = components["schemas"]["RestoredDocument"];
 export type DevicePreferences = components["schemas"]["DevicePreferences"];
+export type AiDiscoveryInput = components["schemas"]["AiDiscoveryInput"];
+export type AiDiscovery = components["schemas"]["AiDiscovery"];
+export type DiscoveredModel = components["schemas"]["DiscoveredModel"];
 export type AiTask = components["schemas"]["AiTask"];
 export type AiContext = components["schemas"]["AiContext"];
 export type AiOperation = components["schemas"]["AiOperation"];
@@ -82,6 +85,7 @@ async function request<T>(
       | RestoreRevision
       | DevicePreferences
       | AiTask
+      | AiDiscoveryInput
       | AiConfirm
       | CreateWorkspace
       | UpdateWorkspace
@@ -132,6 +136,13 @@ const documentPath = (document: string) => `/documents/${encodeURIComponent(docu
 const operationPath = (id: string) => `/ai/operations/${encodeURIComponent(id)}`;
 const accountPath = (username: string) => `/accounts/${encodeURIComponent(username)}`;
 const membersPath = (workspace: string) => `${workspacePath(workspace)}/members`;
+
+export function discoverAiModels(
+  input: AiDiscoveryInput,
+  signal?: AbortSignal,
+): Promise<AiDiscovery> {
+  return request<AiDiscovery>("/ai/settings/discover", signal, { method: "POST", body: input });
+}
 
 export const api = {
   getSession(signal?: AbortSignal) {
