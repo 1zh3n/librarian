@@ -70,6 +70,7 @@ export function CreateDocumentDialog({
           className={styles.field}
           value={name}
           onChange={setName}
+          readOnly={create.isPending}
           required
         />
         <Field
@@ -77,6 +78,7 @@ export function CreateDocumentDialog({
           className={styles.field}
           value={directory}
           onChange={setDirectory}
+          readOnly={create.isPending}
           placeholder="例如 研究/样本"
         />
         {message && (

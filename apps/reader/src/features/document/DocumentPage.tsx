@@ -842,7 +842,16 @@ function DocumentWorkspace({
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.isComposing || body.editor.isComposing()) return;
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        body.editor.isComposing() ||
+        (event.target instanceof Element &&
+          event.target.closest(
+            '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+          ))
+      )
+        return;
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && key === "s" && writable) {
         event.preventDefault();

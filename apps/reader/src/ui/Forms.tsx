@@ -155,18 +155,21 @@ export function Select<Value extends string>({
   value,
   entries,
   onChange,
+  disabled = false,
   className,
 }: {
   label: string;
   value: Value;
   entries: readonly { value: Value; label: string }[];
   onChange: (value: Value) => void;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
     <HeroSelect
       className={className ?? "reader-field"}
       value={value}
+      isDisabled={disabled}
       onChange={(next) => {
         const entry = entries.find((entry) => entry.value === next);
         if (entry) onChange(entry.value);

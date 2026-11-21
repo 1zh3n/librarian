@@ -37,13 +37,15 @@ export function ReadingSettings({
   return (
     <Dialog title="应用设置" busy={saving} onClose={close} classes={styles}>
       {preferences ? (
-        <PreferencesForm
-          preferences={preferences}
-          saving={saving}
-          setSaving={setSaving}
-          save={save}
-          close={close}
-        />
+        <fieldset disabled={saving} aria-label="设备偏好">
+          <PreferencesForm
+            preferences={preferences}
+            saving={saving}
+            setSaving={setSaving}
+            save={save}
+            close={close}
+          />
+        </fieldset>
       ) : (
         <div className={styles.fields}>
           {loading ? (
@@ -92,6 +94,7 @@ function PreferencesForm({
       validationBehavior="aria"
       onSubmit={(event) => {
         event.preventDefault();
+        if (saving) return;
         // Reveal the tab before the browser focuses an invalid field.
         const invalid = event.currentTarget.querySelector<HTMLInputElement>("input:invalid");
         if (invalid) {
@@ -136,6 +139,7 @@ function PreferencesForm({
           <Select
             label="主题"
             value={theme}
+            disabled={saving}
             onChange={setTheme}
             entries={themes}
             className={styles.field}
@@ -143,14 +147,20 @@ function PreferencesForm({
           <Select
             label="字体"
             value={font}
+            disabled={saving}
             onChange={setFont}
             entries={fonts}
             className={styles.field}
           />
-          <Checkbox className={styles.checkbox} checked={eink} onChange={setEink}>
+          <Checkbox className={styles.checkbox} disabled={saving} checked={eink} onChange={setEink}>
             墨水屏
           </Checkbox>
-          <Checkbox className={styles.checkbox} checked={reduceMotion} onChange={setReduceMotion}>
+          <Checkbox
+            className={styles.checkbox}
+            disabled={saving}
+            checked={reduceMotion}
+            onChange={setReduceMotion}
+          >
             减少动画
           </Checkbox>
         </TabPanel>
