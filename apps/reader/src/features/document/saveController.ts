@@ -3,6 +3,12 @@ import { ApiError } from "../../api/client";
 export type MarkdownSnapshot = { markdown: string; revision: string | null };
 export type MarkdownWrite = { markdown: string; baseRevision: string | null };
 export type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error" | "conflict";
+export type SaveConflict<Snapshot extends MarkdownSnapshot> =
+  | { state: "loading" }
+  | { state: "ready"; remote: Snapshot }
+  | { state: "unavailable" };
+
+type ReplaceSource = (markdown: string, confirmed: string, revision: string | null) => boolean;
 
 const WAIT_BEFORE_SAVE = 450;
 
@@ -16,22 +22,29 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
   #write: (change: MarkdownWrite) => Promise<Snapshot>;
   #onConfirmed: (snapshot: Snapshot) => void;
   #readCurrent: (() => Promise<Snapshot>) | undefined;
+  #replace: ReplaceSource | undefined;
   #unacknowledged: string | undefined;
+  #conflict: SaveConflict<Snapshot> | undefined;
+  #remoteRequest: Promise<void> | undefined;
 
   constructor(
     initial: Snapshot,
     write: (change: MarkdownWrite) => Promise<Snapshot>,
     onConfirmed: (snapshot: Snapshot) => void,
     readCurrent?: () => Promise<Snapshot>,
+    replace?: ReplaceSource,
   ) {
     this.#confirmed = initial;
     this.#latest = { markdown: initial.markdown, generation: 0 };
     this.#write = write;
     this.#onConfirmed = onConfirmed;
     this.#readCurrent = readCurrent;
+    this.#replace = replace;
   }
 
   status = (): SaveStatus => this.#status;
+
+  conflict = (): SaveConflict<Snapshot> | undefined => this.#conflict;
 
   subscribe = (listener: () => void) => {
     this.#listeners.add(listener);
@@ -91,6 +104,58 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
     return true;
   }
 
+  reloadRemote() {
+    const remote = this.#readyRemote();
+    if (!remote || !this.#replace) return false;
+    if (!this.#replace(remote.markdown, remote.markdown, remote.revision)) return false;
+    this.#confirmed = remote;
+    this.#latest = { markdown: remote.markdown, generation: this.#latest.generation + 1 };
+    this.#unacknowledged = undefined;
+    this.#clearConflict();
+    this.#onConfirmed(remote);
+    this.#setStatus("saved");
+    return true;
+  }
+
+  overwriteRemote() {
+    const remote = this.#readyRemote();
+    if (!remote) return false;
+    this.#confirmed = remote;
+    this.#unacknowledged = undefined;
+    this.#clearConflict();
+    if (this.#latest.markdown === remote.markdown) {
+      this.#onConfirmed(remote);
+      this.#setStatus("saved");
+      return true;
+    }
+    this.#setStatus("idle");
+    void this.flush();
+    return true;
+  }
+
+  mergeRemote(markdown: string) {
+    const remote = this.#readyRemote();
+    if (!remote || !this.#replace) return false;
+    if (!this.#replace(markdown, remote.markdown, remote.revision)) return false;
+    this.#confirmed = remote;
+    this.#latest = { markdown, generation: this.#latest.generation + 1 };
+    this.#unacknowledged = undefined;
+    this.#clearConflict();
+    if (markdown === remote.markdown) {
+      this.#onConfirmed(remote);
+      this.#setStatus("saved");
+      return true;
+    }
+    this.#setStatus("idle");
+    void this.flush();
+    return true;
+  }
+
+  async retryRemote() {
+    if (this.#status !== "conflict" || this.#conflict?.state === "ready") return;
+    await this.#loadRemote();
+  }
+
   async #writeChanges() {
     this.#setStatus("saving");
     if (this.#unacknowledged !== undefined && this.#readCurrent) {
@@ -103,7 +168,7 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
       }
       if (remote.revision !== this.#confirmed.revision) {
         if (remote.revision === null || remote.markdown !== this.#unacknowledged) {
-          this.#setStatus("conflict");
+          this.#enterConflict(remote);
           return;
         }
         this.#confirm(remote);
@@ -123,17 +188,18 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
         const conflict = error instanceof ApiError && error.status === 409;
         if (!conflict && this.#readCurrent) this.#unacknowledged = snapshot.markdown;
         if (!conflict || !this.#readCurrent) {
-          this.#setStatus(conflict ? "conflict" : "error");
+          if (conflict) this.#enterConflict();
+          else this.#setStatus("error");
           return;
         }
         try {
           saved = await this.#readCurrent();
         } catch {
-          this.#setStatus("error");
+          this.#enterConflict(undefined, false);
           return;
         }
         if (saved.revision === null || saved.markdown !== snapshot.markdown) {
-          this.#setStatus("conflict");
+          this.#enterConflict(saved);
           return;
         }
       }
@@ -141,6 +207,54 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
       if (snapshot.generation === this.#latest.generation) break;
     }
     this.#setStatus("saved");
+  }
+
+  #readyRemote() {
+    return this.#status === "conflict" && this.#conflict?.state === "ready"
+      ? this.#conflict.remote
+      : undefined;
+  }
+
+  #enterConflict(remote?: Snapshot, load = true) {
+    const alreadyConflicted = this.#status === "conflict";
+    this.#conflict = remote
+      ? { state: "ready", remote }
+      : this.#readCurrent && load
+        ? { state: "loading" }
+        : { state: "unavailable" };
+    this.#setStatus("conflict");
+    if (alreadyConflicted) this.#emit();
+    if (!remote && this.#readCurrent && load) void this.#loadRemote();
+  }
+
+  async #loadRemote() {
+    if (!this.#readCurrent || this.#remoteRequest) return this.#remoteRequest;
+    if (this.#conflict?.state !== "ready") {
+      this.#conflict = { state: "loading" };
+      this.#emit();
+    }
+    this.#remoteRequest = (async () => {
+      try {
+        const remote = await this.#readCurrent!();
+        if (this.#status !== "conflict") return;
+        this.#conflict = { state: "ready", remote };
+      } catch {
+        if (this.#status !== "conflict") return;
+        this.#conflict = { state: "unavailable" };
+      } finally {
+        this.#remoteRequest = undefined;
+        if (this.#status === "conflict") this.#emit();
+      }
+    })();
+    return this.#remoteRequest;
+  }
+
+  #clearConflict() {
+    this.#conflict = undefined;
+  }
+
+  #emit() {
+    for (const listener of this.#listeners) listener();
   }
 
   #confirm(snapshot: Snapshot) {
@@ -151,6 +265,6 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
   #setStatus(value: SaveStatus) {
     if (this.#status === value) return;
     this.#status = value;
-    for (const listener of this.#listeners) listener();
+    this.#emit();
   }
 }

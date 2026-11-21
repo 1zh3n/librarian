@@ -86,6 +86,189 @@ describe("document saves", () => {
     expect(saves.isDirty()).toBe(false);
   });
 
+  it("loads the remote snapshot after a conflict without applying it", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const write = vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, "revision_conflict", "Conflict", "remote"));
+    const readCurrent = vi.fn().mockResolvedValue(remote);
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      vi.fn(),
+      readCurrent,
+      vi.fn(() => true),
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.status()).toBe("conflict");
+    expect(saves.conflict()).toEqual({ state: "ready", remote });
+    expect(saves.isDirty()).toBe(true);
+  });
+
+  it("reloads the remote version and saves later edits on its revision", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError(409, "revision_conflict", "Conflict", "remote"))
+      .mockResolvedValueOnce({ markdown: "重载后的续写", revision: "next" });
+    const readCurrent = vi.fn().mockResolvedValue(remote);
+    const replace = vi.fn(() => true);
+    const confirmed = vi.fn();
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      confirmed,
+      readCurrent,
+      replace,
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.reloadRemote()).toBe(true);
+    expect(replace).toHaveBeenCalledWith("远程输入", "远程输入", "remote");
+    expect(confirmed).toHaveBeenCalledWith(remote);
+    expect(saves.status()).toBe("saved");
+    expect(saves.isDirty()).toBe(false);
+
+    saves.change("重载后的续写");
+    await saves.flush();
+    expect(write).toHaveBeenLastCalledWith({
+      markdown: "重载后的续写",
+      baseRevision: "remote",
+    });
+    expect(saves.status()).toBe("saved");
+  });
+
+  it("keeps the local draft and overwrites the remote revision explicitly", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError(409, "revision_conflict", "Conflict", "remote"))
+      .mockResolvedValueOnce({ markdown: "本地输入", revision: "next" })
+      .mockResolvedValueOnce({ markdown: "本地输入继续", revision: "next-2" });
+    const readCurrent = vi.fn().mockResolvedValue(remote);
+    const confirmed = vi.fn();
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      confirmed,
+      readCurrent,
+      vi.fn(() => true),
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.overwriteRemote()).toBe(true);
+    await saves.flush();
+    expect(write).toHaveBeenLastCalledWith({ markdown: "本地输入", baseRevision: "remote" });
+    expect(confirmed).toHaveBeenCalledWith({ markdown: "本地输入", revision: "next" });
+    expect(saves.status()).toBe("saved");
+
+    saves.change("本地输入继续");
+    await saves.flush();
+    expect(write).toHaveBeenLastCalledWith({
+      markdown: "本地输入继续",
+      baseRevision: "next",
+    });
+  });
+
+  it("saves an edited merge result on the remote revision", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const write = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError(409, "revision_conflict", "Conflict", "remote"))
+      .mockResolvedValueOnce({ markdown: "合并结果", revision: "merged" })
+      .mockResolvedValueOnce({ markdown: "合并结果续写", revision: "merged-2" });
+    const readCurrent = vi.fn().mockResolvedValue(remote);
+    const replace = vi.fn(() => true);
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      vi.fn(),
+      readCurrent,
+      replace,
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.mergeRemote("合并结果")).toBe(true);
+    expect(replace).toHaveBeenCalledWith("合并结果", "远程输入", "remote");
+    await saves.flush();
+    expect(write).toHaveBeenLastCalledWith({ markdown: "合并结果", baseRevision: "remote" });
+    expect(saves.status()).toBe("saved");
+
+    saves.change("合并结果续写");
+    await saves.flush();
+    expect(write).toHaveBeenLastCalledWith({
+      markdown: "合并结果续写",
+      baseRevision: "merged",
+    });
+  });
+
+  it("confirms a merge equal to the remote without writing again", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const write = vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, "revision_conflict", "Conflict", "remote"));
+    const confirmed = vi.fn();
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      confirmed,
+      vi.fn().mockResolvedValue(remote),
+      vi.fn(() => true),
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.mergeRemote(remote.markdown)).toBe(true);
+    await saves.flush();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(confirmed).toHaveBeenCalledWith(remote);
+    expect(saves.status()).toBe("saved");
+    expect(saves.isDirty()).toBe(false);
+  });
+
+  it("keeps the conflict when the remote snapshot cannot be read and retries", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const readCurrent = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce(remote);
+    const write = vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, "revision_conflict", "Conflict", "remote"));
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      vi.fn(),
+      readCurrent,
+      vi.fn(() => true),
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.status()).toBe("conflict");
+    expect(saves.conflict()).toEqual({ state: "unavailable" });
+    await saves.retryRemote();
+    expect(saves.conflict()).toEqual({ state: "ready", remote });
+  });
+
+  it("does not discard the draft when the editor cannot reset", async () => {
+    const remote = { markdown: "远程输入", revision: "remote" };
+    const write = vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, "revision_conflict", "Conflict", "remote"));
+    const saves = new SaveController(
+      { markdown: "旧内容", revision: "base" },
+      write,
+      vi.fn(),
+      vi.fn().mockResolvedValue(remote),
+      vi.fn(() => false),
+    );
+    saves.change("本地输入");
+    await saves.flush();
+    expect(saves.reloadRemote()).toBe(false);
+    expect(saves.status()).toBe("conflict");
+    expect(saves.isDirty()).toBe(true);
+  });
+
   it("uses the landed revision for later text after an in-flight response is lost", async () => {
     let disconnect = () => {};
     const pending = new Promise((_resolve, reject) => {

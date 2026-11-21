@@ -145,6 +145,7 @@ export interface EditorSession {
   focus(): void;
   isComposing(): boolean;
   acknowledge(markdown: string, revision: string | null): void;
+  resetSource(markdown: string, confirmed: string, revision: string | null): boolean;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   moveToFinalBlankLine(): void;
   isBelowLastLine(y: number): boolean;
@@ -332,6 +333,23 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     acknowledge(markdown, savedRevision) {
       confirmedSource = markdown;
       revision = savedRevision;
+    },
+    resetSource(markdown, confirmed, savedRevision) {
+      if (state.field(composing)) return false;
+      const next = readSource(markdown);
+      let changes = state.changes(minimalChange(state.doc.toString(), editorText(markdown)));
+      dispatch(
+        state.update({
+          changes,
+          effects: [replaceSource.of(next), undoHistory.reconfigure([])],
+          annotations: [Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+        }),
+      );
+      dispatch(state.update({ effects: undoHistory.reconfigure(history()) }));
+      pendingExternal = undefined;
+      confirmedSource = confirmed;
+      revision = savedRevision;
+      return true;
     },
     moveToFinalBlankLine,
     isBelowLastLine,

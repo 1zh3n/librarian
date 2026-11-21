@@ -39,6 +39,8 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
       confirmed(snapshot);
     },
     readCurrent,
+    (markdown, confirmedMarkdown, revision) =>
+      editor.resetSource(markdown, confirmedMarkdown, revision),
   );
 
   function sync(snapshot: Snapshot) {
