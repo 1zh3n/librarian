@@ -32,9 +32,13 @@ export type AiMaterialSource = components["schemas"]["AiMaterialSource"];
 export type AiMaterialView = components["schemas"]["AiMaterialView"];
 export type AiSegmentLocation = components["schemas"]["AiSegmentLocation"];
 export type AiMaterialSegment = components["schemas"]["AiMaterialSegment"];
+export type AiOperationInput = components["schemas"]["AiOperationInput"];
 export type AiTask = components["schemas"]["AiTask"];
 export type AiContext = components["schemas"]["AiContext"];
 export type AiOperation = components["schemas"]["AiOperation"];
+export type AiWorkspaceManagementReceipt = components["schemas"]["AiWorkspaceManagementReceipt"];
+export type AiTransferPreview = components["schemas"]["AiTransferPreview"];
+export type AiTransferReceipt = components["schemas"]["AiTransferReceipt"];
 export type DocumentMemberLink = components["schemas"]["DocumentMemberLink"];
 export type WorkspaceImportRequest = components["schemas"]["WorkspaceImportRequest"];
 export type WorkspaceImportReceipt = components["schemas"]["WorkspaceImportReceipt"];
@@ -98,6 +102,24 @@ export class ApiError extends Error {
   }
 }
 
+const accessMessages = new Map([
+  ["workspace_manage_required", "这项操作需要工作区管理权限。"],
+  ["administrator_required", "这项操作需要管理员权限。"],
+  ["read_only", "当前账号只有读取权限。"],
+  ["revisions_read_only", "这个工作区未启用可写版本记录。"],
+  ["workspace_owner_protected", "工作区创建者的权限受到保护。"],
+]);
+
+export function aiAccessMessage(error: unknown) {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.status === 401) return "请重新登录后继续。";
+  if (error.status === 404) return "内容已删除或不在当前账号的访问范围内。";
+  return (
+    accessMessages.get(error.code) ??
+    (error.status === 403 ? "当前账号没有执行这项操作的权限。" : undefined)
+  );
+}
+
 async function request<T>(
   path: string,
   signal?: AbortSignal,
@@ -109,7 +131,7 @@ async function request<T>(
       | SaveOutline
       | RestoreRevision
       | DevicePreferences
-      | AiTask
+      | AiOperationInput
       | components["schemas"]["AiDiscoveryInput"]
       | ConversationScope
       | CreateTurn
@@ -247,15 +269,41 @@ export function getAiProbe(id: string, signal?: AbortSignal) {
 const conversationPath = (id: string) => `/ai/conversations/${encodeURIComponent(id)}`;
 const materialsPath = (id: string) => `${conversationPath(id)}/materials`;
 
-export function listConversations(scope: ConversationScope, cursor?: string, signal?: AbortSignal) {
-  const q = new URLSearchParams({ workspaceId: scope.workspaceId });
-  if (scope.documentId) q.set("documentId", scope.documentId);
+function checkConversationScope(scope: ConversationScope) {
+  if ("scope" in scope) {
+    if ("workspaceId" in scope || ("documentId" in scope && scope.documentId != null))
+      throw new ApiError(
+        422,
+        "invalid_request",
+        "Global conversations cannot specify a workspace or document",
+      );
+  } else if (!scope.workspaceId) throw new ApiError(422, "invalid_request", "Missing workspace ID");
+}
+
+function scopeQuery(scope: ConversationScope) {
+  checkConversationScope(scope);
+  if ("scope" in scope) return new URLSearchParams({ scope: scope.scope });
+  const query = new URLSearchParams({ workspaceId: scope.workspaceId });
+  if (scope.documentId) query.set("documentId", scope.documentId);
+  return query;
+}
+
+export async function listConversations(
+  scope: ConversationScope,
+  cursor?: string,
+  signal?: AbortSignal,
+) {
+  const q = scopeQuery(scope);
   if (cursor) q.set("cursor", cursor);
   return request<ConversationPage>(`/ai/conversations?${q}`, signal);
 }
 
-export function createConversation(scope: ConversationScope) {
-  return request<ConversationView>("/ai/conversations", undefined, { method: "POST", body: scope });
+export async function createConversation(scope: ConversationScope) {
+  checkConversationScope(scope);
+  return request<ConversationView>("/ai/conversations", undefined, {
+    method: "POST",
+    body: scope,
+  });
 }
 
 export function getConversation(id: string, signal?: AbortSignal) {
@@ -582,12 +630,19 @@ export const api = {
       body,
     });
   },
-  listAiOperations(workspace: string, document: string | undefined, signal?: AbortSignal) {
-    const query = new URLSearchParams({ workspaceId: workspace });
-    if (document) query.set("documentId", document);
-    return request<AiOperation[]>(`/ai/operations?${query.toString()}`, signal);
+  async listAiOperations(
+    workspace: string | ConversationScope,
+    document?: string,
+    signal?: AbortSignal,
+  ) {
+    const scope =
+      typeof workspace === "string"
+        ? { workspaceId: workspace, ...(document && { documentId: document }) }
+        : workspace;
+    return request<AiOperation[]>(`/ai/operations?${scopeQuery(scope)}`, signal);
   },
-  createAiOperation(input: AiTask, signal?: AbortSignal) {
+  async createAiOperation(input: AiOperationInput, signal?: AbortSignal) {
+    checkConversationScope(input);
     return request<AiOperation>("/ai/operations", signal, { method: "POST", body: input });
   },
   async readAiEvents(id: string, after: number, signal: AbortSignal) {

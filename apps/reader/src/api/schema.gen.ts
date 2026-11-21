@@ -977,6 +977,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** @description Use scope=global for account-wide conversations. For a scoped conversation supply workspaceId and optionally documentId. */
     get: operations["listConversations"];
     put?: never;
     post: operations["createConversation"];
@@ -1156,6 +1157,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** @description Global claims require workspaceId. Scoped claims remain bound to their original workspace. */
     get: operations["discoverAiDocumentsV2"];
     put?: never;
     post?: never;
@@ -1423,6 +1425,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/ai/runner/v2/claims/{lease}/workspaces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listAiWorkspacesV2"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1658,6 +1676,8 @@ export interface components {
       blockId?: string;
       from?: number;
       to?: number;
+      workspaceId?: string;
+      workspaceName?: string;
     };
     MutationFileChange: {
       path: string;
@@ -1674,10 +1694,10 @@ export interface components {
       id: string;
       paths: string[];
       plan?: components["schemas"]["AiReorganizationPlan"];
+      transfer?: components["schemas"]["AiTransferPreview"];
     };
     AiOperation: {
       id: string;
-      workspaceId: string;
       documentId: string | null;
       mode: components["schemas"]["AiMode"];
       /** @enum {string} */
@@ -1700,7 +1720,22 @@ export interface components {
       changes: components["schemas"]["MutationFileChange"][];
       writeResult?: components["schemas"]["AiWriteResult"];
       selection?: components["schemas"]["ModelSelection"];
-    };
+      /** @description Destination of an ordinary global document write. */
+      targetWorkspaceId?: string;
+      workspaceManagement?: components["schemas"]["AiWorkspaceManagementReceipt"];
+      transferResult?: components["schemas"]["AiTransferReceipt"];
+    } & (
+      | {
+          workspaceId: string;
+          scope?: never;
+        }
+      | {
+          /** @enum {string} */
+          scope: "global";
+          workspaceId?: never;
+          documentId?: null;
+        }
+    );
     AiClaim: {
       operationId: string;
       leaseId: string;
@@ -1977,17 +2012,34 @@ export interface components {
       status: string;
       errorCode?: string | null;
     };
-    ConversationScope: {
-      workspaceId: string;
-      documentId?: string | null;
-    };
+    ConversationScope:
+      | {
+          workspaceId: string;
+          documentId?: string | null;
+        }
+      | {
+          /** @enum {string} */
+          scope: "global";
+        };
     ConversationView: {
       id: string;
-      workspaceId: string;
       documentId: string | null;
       createdAt: number;
       updatedAt: number;
-    };
+      /** @description First currently visible prompt, shortened for history. Absent on older servers. */
+      title?: string | null;
+    } & (
+      | {
+          workspaceId: string;
+          scope?: never;
+        }
+      | {
+          /** @enum {string} */
+          scope: "global";
+          workspaceId?: never;
+          documentId?: null;
+        }
+    );
     CreateTurn: {
       clientTurnId: string;
       /** @enum {string} */
@@ -2054,7 +2106,7 @@ export interface components {
       modelId: string;
       thinking: components["schemas"]["ThinkingSelection"];
     };
-    AiClaimInput: components["schemas"]["AiTask"] & {
+    AiClaimInput: components["schemas"]["AiOperationInput"] & {
       history?: {
         prompt: string;
         answer: string;
@@ -2129,7 +2181,11 @@ export interface components {
       sourceIds?: string[];
       edits?: components["schemas"]["AiManagedEdit"][];
       reorganization?: components["schemas"]["AiReorganizationRequest"];
-    };
+      targetWorkspaceId?: string;
+      action?:
+        | components["schemas"]["AiTransferAction"]
+        | components["schemas"]["AiWorkspaceManagementAction"];
+    } & (unknown & unknown);
     DocumentMemberLink: {
       /** @description Stable member document ID. */
       documentId: string;
@@ -2220,13 +2276,7 @@ export interface components {
     FileActionPreview: {
       token: string;
       fileCount: number;
-      access: {
-        gainedRead: number;
-        gainedWrite: number;
-        lost: number;
-        upgraded: number;
-        downgraded: number;
-      };
+      access: components["schemas"]["FileActionAccessChanges"];
     };
     FileActionResult: {
       /** Format: uuid */
@@ -2236,8 +2286,161 @@ export interface components {
       documentId?: string;
       undoable: boolean;
     };
+    AiLeasedWorkspace: {
+      id: string;
+      name: string;
+      canWrite: boolean;
+      canManage: boolean;
+    };
+    AiManagedSourceRequest: components["schemas"]["AiSourceRequest"] & {
+      workspaceId?: string;
+    };
+    FileActionAccessChanges: {
+      gainedRead: number;
+      gainedWrite: number;
+      lost: number;
+      upgraded: number;
+      downgraded: number;
+    };
+    AiWorkspaceManagementAction:
+      | {
+          /** @enum {string} */
+          kind: "create_workspace";
+          name: string;
+        }
+      | {
+          /** @enum {string} */
+          kind: "rename_workspace";
+          workspaceId: string;
+          name: string;
+        }
+      | {
+          /** @enum {string} */
+          kind: "set_workspace_member";
+          workspaceId: string;
+          username: string;
+          /** @enum {string} */
+          role: "read" | "write";
+        }
+      | {
+          /** @enum {string} */
+          kind: "remove_workspace_member";
+          workspaceId: string;
+          username: string;
+        };
+    AiWorkspaceManagementReceipt:
+      | {
+          /** @enum {string} */
+          kind: "create_workspace";
+          workspaceId: string;
+          name: string;
+        }
+      | {
+          /** @enum {string} */
+          kind: "rename_workspace";
+          workspaceId: string;
+          name: string;
+        }
+      | {
+          /** @enum {string} */
+          kind: "set_workspace_member";
+          workspaceId: string;
+          name: string;
+          username: string;
+          /** @enum {string} */
+          role: "read" | "write";
+        }
+      | {
+          /** @enum {string} */
+          kind: "remove_workspace_member";
+          workspaceId: string;
+          name: string;
+          username: string;
+        };
+    AiTransferAction:
+      | {
+          /** @enum {string} */
+          kind: "move" | "copy";
+          sourceWorkspaceId: string;
+          sourcePath: string;
+          targetWorkspaceId: string;
+          targetPath: string;
+          documentId: string;
+          /** @enum {string} */
+          sourceKind?: "document";
+        }
+      | {
+          /** @enum {string} */
+          kind: "move" | "copy";
+          sourceWorkspaceId: string;
+          sourcePath: string;
+          targetWorkspaceId: string;
+          targetPath: string;
+          /** @enum {string} */
+          sourceKind: "folder";
+        };
+    AiTransferPreview: {
+      /** @enum {string} */
+      kind: "move" | "copy";
+      sourceWorkspaceId: string;
+      sourcePath: string;
+      targetWorkspaceId: string;
+      targetPath: string;
+      /** @enum {string} */
+      sourceKind: "document" | "folder";
+      sourceWorkspaceName: string;
+      targetWorkspaceName: string;
+      fileCount: number;
+      access: components["schemas"]["FileActionAccessChanges"];
+      documentId?: string;
+    };
+    AiTransferReceipt: {
+      /** @enum {string} */
+      kind: "move" | "copy";
+      workspaceId: string;
+      workspaceName: string;
+      path: string;
+      documentId?: string;
+    };
+    AiGlobalTask: {
+      documentId?: null;
+      mode: components["schemas"]["AiMode"];
+      prompt: string;
+      context?: components["schemas"]["AiContext"][];
+      /** @enum {string} */
+      scope: "global";
+    };
+    AiOperationInput: components["schemas"]["AiTask"] | components["schemas"]["AiGlobalTask"];
   };
-  responses: never;
+  responses: {
+    /** @description Sign-in required */
+    Ai401: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ApiError"];
+      };
+    };
+    /** @description The current account lacks permission for this action */
+    Ai403: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ApiError"];
+      };
+    };
+    /** @description The resource is missing or inaccessible under current permissions */
+    Ai404: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ApiError"];
+      };
+    };
+  };
   parameters: never;
   requestBodies: never;
   headers: never;
@@ -4046,8 +4249,9 @@ export interface operations {
   };
   listAiOperations: {
     parameters: {
-      query: {
-        workspaceId: string;
+      query?: {
+        scope?: "global";
+        workspaceId?: string;
         documentId?: string;
       };
       header?: never;
@@ -4065,6 +4269,9 @@ export interface operations {
           "application/json": components["schemas"]["AiOperation"][];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -4085,7 +4292,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["AiTask"];
+        "application/json": components["schemas"]["AiOperationInput"];
       };
     };
     responses: {
@@ -4098,6 +4305,9 @@ export interface operations {
           "application/json": components["schemas"]["AiOperation"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Operation could not be completed */
       default: {
         headers: {
@@ -4129,6 +4339,9 @@ export interface operations {
           "application/json": components["schemas"]["AiOperation"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Operation could not be completed */
       default: {
         headers: {
@@ -4162,6 +4375,9 @@ export interface operations {
           "text/event-stream": string;
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Operation could not be completed */
       default: {
         headers: {
@@ -4197,6 +4413,9 @@ export interface operations {
           "application/json": components["schemas"]["AiOperation"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Operation could not be completed */
       default: {
         headers: {
@@ -4228,6 +4447,9 @@ export interface operations {
           "application/json": components["schemas"]["MutationReceipt"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Operation could not be completed */
       default: {
         headers: {
@@ -4367,6 +4589,9 @@ export interface operations {
           "application/json": components["schemas"]["AiOperationDiff"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5278,8 +5503,9 @@ export interface operations {
   };
   listConversations: {
     parameters: {
-      query: {
-        workspaceId: string;
+      query?: {
+        scope?: "global";
+        workspaceId?: string;
         documentId?: string;
         cursor?: string;
         limit?: number;
@@ -5299,6 +5525,9 @@ export interface operations {
           "application/json": components["schemas"]["ConversationPage"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5332,6 +5561,9 @@ export interface operations {
           "application/json": components["schemas"]["ConversationView"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5363,6 +5595,9 @@ export interface operations {
           "application/json": components["schemas"]["ConversationView"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5392,6 +5627,9 @@ export interface operations {
         };
         content?: never;
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5426,6 +5664,9 @@ export interface operations {
           "application/json": components["schemas"]["TurnPage"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5461,6 +5702,9 @@ export interface operations {
           "application/json": components["schemas"]["TurnView"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5493,6 +5737,9 @@ export interface operations {
           "application/json": components["schemas"]["TurnView"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5524,6 +5771,9 @@ export interface operations {
           "application/json": components["schemas"]["AiMaterialView"][];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5564,6 +5814,9 @@ export interface operations {
           "application/json": components["schemas"]["AiMaterialView"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5594,6 +5847,9 @@ export interface operations {
         };
         content?: never;
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5632,6 +5888,9 @@ export interface operations {
           };
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5665,6 +5924,9 @@ export interface operations {
           "application/json": components["schemas"]["AiMaterialSegment"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -5751,6 +6013,7 @@ export interface operations {
     parameters: {
       query?: {
         q?: string;
+        workspaceId?: string;
       };
       header?: never;
       path: {
@@ -5791,7 +6054,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["AiSourceRequest"];
+        "application/json": components["schemas"]["AiManagedSourceRequest"];
       };
     };
     responses: {
@@ -6096,6 +6359,9 @@ export interface operations {
           "application/json": components["schemas"]["AiOperation"];
         };
       };
+      401: components["responses"]["Ai401"];
+      403: components["responses"]["Ai403"];
+      404: components["responses"]["Ai404"];
       /** @description Request could not be completed */
       default: {
         headers: {
@@ -6332,6 +6598,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["FileActionResult"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listAiWorkspacesV2: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        lease: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Workspaces currently accessible to the account for this global task */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AiLeasedWorkspace"][];
         };
       };
       /** @description Request could not be completed */

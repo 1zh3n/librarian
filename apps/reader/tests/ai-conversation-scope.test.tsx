@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { useAiConversation } from "../src/features/ai/useAiConversation";
+import { api, createConversation, listConversations } from "../src/api/client";
 import { sessionQuery } from "../src/api/queries";
 
 afterEach(() => {
@@ -163,4 +164,27 @@ test("permission errors from sending recheck the visible history before showing 
     await expect(result.current.send({ mode: "chat", prompt: "continue" })).rejects.toBeDefined();
   });
   await waitFor(() => expect(result.current.allTurns).toEqual([]));
+});
+
+test("operation history supports the old scoped call and explicit global identity", async () => {
+  const fetch = vi.fn((_path: string) => Response.json([]));
+  vi.stubGlobal("fetch", fetch);
+  await api.listAiOperations("a/b", "doc");
+  await api.listAiOperations({ scope: "global" });
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual([
+    "/api/v1/ai/operations?workspaceId=a%2Fb&documentId=doc",
+    "/api/v1/ai/operations?scope=global",
+  ]);
+});
+
+test("client entry points reject an empty workspace identity before sending a request", async () => {
+  const fetch = vi.fn(() => Response.json({}));
+  vi.stubGlobal("fetch", fetch);
+  await expect(api.listAiOperations("", undefined)).rejects.toMatchObject({ status: 422 });
+  await expect(listConversations({ workspaceId: "" })).rejects.toMatchObject({ status: 422 });
+  await expect(createConversation({ workspaceId: "" })).rejects.toMatchObject({ status: 422 });
+  await expect(
+    api.createAiOperation({ workspaceId: "", mode: "chat", prompt: "hi" }),
+  ).rejects.toMatchObject({ status: 422 });
+  expect(fetch).not.toHaveBeenCalled();
 });

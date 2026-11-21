@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ApiError,
   createConversation,
   createTurn,
   deleteConversation,
@@ -12,6 +13,7 @@ import type { InfiniteData } from "@tanstack/react-query";
 import type {
   AiOperation,
   ConversationScope,
+  ConversationView,
   CreateTurn,
   TurnPage,
   TurnView,
@@ -35,30 +37,57 @@ function rememberSelection(key: string, id: string) {
   }
 }
 
+function denied(error: unknown) {
+  return error instanceof ApiError && [401, 403, 404].includes(error.status);
+}
+
+function inScope(conversation: ConversationView, scope: ConversationScope) {
+  return "scope" in scope
+    ? conversation.scope === "global"
+    : conversation.scope !== "global" &&
+        conversation.workspaceId === scope.workspaceId &&
+        conversation.documentId === (scope.documentId ?? null);
+}
+
 export function useAiConversation(
   workspace: string,
   documentId: string | undefined,
   active: boolean,
   returnTo?: { username: string; id: string },
+  global = false,
 ) {
   const client = useQueryClient();
-  const { data: session } = useQuery(sessionQuery);
-  const scope: ConversationScope = { workspaceId: workspace, ...(documentId && { documentId }) };
-  const base = [
-    ...workspaceKeys.workspace(workspace),
-    "ai",
-    "conversations",
-    session?.username,
-    documentId ?? null,
-  ] as const;
+  const sessionResult = useQuery(sessionQuery);
+  const session = sessionResult.isSuccess ? sessionResult.data : undefined;
+  const scope: ConversationScope = global
+    ? { scope: "global" }
+    : { workspaceId: workspace, ...(documentId && { documentId }) };
+  const base = useMemo(
+    () =>
+      global
+        ? (["ai", "global", "conversations", session?.username] as const)
+        : ([
+            ...workspaceKeys.workspace(workspace),
+            "ai",
+            "conversations",
+            session?.username,
+            documentId ?? null,
+          ] as const),
+    [global, workspace, session?.username, documentId],
+  );
   const listing = useInfiniteQuery({
     queryKey: base,
     queryFn: ({ signal, pageParam }) => listConversations(scope, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor,
-    enabled: active && Boolean(session),
+    enabled: active && Boolean(session && (global || workspace)),
+    staleTime: 0,
   });
-  const listed = listing.data?.pages.flatMap((page) => page.items) ?? [];
+  const listed =
+    session && !listing.isError && listing.isFetchedAfterMount
+      ? (listing.data?.pages.flatMap((page) => page.items.filter((item) => inScope(item, scope))) ??
+        [])
+      : [];
   const key = JSON.stringify(base);
   const [selection, setSelection] = useState<{ key: string; id: string }>();
   const remembered = session ? readSelection(key) : null;
@@ -72,21 +101,20 @@ export function useAiConversation(
   const lookup = useQuery({
     queryKey: [...base, "selected", selectedId],
     queryFn: ({ signal }) => getConversation(selectedId!, signal),
-    enabled: active && needsLookup,
+    enabled: active && Boolean(session) && !listing.isError && needsLookup,
+    staleTime: 0,
     retry: false,
   });
-  const extra =
-    needsLookup &&
-    lookup.data?.workspaceId === workspace &&
-    lookup.data.documentId === (documentId ?? null)
-      ? lookup.data
-      : undefined;
+  const lookedUp =
+    needsLookup && lookup.isSuccess && lookup.isFetchedAfterMount ? lookup.data : undefined;
+  const scopeMismatch = lookedUp !== undefined && !inScope(lookedUp, scope);
+  const extra = !scopeMismatch ? lookedUp : undefined;
   const conversations = extra ? [extra, ...listed] : listed;
   const id =
-    chosen === "recent" || chosen === "new"
+    chosen === "recent" || chosen === "new" || !session || listing.isError
       ? undefined
-      : selectedId && !(needsLookup && lookup.isError)
-        ? selectedId
+      : selectedId
+        ? conversations.find((item) => item.id === selectedId)?.id
         : listed[0]?.id;
   const pick = (value: string) => {
     rememberSelection(key, value);
@@ -100,25 +128,37 @@ export function useAiConversation(
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (p) => p.nextCursor,
     enabled: active && Boolean(id),
+    staleTime: 0,
   });
-  const creating = useRef<Promise<string> | undefined>(undefined);
+  const creating = useRef(new Map<string, Promise<string>>());
   const pendingTurn = useRef<
     { conversation: string; fingerprint: string; input: CreateTurn } | undefined
   >(undefined);
   async function ensureConversation() {
+    if (!session || accessDenied)
+      throw new ApiError(403, "access_denied", "Conversation access unavailable");
     if (id) return id;
-    if (creating.current) return creating.current;
-    const task = createConversation(scope).then((c) => {
-      pick(c.id);
-      void client.invalidateQueries({ queryKey: base, exact: true });
-      return c.id;
-    });
-    creating.current = task;
+    const underway = creating.current.get(key);
+    if (underway) return underway;
+    if (selectedId) throw new ApiError(404, "not_found", "Conversation unavailable");
+    const task = createConversation(scope)
+      .catch(recheckAccess)
+      .then((c) => {
+        client.setQueryData([...base, "selected", c.id], c);
+        pick(c.id);
+        void client.invalidateQueries({ queryKey: base, exact: true });
+        return c.id;
+      });
+    creating.current.set(key, task);
     try {
       return await task;
     } finally {
-      creating.current = undefined;
+      creating.current.delete(key);
     }
+  }
+  async function recheckAccess(error: unknown): Promise<never> {
+    if (denied(error)) await client.resetQueries({ queryKey: base });
+    throw error;
   }
   async function send(input: Omit<CreateTurn, "clientTurnId">) {
     const conversation = await ensureConversation();
@@ -128,39 +168,41 @@ export function useAiConversation(
       pending = { conversation, fingerprint, input: { ...input, clientTurnId: operationId() } };
       pendingTurn.current = pending;
     }
-    const turn = await createTurn(conversation, pending.input);
+    const turn = await createTurn(conversation, pending.input).catch(recheckAccess);
     pendingTurn.current = undefined;
     void client.invalidateQueries({ queryKey: base });
     return turn;
   }
   async function remove() {
     if (!id) return;
-    await deleteConversation(id);
+    await deleteConversation(id).catch(recheckAccess);
     await client.cancelQueries({ queryKey: base });
     client.removeQueries({ queryKey: [...base, "turns", id] });
-    client.removeQueries({
-      queryKey: [...workspaceKeys.workspace(workspace), "ai", "operations", documentId ?? null],
-    });
+    if (!global)
+      client.removeQueries({
+        queryKey: [...workspaceKeys.workspace(workspace), "ai", "operations", documentId ?? null],
+      });
     client.removeQueries({ queryKey: [...base, "selected", id] });
     client.removeQueries({ queryKey: ["ai-materials", id] });
     client.removeQueries({ queryKey: ["ai-segment", id] });
     pick("new");
     await client.invalidateQueries({ queryKey: base, exact: true });
   }
-  const allTurns: TurnView[] = turnsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const accessDenied =
+    scopeMismatch ||
+    denied(sessionResult.error) ||
+    denied(listing.error) ||
+    (needsLookup && denied(lookup.error)) ||
+    denied(turnsQuery.error);
+  const allTurns: TurnView[] =
+    id && !accessDenied && turnsQuery.isFetchedAfterMount
+      ? (turnsQuery.data?.pages.flatMap((page) => page.items) ?? [])
+      : [];
   const updateOperation = useCallback(
     (operation: AiOperation) => {
       if (!id || !session) return;
       client.setQueryData<InfiniteData<TurnPage>>(
-        [
-          ...workspaceKeys.workspace(workspace),
-          "ai",
-          "conversations",
-          session.username,
-          documentId ?? null,
-          "turns",
-          id,
-        ],
+        [...base, "turns", id],
         (previous) =>
           previous && {
             ...previous,
@@ -173,18 +215,19 @@ export function useAiConversation(
           },
       );
     },
-    [client, workspace, documentId, id, session],
+    [client, base, id, session],
   );
   const refresh = useCallback(() => {
     void client.invalidateQueries({
-      queryKey: [...workspaceKeys.workspace(workspace), "ai", "conversations"],
+      queryKey: base,
     });
-  }, [client, workspace]);
+  }, [client, base]);
   return {
     id,
     username: session?.username,
     selection: chosen,
-    conversations,
+    accessDenied,
+    conversations: accessDenied ? [] : conversations,
     listing,
     turnsQuery,
     allTurns,

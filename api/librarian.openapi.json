@@ -2232,9 +2232,20 @@
         "operationId": "listAiOperations",
         "parameters": [
           {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global"
+              ]
+            }
+          },
+          {
             "name": "workspaceId",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -2270,6 +2281,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       },
@@ -2295,6 +2315,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "requestBody": {
@@ -2302,7 +2331,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AiTask"
+                "$ref": "#/components/schemas/AiOperationInput"
               }
             }
           }
@@ -2332,6 +2361,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
@@ -2369,6 +2407,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
@@ -2413,6 +2460,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "requestBody": {
@@ -2460,6 +2516,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
@@ -2654,6 +2719,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       }
@@ -3963,6 +4037,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "requestBody": {
@@ -4003,13 +4086,33 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
           {
             "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global"
+              ]
+            }
+          },
+          {
+            "in": "query",
             "name": "workspaceId",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4038,7 +4141,8 @@
               "type": "integer"
             }
           }
-        ]
+        ],
+        "description": "Use scope=global for account-wide conversations. For a scoped conversation supply workspaceId and optionally documentId."
       }
     },
     "/ai/conversations/{conversationId}": {
@@ -4079,6 +4183,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       },
@@ -4102,6 +4215,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       }
@@ -4144,6 +4266,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
@@ -4192,6 +4323,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "requestBody": {
@@ -4252,6 +4392,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       }
@@ -4297,6 +4446,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       },
@@ -4327,6 +4485,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
@@ -4409,6 +4576,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       }
@@ -4473,6 +4649,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "parameters": [
@@ -4549,6 +4734,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         }
       }
@@ -4656,6 +4850,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "workspaceId",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "responses": {
@@ -4688,7 +4891,8 @@
             "managedRunnerToken": [],
             "runnerInstance": []
           }
-        ]
+        ],
+        "description": "Global claims require workspaceId. Scoped claims remain bound to their original workspace."
       }
     },
     "/ai/runner/v2/claims/{lease}/sources": {
@@ -4721,7 +4925,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AiSourceRequest"
+                "$ref": "#/components/schemas/AiManagedSourceRequest"
               }
             }
           }
@@ -5249,6 +5453,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Ai401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Ai403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Ai404"
           }
         },
         "requestBody": {
@@ -5579,6 +5792,52 @@
             }
           }
         }
+      }
+    },
+    "/ai/runner/v2/claims/{lease}/workspaces": {
+      "get": {
+        "operationId": "listAiWorkspacesV2",
+        "parameters": [
+          {
+            "name": "lease",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspaces currently accessible to the account for this global task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AiLeasedWorkspace"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request could not be completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "managedRunnerToken": [],
+            "runnerInstance": []
+          }
+        ]
       }
     }
   },
@@ -6542,7 +6801,8 @@
         ],
         "properties": {
           "workspaceId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "documentId": {
             "type": [
@@ -6564,6 +6824,11 @@
               "$ref": "#/components/schemas/AiContext"
             }
           }
+        },
+        "not": {
+          "required": [
+            "scope"
+          ]
         }
       },
       "AiSourceReference": {
@@ -6597,6 +6862,13 @@
           "to": {
             "type": "integer",
             "minimum": 0
+          },
+          "workspaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspaceName": {
+            "type": "string"
           }
         }
       },
@@ -6669,6 +6941,9 @@
           },
           "plan": {
             "$ref": "#/components/schemas/AiReorganizationPlan"
+          },
+          "transfer": {
+            "$ref": "#/components/schemas/AiTransferPreview"
           }
         }
       },
@@ -6676,7 +6951,6 @@
         "type": "object",
         "required": [
           "id",
-          "workspaceId",
           "documentId",
           "mode",
           "status",
@@ -6689,9 +6963,6 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "workspaceId": {
             "type": "string"
           },
           "documentId": {
@@ -6767,8 +7038,52 @@
           },
           "selection": {
             "$ref": "#/components/schemas/ModelSelection"
+          },
+          "targetWorkspaceId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Destination of an ordinary global document write."
+          },
+          "workspaceManagement": {
+            "$ref": "#/components/schemas/AiWorkspaceManagementReceipt"
+          },
+          "transferResult": {
+            "$ref": "#/components/schemas/AiTransferReceipt"
           }
-        }
+        },
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "workspaceId"
+            ],
+            "properties": {
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scope": false
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "scope"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "global"
+                ]
+              },
+              "workspaceId": false,
+              "documentId": {
+                "type": "null"
+              }
+            }
+          }
+        ]
       },
       "AiClaim": {
         "type": "object",
@@ -7897,40 +8212,53 @@
         }
       },
       "ConversationScope": {
-        "type": "object",
-        "required": [
-          "workspaceId"
-        ],
-        "properties": {
-          "workspaceId": {
-            "type": "string"
-          },
-          "documentId": {
-            "anyOf": [
-              {
-                "type": "string"
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "workspaceId"
+            ],
+            "properties": {
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
               },
-              {
-                "type": "null"
+              "documentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
-            ]
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "scope"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "global"
+                ]
+              }
+            },
+            "additionalProperties": false
           }
-        }
+        ]
       },
       "ConversationView": {
         "type": "object",
         "required": [
           "id",
-          "workspaceId",
           "documentId",
           "createdAt",
           "updatedAt"
         ],
         "properties": {
           "id": {
-            "type": "string"
-          },
-          "workspaceId": {
             "type": "string"
           },
           "documentId": {
@@ -7948,8 +8276,48 @@
           },
           "updatedAt": {
             "type": "integer"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "First currently visible prompt, shortened for history. Absent on older servers."
           }
-        }
+        },
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "workspaceId"
+            ],
+            "properties": {
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scope": false
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "scope"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "global"
+                ]
+              },
+              "workspaceId": false,
+              "documentId": {
+                "type": "null"
+              }
+            }
+          }
+        ]
       },
       "CreateTurn": {
         "type": "object",
@@ -8212,7 +8580,7 @@
       "AiClaimInput": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/AiTask"
+            "$ref": "#/components/schemas/AiOperationInput"
           },
           {
             "type": "object",
@@ -8541,8 +8909,74 @@
           },
           "reorganization": {
             "$ref": "#/components/schemas/AiReorganizationRequest"
+          },
+          "targetWorkspaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AiTransferAction"
+              },
+              {
+                "$ref": "#/components/schemas/AiWorkspaceManagementAction"
+              }
+            ]
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "action"
+              ]
+            },
+            "then": {
+              "properties": {
+                "edits": {
+                  "maxItems": 0
+                }
+              },
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "targetWorkspaceId"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "reorganization"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "targetWorkspaceId"
+              ]
+            },
+            "then": {
+              "required": [
+                "edits"
+              ],
+              "properties": {
+                "edits": {
+                  "minItems": 1
+                }
+              },
+              "not": {
+                "required": [
+                  "reorganization"
+                ]
+              }
+            }
+          }
+        ]
       },
       "DocumentMemberLink": {
         "type": "object",
@@ -8836,36 +9270,7 @@
             "minimum": 0
           },
           "access": {
-            "type": "object",
-            "required": [
-              "gainedRead",
-              "gainedWrite",
-              "lost",
-              "upgraded",
-              "downgraded"
-            ],
-            "properties": {
-              "gainedRead": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "gainedWrite": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "lost": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "upgraded": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "downgraded": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
+            "$ref": "#/components/schemas/FileActionAccessChanges"
           }
         }
       },
@@ -8893,6 +9298,558 @@
           },
           "undoable": {
             "type": "boolean"
+          }
+        }
+      },
+      "AiLeasedWorkspace": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "canWrite",
+          "canManage"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "canWrite": {
+            "type": "boolean"
+          },
+          "canManage": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiManagedSourceRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AiSourceRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      },
+      "FileActionAccessChanges": {
+        "type": "object",
+        "required": [
+          "gainedRead",
+          "gainedWrite",
+          "lost",
+          "upgraded",
+          "downgraded"
+        ],
+        "properties": {
+          "gainedRead": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gainedWrite": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lost": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "upgraded": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "downgraded": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AiWorkspaceManagementAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create_workspace"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rename_workspace"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "username",
+              "role"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "set_workspace_member"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "username": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "write"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "username"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "remove_workspace_member"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "AiWorkspaceManagementReceipt": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create_workspace"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rename_workspace"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "name",
+              "username",
+              "role"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "set_workspace_member"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "write"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workspaceId",
+              "name",
+              "username"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "remove_workspace_member"
+                ]
+              },
+              "workspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "AiTransferAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "sourceWorkspaceId",
+              "sourcePath",
+              "targetWorkspaceId",
+              "targetPath",
+              "documentId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "move",
+                  "copy"
+                ]
+              },
+              "sourceWorkspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sourcePath": {
+                "type": "string"
+              },
+              "targetWorkspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetPath": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sourceKind": {
+                "type": "string",
+                "enum": [
+                  "document"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "sourceWorkspaceId",
+              "sourcePath",
+              "targetWorkspaceId",
+              "targetPath",
+              "sourceKind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "move",
+                  "copy"
+                ]
+              },
+              "sourceWorkspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sourcePath": {
+                "type": "string"
+              },
+              "targetWorkspaceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "targetPath": {
+                "type": "string"
+              },
+              "sourceKind": {
+                "type": "string",
+                "enum": [
+                  "folder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "AiTransferPreview": {
+        "type": "object",
+        "required": [
+          "kind",
+          "sourceWorkspaceId",
+          "sourcePath",
+          "targetWorkspaceId",
+          "targetPath",
+          "sourceKind",
+          "sourceWorkspaceName",
+          "targetWorkspaceName",
+          "fileCount",
+          "access"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "move",
+              "copy"
+            ]
+          },
+          "sourceWorkspaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "targetWorkspaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetPath": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "document",
+              "folder"
+            ]
+          },
+          "sourceWorkspaceName": {
+            "type": "string"
+          },
+          "targetWorkspaceName": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "access": {
+            "$ref": "#/components/schemas/FileActionAccessChanges"
+          },
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "AiTransferReceipt": {
+        "type": "object",
+        "required": [
+          "kind",
+          "workspaceId",
+          "workspaceName",
+          "path"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "move",
+              "copy"
+            ]
+          },
+          "workspaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspaceName": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "AiGlobalTask": {
+        "type": "object",
+        "required": [
+          "scope",
+          "mode",
+          "prompt"
+        ],
+        "properties": {
+          "documentId": {
+            "type": "null"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AiMode"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "context": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiContext"
+            },
+            "maxItems": 0
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global"
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "workspaceId"
+          ]
+        }
+      },
+      "AiOperationInput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AiTask"
+          },
+          {
+            "$ref": "#/components/schemas/AiGlobalTask"
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Ai401": {
+        "description": "Sign-in required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "Ai403": {
+        "description": "The current account lacks permission for this action",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "Ai404": {
+        "description": "The resource is missing or inaccessible under current permissions",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
           }
         }
       }
