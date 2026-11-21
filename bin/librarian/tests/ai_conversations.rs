@@ -13,6 +13,9 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 const ORIGINAL: &str = "\u{feff}初稿\r\n😀\n";
+#[path = "fixtures/ai-materials/setup.rs"]
+mod managed;
+
 const RUNNER: &str = "synthetic-conversation-runner";
 
 struct Fixture {
@@ -92,6 +95,7 @@ impl Fixture {
             .clone()
             .oneshot(
                 Request::builder()
+                    .header("x-librarian-runner-id", managed::INSTANCE)
                     .method(method)
                     .uri(format!("/api/v1{path}"))
                     .header("authorization", format!("Bearer {token}"))
@@ -688,4 +692,85 @@ async fn a_committed_write_survives_interrupted_receipt_and_loss_of_write_permis
         .as_str()
         .unwrap()
         .contains("durable change"));
+}
+
+#[tokio::test]
+async fn global_scope_requires_an_explicit_request_and_managed_dispatch() {
+    let f = Fixture::open().await;
+    let scoped = f.conversation(&f.user,None).await;
+    for invalid in [json!({}),json!({"scope":"global","workspaceId":f.ws}),json!({"scope":"other"})] {
+        assert_eq!(f.req(&f.user,"POST","/ai/conversations",invalid).await.0,422);
+    }
+    let c = f.ok(&f.user,"POST","/ai/conversations",json!({"scope":"global"})).await;
+    assert_eq!(c["scope"],"global");
+    assert!(c.get("workspaceId").is_none());
+    assert_eq!(f.get("/ai/conversations?scope=global").await["items"], json!([c]));
+    assert_eq!(f.get(&format!("/ai/conversations?workspaceId={}",f.ws)).await["items"][0]["id"],scoped);
+    let url=turns(&field(&c,"id"));
+    assert_eq!(f.req(&f.user,"POST",&url,json!({"clientTurnId":"one","mode":"chat","prompt":"hello"})).await.0,409);
+    assert_eq!(f.claim().await,Value::String(String::new()));
+}
+
+#[tokio::test]
+async fn global_history_checks_live_read_dependencies_including_inherited_answers() {
+    let mut f = Fixture::open().await;
+    managed::configure(f.root.path()).unwrap();
+    let c=field(&f.ok(&f.user,"POST","/ai/conversations",json!({"scope":"global"})).await,"id");
+    let mut ids=Vec::new();
+    for (i, prompt) in ["compare-private","summarize-private"].into_iter().enumerate() {
+        let t=f.send(&c,prompt,"chat",prompt).await;
+        ids.push(field(&t,"operationId"));
+        let claim=f.ok(managed::RUNNER,"POST","/ai/runner/v2/claims",json!({})).await;
+        assert_eq!(claim["input"]["scope"],"global");
+        assert_eq!(claim["input"]["history"].as_array().unwrap().len(),i);
+        let lease=format!("/ai/runner/v2/claims/{}",field(&claim,"leaseId"));
+        if i==0 {
+            let spaces=f.ok(managed::RUNNER,"GET",&format!("{lease}/workspaces"),Value::Null).await;
+            for w in spaces.as_array().unwrap() {
+                let ws=field(w,"id");
+                let docs=f.ok(managed::RUNNER,"GET",&format!("{lease}/documents?workspaceId={ws}"),Value::Null).await;
+                let read=f.ok(managed::RUNNER,"POST",&format!("{lease}/sources"),json!({"workspaceId":ws,"documentId":docs[0]["id"]})).await;
+                assert_eq!(read["source"]["workspaceId"],ws);
+                assert_eq!(read["source"]["workspaceName"],w["name"]);
+            }
+            assert!(f.req(managed::RUNNER,"GET",&format!("{lease}/documents"),Value::Null).await.0>=400);
+        }
+        f.ok(managed::RUNNER,"PUT",&format!("{lease}/result"),json!({"answer":"private answer"})).await;
+    }
+    assert_eq!(f.get(&base(&c)).await["title"],"compare-private");
+    let path=f.root.path().join("spaces.json");
+    let mut config:Value=serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    config["two"]["members"].as_object_mut().unwrap().remove("author");
+    fs::write(path,config.to_string()).unwrap();
+    f.reopen();
+    assert_eq!(f.get(&turns(&c)).await["items"],json!([]));
+    assert!(f.get(&base(&c)).await["title"].is_null());
+    for id in ids {
+        for suffix in ["","/events"] {
+            assert_eq!(f.req(&f.user,"GET",&format!("/ai/operations/{id}{suffix}"),Value::Null).await.0,404);
+        }
+    }
+    assert_eq!(f.req(&f.user,"POST",&turns(&c),json!({"mode":"chat","prompt":"compare-private","clientTurnId":"compare-private"})).await.0,404);
+    f.send(&c,"new","chat","fresh").await;
+    let claim=f.ok(managed::RUNNER,"POST","/ai/runner/v2/claims",json!({})).await;
+    assert_eq!(claim["input"]["history"],json!([]));
+}
+
+#[tokio::test]
+async fn account_with_zero_spaces_can_start_a_global_edit() {
+    let f=Fixture::open().await;
+    let users=UserStore::open(f.root.path()).unwrap().unwrap();
+    users.create_user("newcomer","isolated-password",false,Profile::default()).unwrap();
+    let token=users.create_token("newcomer","test").unwrap();
+    // Reload both the account store and managed configuration from disk.
+    managed::configure(f.root.path()).unwrap();
+    let mut f=f;
+    f.reopen();
+    assert_eq!(f.ok(&token,"GET","/workspaces",Value::Null).await,json!([]));
+    let c=f.ok(&token,"POST","/ai/conversations",json!({"scope":"global"})).await;
+    let t=f.ok(&token,"POST",&turns(&field(&c,"id")),json!({"clientTurnId":"first","prompt":"create","mode":"edit"})).await;
+    let claim=f.ok(managed::RUNNER,"POST","/ai/runner/v2/claims",json!({})).await;
+    assert_eq!(claim["operationId"],t["operationId"]);
+    let url=format!("/ai/runner/v2/claims/{}/workspaces",field(&claim,"leaseId"));
+    assert_eq!(f.ok(managed::RUNNER,"GET",&url,Value::Null).await,json!([]));
 }
