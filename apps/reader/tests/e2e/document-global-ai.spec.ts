@@ -24,6 +24,30 @@ for (const width of [1440, 390]) {
   });
 }
 
+test("the document and assistant headers fit a 320px window at twice the text size", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await createNote(page, "窄屏入口.md", "使用顶栏进入助手。");
+  await page.locator("html").evaluate((root) => {
+    root.style.fontSize = "200%";
+  });
+  async function checkHeader() {
+    const controls = page.getByRole("banner").getByRole("button");
+    for (const control of await controls.all()) {
+      const bounds = await control.boundingBox();
+      expect(bounds).toBeTruthy();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+      expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  }
+  await checkHeader();
+  await enterAi(page);
+  await checkHeader();
+});
+
 test("a new account can open the assistant from an empty library", async ({ page, browser }) => {
   const username = `ai-${randomUUID()}`;
   const password = "global-assistant-fixture-password";

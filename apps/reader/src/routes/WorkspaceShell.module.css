@@ -1,11 +1,13 @@
 .application {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100dvh;
   background: var(--paper);
 }
 
 .bar {
+  container: reader-bar / inline-size;
   display: grid;
   min-height: 49px;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -344,6 +346,17 @@
   .navigation {
     border-inline-end: 0;
     border-block-end: 1px solid var(--border);
+  }
+}
+
+@container reader-bar (max-width: 15rem) {
+  .bar .button,
+  .bar .brand {
+    min-inline-size: 44px;
+    padding-inline: 2px;
+  }
+  .topActions {
+    gap: 2px;
   }
 }
 
