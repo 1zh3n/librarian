@@ -4,7 +4,7 @@
 
 Linux x86_64 发行包带有 Node 24、锁定的 DeepSeek Harness 依赖和用户级 systemd 服务安装程序。解包后保留该目录，服务启动命令引用其中的绝对路径。
 
-以拥有 Librarian 数据目录的服务账户操作。先停止使用该数据根的 Librarian 服务。首次安装先用 `./librarian init` 建立管理员账户。下面示例使用本机后端地址，HTTPS 反向代理部署也可传带前缀的服务地址。
+以拥有 Librarian 数据目录的服务账户操作。运行中的服务器也支持本地注册。首次安装先用 `./librarian init` 建立管理员账户。下面示例使用本机后端地址，HTTPS 反向代理部署也可传带前缀的服务地址。
 
 ```bash
 ./install-managed-runner --data-root "$librarian_root" \
@@ -15,7 +15,7 @@ systemctl --user enable --now librarian-managed-runner.service
 systemctl --user status librarian-managed-runner.service
 ```
 
-安装程序使用 Librarian 的本地注册命令，在数据根的 `.librarian/managed-runner.json` 保存该实例的身份。文件权限为 `0600`。同一实例升级时继续使用该文件，把新版解到新目录，在新目录运行安装程序并执行 `systemctl --user daemon-reload` 和 `systemctl --user restart librarian-managed-runner.service`。多个实例可分别指定 `--unit-name NAME.service`，服务文件默认保存在用户 systemd 配置目录。
+安装程序调用 `librarian runner-enroll --data-root ROOT --identity-file FILE`，在数据根的 `.librarian/managed-runner.json` 保存该实例的身份。文件权限为 `0600`。同一实例升级时继续使用该文件，把新版解到新目录，在新目录运行安装程序并执行 `systemctl --user daemon-reload` 和 `systemctl --user restart librarian-managed-runner.service`。多个实例可分别指定 `--unit-name NAME.service`，服务文件默认保存在用户 systemd 配置目录。
 
 管理者在网页「设置 → AI」录入供应商密钥、选择模型并查看执行器心跳，再执行「启用受管 AI」。升级期间继续运行原有执行器，直至切换前的任务完成。受管执行器的供应商凭证按任务租约获取。用 `systemctl --user stop librarian-managed-runner.service` 停止实例，用 `systemctl --user start librarian-managed-runner.service` 恢复轮询。
 
