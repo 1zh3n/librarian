@@ -1,0 +1,256 @@
+.panel {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  padding-block-start: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.section {
+  display: grid;
+  min-width: 0;
+  gap: 0.625rem;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.section:first-child {
+  padding-block-start: 0;
+  border-block-start: 0;
+}
+
+.section h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.statusRow {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.status[data-state="enabled"] {
+  border-color: var(--control-success);
+  color: var(--control-success);
+}
+
+.status[data-state="disabled"] {
+  border-color: var(--control-invalid);
+  color: var(--control-invalid);
+}
+
+.detail,
+.empty {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.empty {
+  padding-block: 0.5rem;
+}
+
+.endpointRow {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.endpointRow code {
+  min-width: 0;
+  flex: 1 1 16rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.snippets {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.snippet {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.snippetHead {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem;
+}
+
+.snippetHead strong {
+  font-size: var(--ui-size);
+}
+
+.snippet pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.readerLink {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.button {
+  width: auto;
+  min-height: 44px;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.button[data-hovered] {
+  background: var(--surface-hover);
+}
+
+.inlineButton {
+  width: auto;
+  min-height: 32px;
+  margin-inline-start: 0.5rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--ui-size);
+}
+
+.danger {
+  border-color: var(--control-invalid);
+  color: var(--control-invalid);
+}
+
+.grants {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grant {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  padding-block: 0.75rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.grant:first-child {
+  border-block-start: 0;
+}
+
+.grantHead {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.grantName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kind {
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+}
+
+.grantMeta {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  overflow-wrap: anywhere;
+}
+
+/* Dialog classes are passed to ui/Dialog. */
+.overlay {
+  position: fixed;
+  z-index: 5;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: min(1rem, 4vw);
+  background: var(--overlay);
+}
+
+.modal {
+  width: min(100%, 30rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dialog {
+  padding: min(1rem, 4vw);
+  outline: 0;
+}
+
+.dialog h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+@media (pointer: coarse) {
+  .button,
+  .inlineButton {
+    min-height: 44px;
+  }
+}
+
+@container (max-width: 22rem) {
+  .endpointRow > button {
+    width: 100%;
+  }
+}

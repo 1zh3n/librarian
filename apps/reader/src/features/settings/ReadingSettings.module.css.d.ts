@@ -1,6 +1,7 @@
 declare const styles: {
   readonly overlay: string;
   readonly modal: string;
+  readonly modalWide: string;
   readonly dialog: string;
   readonly device: string;
   readonly fields: string;

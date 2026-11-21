@@ -1,4 +1,5 @@
 import { AiSettings } from "./AiSettings";
+import { ConnectionsSettings } from "./ConnectionsSettings";
 import { Dialog } from "../../ui/Dialog";
 import { useState } from "react";
 import { Button } from "../../ui/Button";
@@ -41,14 +42,25 @@ export function ReadingSettings({
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("appearance");
   const [visitedAi, setVisitedAi] = useState(false);
+  const [visitedConnections, setVisitedConnections] = useState(false);
   return (
-    <Dialog title="应用设置" busy={saving} onClose={close} classes={styles}>
+    <Dialog
+      title="应用设置"
+      busy={saving}
+      onClose={close}
+      classes={
+        tab === "connections"
+          ? { overlay: styles.overlay, modal: styles.modalWide, dialog: styles.dialog }
+          : { overlay: styles.overlay, modal: styles.modal, dialog: styles.dialog }
+      }
+    >
       <Tabs
         value={tab}
         disabled={saving}
         onChange={(id) => {
           setTab(id);
           if (id === "ai") setVisitedAi(true);
+          if (id === "connections") setVisitedConnections(true);
         }}
         label="应用设置"
         listClassName={styles.tabList}
@@ -58,12 +70,13 @@ export function ReadingSettings({
           { id: "reading", label: "阅读与布局" },
           { id: "shortcuts", label: "快捷键" },
           { id: "ai", label: "AI" },
+          { id: "connections", label: "连接" },
         ]}
       >
         {preferences ? (
           <fieldset
             className={styles.device}
-            hidden={tab === "ai"}
+            hidden={tab === "ai" || tab === "connections"}
             disabled={saving}
             aria-label="设备偏好"
           >
@@ -118,6 +131,22 @@ export function ReadingSettings({
               关闭
             </Button>
           </div>
+        </TabPanel>
+        <TabPanel id="connections" keepMounted>
+          {visitedConnections &&
+            (account && isAdmin !== undefined ? (
+              <ConnectionsSettings
+                key={account}
+                account={account}
+                isAdmin={isAdmin}
+                active={tab === "connections"}
+                busy={saving}
+                setBusy={setSaving}
+                close={close}
+              />
+            ) : (
+              <Feedback>暂时无法确认账号权限。</Feedback>
+            ))}
         </TabPanel>
       </Tabs>
     </Dialog>

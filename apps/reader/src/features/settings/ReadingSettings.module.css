@@ -20,6 +20,15 @@
   background: var(--surface);
 }
 
+.modalWide {
+  width: min(100%, 44rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
 .dialog {
   padding: min(1rem, 4vw);
   outline: 0;
@@ -45,6 +54,7 @@
 
 .tabList {
   max-width: 100%;
+  flex-wrap: wrap;
   padding: 0;
   border-block-end: 1px solid var(--border);
 }
@@ -53,7 +63,7 @@
   width: auto;
   min-width: 0;
   min-height: 44px;
-  flex: 1 1 auto;
+  flex: 1 1 5rem;
   white-space: normal;
   margin-block-end: -1px;
   padding-inline: clamp(4px, 1vw, 8px);

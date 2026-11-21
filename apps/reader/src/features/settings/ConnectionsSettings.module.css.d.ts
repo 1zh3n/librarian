@@ -1,0 +1,27 @@
+declare const styles: {
+  readonly panel: string;
+  readonly section: string;
+  readonly statusRow: string;
+  readonly status: string;
+  readonly detail: string;
+  readonly empty: string;
+  readonly endpointRow: string;
+  readonly snippets: string;
+  readonly snippet: string;
+  readonly snippetHead: string;
+  readonly readerLink: string;
+  readonly actions: string;
+  readonly button: string;
+  readonly inlineButton: string;
+  readonly danger: string;
+  readonly grants: string;
+  readonly grant: string;
+  readonly grantHead: string;
+  readonly grantName: string;
+  readonly kind: string;
+  readonly grantMeta: string;
+  readonly overlay: string;
+  readonly modal: string;
+  readonly dialog: string;
+};
+export default styles;

@@ -223,7 +223,7 @@ impl Fixture {
 }
 
 #[tokio::test]
-async fn mcp_settings_are_admin_only_and_report_status() {
+async fn mcp_settings_are_admin_writable_and_member_readable() {
     let f = Fixture::new(true, Some("https://docs.example.test")).await;
     let (status, body) = f
         .request("GET", "/mcp/settings", Some(&f.admin), ORIGIN, Value::Null)
@@ -240,6 +240,18 @@ async fn mcp_settings_are_admin_only_and_report_status() {
 
     let (status, body) = f
         .request("GET", "/mcp/settings", Some(&f.member), ORIGIN, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["endpoint"], format!("{ORIGIN}/.mcp"));
+
+    let (status, body) = f
+        .request(
+            "PUT",
+            "/mcp/settings",
+            Some(&f.member),
+            ORIGIN,
+            json!({"enabled": false}),
+        )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["code"], "account_admin_required");

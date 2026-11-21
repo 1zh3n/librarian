@@ -65,7 +65,7 @@ async fn settings(
     State(service): State<Arc<DocumentService>>,
     headers: HeaderMap,
 ) -> Result<Json<McpSettingsView>, ApiError> {
-    accounts::administrator(&service, &headers, false)?;
+    accounts::browser(&service, &headers, false)?;
     Ok(Json(view(&service, &headers)))
 }
 
