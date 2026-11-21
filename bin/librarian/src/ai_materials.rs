@@ -126,7 +126,7 @@ fn docx(bytes: &[u8], out: &mut Extract) -> Parsed<()> {
     let mut parts: HashMap<String, Vec<u8>> = HashMap::new();
     for i in 0..zip.len() {
         let entry = zip.by_index(i).map_err(|_| "invalid_file")?;
-        let name = entry.name().to_owned();
+        let name = entry.name().map_err(|_| "invalid_file")?.to_string();
         if entry.enclosed_name().is_none()
             || name.contains(['\\', ':'])
             || std::path::Path::new(&name)

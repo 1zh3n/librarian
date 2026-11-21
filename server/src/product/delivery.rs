@@ -716,7 +716,11 @@ fn read_zip(input: impl Read + std::io::Seek, output: &mut Payload) -> Result<()
     }
     for number in 0..zip.len() {
         let mut file = zip.by_index(number).map_err(invalid)?;
-        let path = file.name().trim_end_matches('/').to_owned();
+        let path = file
+            .name()
+            .map_err(|_| ApiError::invalid("Invalid ZIP entry name"))?
+            .trim_end_matches('/')
+            .to_owned();
         if file.is_symlink() || file.enclosed_name().is_none() || !included_path(&path) {
             return Err(ApiError::invalid("ZIP contains an unsafe entry"));
         }

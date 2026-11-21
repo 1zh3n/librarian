@@ -72,7 +72,10 @@ pub fn extract_archive(zip: &[u8], dest: &Path) -> Result<usize, StarterError> {
         if entry.is_dir() || is_symlink {
             continue;
         }
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| archive_err("could not read archive entry name", &e))?
+            .to_string();
         let Some((_top, rel)) = name.split_once('/') else {
             continue;
         };
