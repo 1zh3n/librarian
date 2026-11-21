@@ -198,14 +198,10 @@ pub(super) fn operation(
         for change in &saved.receipt.changes {
             let contents = match &change.before_revision {
                 Some(before) => {
-                    let bytes = crate::revisions::read::file_at(
-                        engine.store(),
-                        &change.path,
-                        &saved.receipt.commit_id,
-                        true,
-                    )
-                    .map_err(ApiError::internal)?
-                    .ok_or_else(ApiError::not_found)?;
+                    let bytes = crate::revisions::read::RevisionPath::Recorded(&change.path)
+                        .bytes(engine.store(), &saved.receipt.commit_id, true)
+                        .map_err(ApiError::internal)?
+                        .ok_or_else(ApiError::not_found)?;
                     if silverbullet_server_common::revision::sha256_hex(&bytes) != *before {
                         return Err(ApiError::conflict(None));
                     }

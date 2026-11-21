@@ -492,6 +492,29 @@ async fn invalid_slug_selection_or_missing_asset_leaves_target_ref_unchanged() {
     let f = Fixture::new();
     let (workspace, docs, commit) = f.scope().await;
     let head = text_git(&f.target, &["rev-parse", "refs/heads/main"]);
+    // Both selected IDs have moved; Start's current path was occupied by Missing.
+    for (operation, from, to) in [
+        (
+            "fac10872-c65c-41c9-ade4-06cb0f9db4dc",
+            "notes/Missing.md",
+            "notes/Renamed.md",
+        ),
+        (
+            "399fa35c-102c-43a2-b06d-f00fd32571ce",
+            "notes/Start.md",
+            "notes/Missing.md",
+        ),
+    ] {
+        let (status, moved) = f
+            .request(
+                "POST",
+                &format!("/workspaces/{workspace}/rename"),
+                &f.administrator,
+                json!({"operationId":operation,"from":from,"to":to}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{moved}");
+    }
     for (operation, files, message) in [
         (
             OPERATION,

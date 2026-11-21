@@ -20,18 +20,13 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::revisions::read::file_path_before_rename;
-
 use super::{
     auth::Account,
     contract::ApiError,
     db::Metadata,
-    documents::{
-        body, is_document_path, product_read, run, state, DocumentService, MARKDOWN_LIMIT,
-    },
-    mutations::valid_file_path,
+    documents::{body, product_read, run, state, DocumentService, MARKDOWN_LIMIT},
     revisions::validate_commit,
-    snapshots::git_blobs,
+    snapshots::{document_blob_at_commit, git_blobs},
     workspace::require_manage,
 };
 
@@ -318,19 +313,7 @@ fn propose(
         .iter()
         .map(|id| {
             let path = service.path_in(&request.workspace_id, id)?;
-            if !valid_file_path(&path) || !is_document_path(&path) {
-                return Err(ApiError::not_found());
-            }
-            if git_blobs::find(store, &repo, &commit, &path, MARKDOWN_LIMIT)?.is_some() {
-                return Ok(path);
-            }
-            let historical = file_path_before_rename(store, &path, &commit)
-                .map_err(ApiError::internal)?
-                .filter(|path| valid_file_path(path) && is_document_path(path))
-                .ok_or_else(ApiError::not_found)?;
-            git_blobs::find(store, &repo, &commit, &historical, MARKDOWN_LIMIT)?
-                .map(|_| historical)
-                .ok_or_else(ApiError::not_found)
+            document_blob_at_commit(store, &repo, &commit, &path).map(|(path, _)| path)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let id = request.operation_id.clone();

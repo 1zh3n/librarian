@@ -193,6 +193,82 @@ async fn history_diff_uses_requested_blob() {
 }
 
 #[tokio::test]
+async fn version_history_of_a_fresh_identical_document_excludes_the_source() {
+    let f = Fixture::new("managed", 30);
+    let source = f.document().await;
+    let (_, original) = f.request("GET", &source, Value::Null).await;
+    let unrelated = f.history(&source).await["revisions"][0]["commitId"].clone();
+    f.save(&source, &original, NEXT).await;
+    f.engine.as_ref().unwrap().snapshot_now().unwrap();
+    let workspace = original["document"]["workspaceId"].as_str().unwrap();
+    let (status, copy) = f
+        .request(
+            "POST",
+            &format!("/workspaces/{workspace}/documents"),
+            json!({"path":"Field copy.md", "markdown": NEXT,"baseRevision":null}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{copy}");
+    f.engine.as_ref().unwrap().snapshot_now().unwrap();
+    let doc = format!("/documents/{}", copy["document"]["id"].as_str().unwrap());
+    let creation = f.history(&doc).await["revisions"][0]["commitId"].clone();
+    let current = f.save(&doc, &copy, "independent edits").await;
+    f.engine.as_ref().unwrap().snapshot_now().unwrap();
+    let (_, first) = f
+        .request("GET", &format!("{doc}/revisions?limit=1"), Value::Null)
+        .await;
+    assert_eq!(first["more"], true);
+    let latest = first["revisions"][0]["commitId"].as_str().unwrap();
+    let (_, second) = f
+        .request(
+            "GET",
+            &format!("{doc}/revisions?limit=1&before={latest}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(second["revisions"][0]["commitId"], creation);
+    assert_eq!(second["more"], false);
+    let oldest = creation.as_str().unwrap();
+    let (_, past) = f
+        .request(
+            "GET",
+            &format!("{doc}/revisions?before={oldest}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(past["revisions"], json!([]));
+    assert_eq!(
+        f.history(&doc).await["revisions"].as_array().unwrap().len(),
+        2
+    );
+    let foreign = unrelated.as_str().unwrap();
+    assert_eq!(
+        f.request(
+            "GET",
+            &format!("{doc}/revisions/{foreign}/diff"),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        f.request(
+            "POST",
+            &format!("{doc}/restore"),
+            json!({"baseRevision":current["revision"],"commitId":foreign})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        fs::read(f.repo().join("Field copy.md")).unwrap(),
+        b"independent edits"
+    );
+}
+
+#[tokio::test]
 async fn restore_adds_commit_and_rejects_stale_base() {
     let f = Fixture::new("managed", 30);
     let document = f.document().await;

@@ -245,6 +245,149 @@ async fn creates_cited_index_and_updates_atomically() {
 }
 
 #[tokio::test]
+async fn version_diff_and_restore_follow_the_document_when_an_ai_commit_changed_both_paths() {
+    let s = Space::open().await;
+    let (operation, lease) = s.start(&s.writer, "edit").await;
+    let note = s.source(&lease, &s.note).await;
+    let project = s.source(&lease, &s.project).await;
+    let note_version = "AI field observations  \r\n";
+    let project_version = "Independent project version\n";
+    let (status, result) = s.result(&lease, json!({"answer":"Updated both documents","edits":[
+        {"documentId":s.note,"baseRevision":note["revision"],"markdown":note_version},
+        {"documentId":s.project,"baseRevision":project["revision"],"markdown":project_version}
+    ]})).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let commit = field(&result, "commitId");
+    for (id, from, to) in [
+        (
+            "1c08c69f-8624-48ab-9ad0-fd7dc6e13fca",
+            "Projects/Plan.md",
+            "Projects/Other.md",
+        ),
+        (
+            "6c699851-dd8f-4bcf-bda9-dcef9dc6b883",
+            "Notes/Field.md",
+            "Projects/Plan.md",
+        ),
+    ] {
+        let (status, moved) = s
+            .call(
+                &s.admin,
+                "POST",
+                &format!("/workspaces/{}/rename", s.ws),
+                json!({"operationId":id,"from":from,"to":to}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{moved}");
+    }
+
+    let doc = format!("/documents/{}", s.note);
+    let rename = s.git(&["rev-parse", "HEAD"]);
+    let (status, previous) = s
+        .call(
+            &s.reader,
+            "GET",
+            &format!("{doc}/revisions?limit=1&before={rename}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{previous}");
+    assert_eq!(previous["revisions"][0]["commitId"], commit);
+    let (status, current) = s.call(&s.writer, "PUT", &doc, json!({
+        "baseRevision":sha256_hex(note_version.as_bytes()), "markdown":"Later field observations"
+    })).await;
+    assert_eq!(status, StatusCode::OK, "{current}");
+    let (status, version) = s
+        .call(
+            &s.reader,
+            "GET",
+            &format!("{doc}/revisions/{commit}/diff"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{version}");
+    let (status, restored) = s
+        .call(
+            &s.writer,
+            "POST",
+            &format!("{doc}/restore"),
+            json!({"baseRevision":current["revision"],"commitId":commit}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{restored}");
+    assert_eq!(
+        (
+            version["markdown"].as_str(),
+            restored["snapshot"]["markdown"].as_str()
+        ),
+        (Some(note_version), Some(note_version)),
+    );
+    assert!(field(&version, "diff").contains("+AI field observations"));
+    assert_eq!(restored["snapshot"]["document"]["id"], s.note);
+    assert_eq!(
+        fs::read(s.folder().join("Projects/Other.md")).unwrap(),
+        project_version.as_bytes()
+    );
+
+    // An operation receipt records paths as they were in its own commit.
+    let (status, receipt) = s
+        .call(
+            &s.writer,
+            "GET",
+            &format!("/ai/operations/{operation}/diff?path=Projects%2FPlan.md"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{receipt}");
+    assert!(field(&receipt, "diff").contains("+Independent project version"));
+
+    let fresh = "new document at the old address";
+    let (status, replacement) = s
+        .call(
+            &s.writer,
+            "POST",
+            &format!("/workspaces/{}/documents", s.ws),
+            json!({"path":"Notes/Field.md","baseRevision":null,"markdown":fresh}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{replacement}");
+    let replacement_id = field(&replacement["document"], "id");
+    assert_ne!(replacement_id, s.note);
+    let replacement_doc = format!("/documents/{replacement_id}");
+    let revisions = format!("{replacement_doc}/revisions");
+    for expected_versions in [0, 2] {
+        let (status, history) = s.call(&s.reader, "GET", &revisions, Value::Null).await;
+        assert_eq!(status, StatusCode::OK, "{history}");
+        assert_eq!(
+            history["revisions"].as_array().unwrap().len(),
+            expected_versions,
+            "{history}"
+        );
+        let (status, current) = s
+            .call(&s.writer, "GET", &replacement_doc, Value::Null)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, denied) = s
+            .call(
+                &s.writer,
+                "POST",
+                &format!("{replacement_doc}/restore"),
+                json!({"baseRevision":current["revision"],"commitId":commit}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{denied}");
+        if expected_versions == 0 {
+            let (_, lease) = s.start(&s.writer, "edit").await;
+            let source = s.source(&lease, &replacement_id).await;
+            let (status, edit) = s.result(&lease, json!({"answer":"Update field note","edits":[
+                {"documentId":replacement_id,"baseRevision":source["revision"],"markdown":"updated new document"}
+            ]})).await;
+            assert_eq!(status, StatusCode::OK, "{edit}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn one_stale_edit_rejects_the_batch() {
     let s = Space::open().await;
     let (_, lease) = s.start(&s.writer, "edit").await;

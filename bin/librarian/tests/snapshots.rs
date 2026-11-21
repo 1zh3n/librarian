@@ -312,26 +312,36 @@ async fn current_tracks_the_document_and_release_preserves_selected_git_bytes_af
         )
         .await;
     }
-    let (status, _, bytes) = f
-        .request(
-            "POST",
-            &format!("/workspaces/{workspace}/rename"),
-            Some(&f.administrator),
-            json!({
-                "operationId": "2fa4b557-91ec-4037-99cd-07249ce7a125",
-                "from": "Notes.md", "to": "Journal.md"
-            }),
-        )
-        .await;
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "{}",
-        String::from_utf8_lossy(&bytes)
-    );
+    for (operation, from, to) in [
+        (
+            "8273628a-e33b-41eb-819e-598700484235",
+            "Hidden.md",
+            "Archive.md",
+        ),
+        (
+            "2fa4b557-91ec-4037-99cd-07249ce7a125",
+            "Notes.md",
+            "Hidden.md",
+        ),
+    ] {
+        let (status, _, bytes) = f
+            .request(
+                "POST",
+                &format!("/workspaces/{workspace}/rename"),
+                Some(&f.administrator),
+                json!({"operationId":operation,"from":from,"to":to}),
+            )
+            .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+    }
     let renamed = f.get_json(&current, Some(&f.reader)).await;
     assert_eq!(renamed["document"]["id"], document);
-    assert_eq!(renamed["document"]["path"], "Journal.md");
+    assert_eq!(renamed["document"]["path"], "Hidden.md");
     assert_eq!(renamed["document"]["markdown"], UPDATED);
     assert_eq!(
         f.get_json(&release, None).await["document"]["path"],

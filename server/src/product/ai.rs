@@ -351,7 +351,8 @@ impl Operation {
                 let mut edits = Vec::with_capacity(self.view.changes.len());
                 for change in &self.view.changes {
                     let markdown = if let Some(before) = &change.before_revision {
-                        let bytes = read::file_at(engine.store(), &change.path, commit, true)
+                        let bytes = read::RevisionPath::Recorded(&change.path)
+                            .bytes(engine.store(), commit, true)
                             .map_err(ApiError::internal)?
                             .ok_or_else(ApiError::not_found)?;
                         if sha256_hex(&bytes) != *before {
@@ -843,7 +844,8 @@ async fn diff(
         let state = state(&instance)?;
         let _read = super::documents::product_read(state)?;
         let store = managed_engine(state)?.store();
-        let diff = read::file_diff(store, &query.path, &commit_id, false)
+        let diff = read::RevisionPath::Recorded(&query.path)
+            .diff(store, &commit_id, false)
             .map_err(ApiError::internal)?
             .ok_or_else(ApiError::not_found)?;
         if diff.len() > super::documents::MARKDOWN_LIMIT * 3 {

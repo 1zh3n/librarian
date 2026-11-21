@@ -168,75 +168,109 @@ fn is_missing_start(err: &str) -> bool {
         || err.contains("does not have any commits yet")
 }
 
-/// Fetches per-file history: `%x1e`-wrapped headers plus `--numstat` lines.
-/// `-z` NUL-delimits chunks so a `\x1e` embedded in a commit subject can't
-/// desync a header from the next one. Only the first numstat chunk after
-/// each header is kept — the file pathspec yields exactly one line per
-/// commit. `boundary`, when set, is the nested space's own directory prefix:
-/// the walk stops at the first commit where `--follow` has left it.
+/// The path of the same document in the parent tree. A copy has a new identity
+/// even when Git finds an identical source blob and follows it further.
+fn previous_path<'a>(
+    status: &str,
+    chunks: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+    boundary: Option<&str>,
+) -> Option<&'a str> {
+    let path = next_path(chunks);
+    if status.starts_with(['R', 'C']) {
+        next_path(chunks); // destination
+    }
+    if status.starts_with(['A', 'C']) || boundary.is_some_and(|b| !path.starts_with(b)) {
+        return None;
+    }
+    Some(path)
+}
+
+/// A live file awaiting its first commit may occupy the path of a deleted or
+/// moved document. The path-only revisions API also supports deleted files.
+fn awaiting_first_commit(repo: &Path, rel: &str) -> Result<bool, String> {
+    if !repo.join(rel).try_exists().map_err(|e| e.to_string())? {
+        return Ok(false);
+    }
+    let pathspec = format!(":(literal){rel}");
+    match git::run(repo, &["ls-tree", "-z", "HEAD", "--", &pathspec], &[]) {
+        Ok(entry) => Ok(entry.is_empty()),
+        Err(e) if e.contains("Not a valid object name HEAD") => Ok(true),
+        Err(e) => Err(e),
+    }
+}
+
 fn log_records(
     repo: &Path,
     before: Option<&str>,
     limit: usize,
-    pathspec: Option<&str>,
-    follow: bool,
+    rel: &str,
     boundary: Option<&str>,
 ) -> Result<(Vec<RevisionEntry>, bool), String> {
+    let (start, path) = match before {
+        Some(commit) => {
+            if !is_hex40(commit) {
+                return Err("invalid before revision".into());
+            }
+            let Some(parent) = parent_of(repo, commit)? else {
+                return Ok((Vec::new(), false));
+            };
+            let Some(path) = path_at_rev(repo, &parent, rel, boundary)? else {
+                return Ok((Vec::new(), false));
+            };
+            (parent, path)
+        }
+        None if awaiting_first_commit(repo, rel)? => return Ok((Vec::new(), false)),
+        None => ("HEAD".to_owned(), rel.to_owned()),
+    };
     let count = format!("-n{}", limit + 1);
     let format = format!("--format=%x1e{FORMAT}");
-    let start = log_start(before)?;
-    let mut args: Vec<&str> = vec!["log", &count, &format, "--numstat", "-z"];
-    if follow && pathspec.is_some() {
-        args.push("--follow");
-    }
-    args.push(&start);
-    args.push("--");
-    if let Some(p) = pathspec {
-        args.push(p);
-    }
+    let pathspec = format!(":(literal){path}");
+    // Raw status distinguishes a copy from a rename. Numstat supplies the
+    // line counts for this revision, including the document's first commit.
+    let args = [
+        "log",
+        &count,
+        &format,
+        "--follow",
+        "--raw",
+        "--numstat",
+        "-z",
+        &start,
+        "--",
+        &pathspec,
+    ];
     let out = match git::run(repo, &args, &[]) {
         Ok(out) => out,
         Err(e) if is_missing_start(&e) => return Ok((Vec::new(), false)),
         Err(e) => return Err(e),
     };
 
-    let mut revisions: Vec<RevisionEntry> = Vec::new();
-    let mut numstat_seen = false;
+    let mut revisions = Vec::new();
+    let mut at_creation = false;
     let mut chunks = out.split('\0').peekable();
     while let Some(chunk) = chunks.next() {
         if let Some(header) = header_of(chunk) {
+            if at_creation {
+                break;
+            }
             if let Some(entry) = parse_entry(header) {
                 revisions.push(entry);
             }
-            numstat_seen = false;
-            continue;
-        }
-        if numstat_seen || revisions.is_empty() {
             continue;
         }
         let line = chunk.strip_prefix('\n').unwrap_or(chunk);
-        if line.is_empty() {
-            continue;
+        if let Some(status) = raw_status(line) {
+            at_creation = previous_path(status, &mut chunks, boundary).is_none();
+        } else if !line.is_empty() {
+            let (added, removed, path) = parse_numstat(line);
+            if path.is_empty() {
+                rename_new_path(&mut chunks);
+            }
+            if let Some(entry) = revisions.last_mut() {
+                entry.added = added;
+                entry.removed = removed;
+            }
         }
-        let (added, removed, path) = parse_numstat(line);
-        let name = if path.is_empty() {
-            rename_new_path(&mut chunks)
-        } else {
-            path
-        };
-        // `--follow` will walk a rename right out of a nested space's own
-        // directory, and a revision from before the file entered the space
-        // is one this API must refuse to serve. Ending the history where the
-        // file arrived keeps the list and the read path agreeing, instead of
-        // offering rows that can only 404.
-        if boundary.is_some_and(|b| !name.is_empty() && !name.starts_with(b)) {
-            revisions.pop();
-            break;
-        }
-        let entry = revisions.last_mut().expect("checked above");
-        entry.added = added;
-        entry.removed = removed;
-        numstat_seen = true;
     }
     let more = revisions.len() > limit;
     revisions.truncate(limit);
@@ -251,16 +285,10 @@ pub fn file_history(
 ) -> Result<FileRevisions, String> {
     validate_space_path(space_path)?;
     let repo = store.repo_root().ok_or("no repository")?;
-    let pathspec = format!(":(literal){}", store.rel(space_path));
+    let rel = store.rel(space_path);
+    let pathspec = format!(":(literal){rel}");
     let prefix = space_prefix(store);
-    let (revisions, more) = log_records(
-        &repo,
-        before,
-        limit,
-        Some(&pathspec),
-        true,
-        prefix.as_deref(),
-    )?;
+    let (revisions, more) = log_records(&repo, before, limit, &rel, prefix.as_deref())?;
     let status = git::run(
         &repo,
         &[
@@ -306,78 +334,58 @@ fn effective_rev(repo: &Path, rev: &str, parent: bool) -> Result<Option<String>,
     }
 }
 
-/// The name this file went by at `rev`, when a rename has moved it since.
-/// `file_history` follows renames, so it lists commits from before the last
-/// rename -- at which point `<rev>:<current path>` names nothing and every
-/// read of those rows would 404. `--follow` over `<rev>..HEAD` replays the
-/// same rename chain the history was built from; walking it oldest-last,
-/// the final rename source is the name `rev` knew. `None` means no rename
-/// stands between `rev` and HEAD, so there is nothing else to try -- as does
-/// a chain that leaves `boundary`, a nested space's own directory prefix.
+/// Map a HEAD path back to the target commit. Crossing an addition, a copy,
+/// or the Space boundary means the current document did not exist there.
 fn path_at_rev(
     repo: &Path,
     rev: &str,
     rel: &str,
     boundary: Option<&str>,
 ) -> Result<Option<String>, String> {
+    if awaiting_first_commit(repo, rel)? {
+        return Ok(None);
+    }
+    match git::check(repo, &["merge-base", "--is-ancestor", rev, "HEAD"], 1) {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(e)
+            if e.contains("Not a valid commit name") || e.contains("Not a valid object name") =>
+        {
+            return Ok(None)
+        }
+        Err(e) => return Err(e),
+    }
     let range = format!("{rev}..HEAD");
     let pathspec = format!(":(literal){rel}");
-    let out = match git::run(
+    let out = git::run(
         repo,
         &[
             "log",
             "--follow",
             "--name-status",
             "-z",
-            "--format=%x1e%H%x1e",
+            "--format=",
             &range,
             "--",
             &pathspec,
         ],
         &[],
-    ) {
-        Ok(out) => out,
-        // A rev that resolves to nothing has no rename chain to walk, and
-        // the caller already reads `None` as "not found" -- only a genuine
-        // git failure is worth propagating as an error.
-        Err(e) if is_missing_start(&e) || e.contains("Invalid revision range") => return Ok(None),
-        Err(e) => return Err(e),
-    };
-
-    let mut source = None;
+    )?;
+    let mut path = rel;
     let mut chunks = out.split('\0').peekable();
-    while let Some(chunk) = chunks.next() {
-        if header_of(chunk).is_some() {
-            continue;
-        }
-        let status = chunk.strip_prefix('\n').unwrap_or(chunk);
+    while let Some(status) = chunks.next() {
         if status.is_empty() {
             continue;
         }
-        if status.starts_with('R') || status.starts_with('C') {
-            let old = next_path(&mut chunks);
-            next_path(&mut chunks);
-            if !old.is_empty() {
-                source = Some(old.to_string());
-            }
-        } else {
-            next_path(&mut chunks);
-        }
+        let Some(parent_path) = previous_path(status, &mut chunks, boundary) else {
+            return Ok(None);
+        };
+        path = parent_path;
     }
-    let Some(source) = source.filter(|p| p != rel) else {
-        return Ok(None);
-    };
-    // A file moved in from outside a nested space's directory is not this
-    // API's to hand over: `/.revisions` serves the space, and its pre-move
-    // bytes lived somewhere the caller was never granted. `file_history`
-    // stops at the same boundary, so nothing is listed that this refuses.
-    if boundary.is_some_and(|b| !source.starts_with(b)) {
-        return Ok(None);
-    }
-    Ok(Some(source))
+    Ok(Some(path.to_owned()))
 }
 
-pub(crate) fn file_path_before_rename(
+pub(crate) fn file_path_at_revision(
     store: &RevisionStore,
     space_path: &str,
     commit: &str,
@@ -414,28 +422,72 @@ fn show_blob(repo: &Path, rev: &str, rel: &str) -> Result<Option<Vec<u8>>, Strin
     }
 }
 
+/// Document history starts with a current path. A mutation receipt already
+/// names the affected path in its commit, even after another document moves there.
+pub(crate) enum RevisionPath<'a> {
+    Current(&'a str),
+    Recorded(&'a str),
+}
+
+impl RevisionPath<'_> {
+    fn read<T>(
+        self,
+        store: &RevisionStore,
+        rev: &str,
+        parent: bool,
+        show: fn(&Path, &str, &str) -> Result<Option<T>, String>,
+    ) -> Result<Option<T>, String> {
+        let path = match self {
+            Self::Current(path) | Self::Recorded(path) => path,
+        };
+        validate_space_path(path)?;
+        if !is_hex40(rev) {
+            return Err("invalid revision".into());
+        }
+        let repo = store.repo_root().ok_or("no repository")?;
+        let Some(rev) = effective_rev(&repo, rev, parent)? else {
+            return Ok(None);
+        };
+        let rel = store.rel(path);
+        let historical = match self {
+            Self::Current(_) => {
+                let Some(path) = path_at_rev(&repo, &rev, &rel, space_prefix(store).as_deref())?
+                else {
+                    return Ok(None);
+                };
+                path
+            }
+            Self::Recorded(_) => rel,
+        };
+        show(&repo, &rev, &historical)
+    }
+
+    pub(crate) fn bytes(
+        self,
+        store: &RevisionStore,
+        rev: &str,
+        parent: bool,
+    ) -> Result<Option<Vec<u8>>, String> {
+        self.read(store, rev, parent, show_blob)
+    }
+
+    pub(crate) fn diff(
+        self,
+        store: &RevisionStore,
+        rev: &str,
+        parent: bool,
+    ) -> Result<Option<String>, String> {
+        self.read(store, rev, parent, show_diff)
+    }
+}
+
 pub fn file_at(
     store: &RevisionStore,
     space_path: &str,
     rev: &str,
     parent: bool,
 ) -> Result<Option<Vec<u8>>, String> {
-    validate_space_path(space_path)?;
-    if !is_hex40(rev) {
-        return Err("invalid revision".to_string());
-    }
-    let repo = store.repo_root().ok_or("no repository")?;
-    let Some(rev) = effective_rev(&repo, rev, parent)? else {
-        return Ok(None);
-    };
-    let rel = store.rel(space_path);
-    if let Some(bytes) = show_blob(&repo, &rev, &rel)? {
-        return Ok(Some(bytes));
-    }
-    match path_at_rev(&repo, &rev, &rel, space_prefix(store).as_deref())? {
-        Some(historical) => show_blob(&repo, &rev, &historical),
-        None => Ok(None),
-    }
+    RevisionPath::Current(space_path).bytes(store, rev, parent)
 }
 
 fn show_diff(repo: &Path, rev: &str, rel: &str) -> Result<Option<String>, String> {
@@ -476,22 +528,7 @@ pub fn file_diff(
     rev: &str,
     parent: bool,
 ) -> Result<Option<String>, String> {
-    validate_space_path(space_path)?;
-    if !is_hex40(rev) {
-        return Err("invalid revision".to_string());
-    }
-    let repo = store.repo_root().ok_or("no repository")?;
-    let Some(rev) = effective_rev(&repo, rev, parent)? else {
-        return Ok(None);
-    };
-    let rel = store.rel(space_path);
-    if let Some(diff) = show_diff(&repo, &rev, &rel)? {
-        return Ok(Some(diff));
-    }
-    match path_at_rev(&repo, &rev, &rel, space_prefix(store).as_deref())? {
-        Some(historical) => show_diff(&repo, &rev, &historical),
-        None => Ok(None),
-    }
+    RevisionPath::Current(space_path).diff(store, rev, parent)
 }
 
 pub enum RangeEnd {

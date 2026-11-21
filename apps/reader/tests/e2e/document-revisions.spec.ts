@@ -6,6 +6,17 @@ type History = components["schemas"]["DocumentHistory"];
 
 test("reads a saved diff and restores it as a new Git commit", async ({ page }) => {
   const original = "---\ntitle: 历史测试\n---\n\n初始稿  \r\n";
+  // Git may classify the ordinary creation below as a copy of this identical file.
+  const prior = await createNote(page, "OtherHistory.md", original, "版本归档用例");
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${prior.apiUrl}/revisions`);
+        return ((await response.json()) as History).revisions.length;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(1);
   // Other workers write to the shared spaces and restart their Git archive quiet period.
   const { apiUrl, document } = await createNote(
     page,

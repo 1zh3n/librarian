@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     multi::instance::SpaceInstance,
-    revisions::{read::file_path_before_rename, RevisionStore},
+    revisions::{read::file_path_at_revision, RevisionStore},
     state::ServerState,
 };
 
@@ -283,7 +283,7 @@ fn create_locked(
             let commit =
                 git_blobs::resolve_commit(&repo, request.commit_id.as_deref().unwrap_or("HEAD"))?;
             for (document, path) in manifest.documents.iter_mut().zip(paths) {
-                document.release = Some(release_document(store, &repo, &commit, path)?);
+                document.release = Some(release_document(store, &repo, &commit, &path)?);
             }
             for (path, blob) in &mut manifest.attachments {
                 let oid = git_blobs::find(store, &repo, &commit, path, max_file_bytes(path))?
@@ -539,23 +539,31 @@ fn release_markdown(repo: &std::path::Path, oid: &str) -> Result<String, ApiErro
         .map_err(|_| ApiError::invalid("Version is not UTF-8 Markdown"))
 }
 
+pub(super) fn document_blob_at_commit(
+    store: &RevisionStore,
+    repo: &std::path::Path,
+    commit: &str,
+    current_path: &str,
+) -> Result<(String, String), ApiError> {
+    if !is_document_path(current_path) || !valid_file_path(current_path) {
+        return Err(ApiError::not_found());
+    }
+    let path = file_path_at_revision(store, current_path, commit)
+        .map_err(ApiError::internal)?
+        .filter(|path| is_document_path(path) && valid_file_path(path))
+        .ok_or_else(ApiError::not_found)?;
+    let blob = git_blobs::find(store, repo, commit, &path, MARKDOWN_LIMIT)?
+        .ok_or_else(ApiError::not_found)?;
+    Ok((path, blob))
+}
+
 fn release_document(
     store: &RevisionStore,
     repo: &std::path::Path,
     commit: &str,
-    mut path: String,
+    current_path: &str,
 ) -> Result<ReleaseDocument, ApiError> {
-    let blob = match git_blobs::find(store, repo, commit, &path, MARKDOWN_LIMIT)? {
-        Some(blob) => blob,
-        None => {
-            path = file_path_before_rename(store, &path, commit)
-                .map_err(ApiError::internal)?
-                .filter(|historical| is_document_path(historical) && valid_file_path(historical))
-                .ok_or_else(ApiError::not_found)?;
-            git_blobs::find(store, repo, commit, &path, MARKDOWN_LIMIT)?
-                .ok_or_else(ApiError::not_found)?
-        }
-    };
+    let (path, blob) = document_blob_at_commit(store, repo, commit, current_path)?;
     let markdown = release_markdown(repo, &blob)?;
     Ok(ReleaseDocument {
         title: title(&path, markdown.as_bytes()),
