@@ -7,21 +7,30 @@ import type { MarkdownAnalysis } from "../../markdown/analyze";
 
 export type SourceRange = { from: number; to: number };
 
-type TextSpan = { text: string; position: Position | undefined; inlineCode: boolean };
+type TextSpan = {
+  text: string;
+  position: Position | undefined;
+  inlineCode: boolean;
+  quoteDepth: number;
+};
 
-function textSpans(node: ElementContent, parent: HastElement): TextSpan[] {
+function textSpans(node: ElementContent, parent: HastElement, quoteDepth: number): TextSpan[] {
   if (node.type === "text") {
     const code = parent.tagName === "code";
     return [
       {
         text: node.value,
+        quoteDepth,
         position: node.position ?? (code ? parent.position : undefined),
         // Inline code text carries its own position; fenced/indented code only positions the element.
         inlineCode: code && node.position !== undefined,
       },
     ];
   }
-  if (node.type === "element") return node.children.flatMap((child) => textSpans(child, node));
+  if (node.type === "element") {
+    const depth = quoteDepth + Number(node.tagName === "blockquote");
+    return node.children.flatMap((child) => textSpans(child, node, depth));
+  }
   return [];
 }
 
@@ -104,7 +113,7 @@ function spanOffset(
   }
 
   const decoded = document.createElement("textarea");
-  const tokens = /\\[!-/:-@[-`{-~]|&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);|\r\n?/gu;
+  const tokens = /\\[!-/:-@[-`{-~]|&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);|\r\n?|\n/gu;
   const offsets: number[] = [0];
   let rendered = "";
   let cursor = 0;
@@ -112,15 +121,22 @@ function spanOffset(
     const index = token.index;
     rendered += raw.slice(cursor, index);
     for (let current = cursor; current < index; current++) offsets.push(current + 1);
-    if (token[0].startsWith("&")) {
-      decoded.innerHTML = token[0];
-    }
-    const value = token[0].startsWith("&")
-      ? decoded.value
-      : token[0].startsWith("\\")
-        ? token[0].slice(1)
-        : "\n";
     cursor = index + token[0].length;
+    if (/^[\r\n]/.test(token[0])) {
+      const ending = span.text.startsWith(token[0], rendered.length) ? token[0] : "\n";
+      // A soft newline is visible, but the next line's structural quote marks aren't.
+      for (let depth = 0; depth < span.quoteDepth; depth++) {
+        const marker = /^ {0,3}>[ \t]?/.exec(raw.slice(cursor));
+        if (!marker) break;
+        cursor += marker[0].length;
+      }
+      if (ending.length === 2) offsets.push(index + 1);
+      offsets.push(cursor);
+      rendered += ending;
+      continue;
+    }
+    if (token[0].startsWith("&")) decoded.innerHTML = token[0];
+    const value = token[0].startsWith("&") ? decoded.value : token[0].slice(1);
     rendered += value;
     for (let current = 0; current < value.length; current++) {
       offsets.push(current + 1 === value.length || !start ? cursor : index);
@@ -150,7 +166,8 @@ function boundary(
   before.selectNodeContents(block);
   before.setEnd(container, offset);
   let remaining = before.toString().length;
-  const spans = ast.children.flatMap((child) => textSpans(child, ast));
+  const quoteDepth = Number(ast.tagName === "blockquote");
+  const spans = ast.children.flatMap((child) => textSpans(child, ast, quoteDepth));
   if (spans.map(({ text }) => text).join("") !== block.textContent) return;
   for (const span of spans) {
     if (remaining < span.text.length || (!start && remaining === span.text.length)) {

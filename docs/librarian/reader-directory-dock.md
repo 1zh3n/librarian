@@ -23,3 +23,5 @@
 ## 复测
 
 Reader 构建后，以 `LIBRARIAN_PRODUCT_TEST_PORT=4281` 运行产品 Playwright 的 `document-workspace.spec.ts`、`document-reader-dock.spec.ts` 和 `reading-focus.spec.ts`，37 项通过。将右栏初始设备值固定为 480px 后，再运行两条分栏用例，均通过。中文首行采用 Chromium 文本输入；本次验收覆盖鼠标、键盘和模拟触屏。实体软键盘、读屏播报与墨水屏刷新待相应设备复核。
+
+2026-11-22 按用户要求将目录右键限定在可见的目录侧栏。右键目录行时命令作用于该行，右键侧栏空白时作用于空间根。从已打开的目录菜单移到正文两侧、顶栏或分栏线点右键，页面让浏览器处理。回归分别在阅读、正在编辑及目录收起时检查原生事件，并复测连续右键不同目录行、行内键盘菜单与触屏「更多」。[侧栏底部右键](evidence/reader-directory-dock/sidebar-context.png) · [触发范围回归](../../apps/reader/tests/e2e/document-workspace.spec.ts)

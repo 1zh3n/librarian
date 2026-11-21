@@ -214,7 +214,6 @@ export function WorkspaceShell() {
   const navigationVisible = Boolean(workspace && navigation && !focus.active);
   const canCreate = Boolean(workspace?.canWrite);
   const canCopy = Boolean(workspaces.data?.some(canReceiveFiles));
-  const inDirectory = Boolean(contextMenu?.trigger.closest("#workspace-navigation"));
   const rowSource = contextMenu?.source;
   const fileSource = rowSource?.kind === "folder" && !rowSource.folderId ? undefined : rowSource;
   const rootSource: DirectorySource | undefined = workspace
@@ -403,12 +402,6 @@ export function WorkspaceShell() {
         className={styles.application}
         data-reading-focus={focus.active || undefined}
         tabIndex={-1}
-        onContextMenu={
-          authenticated ? (event) => handleWorkspaceMenu(event, openContextMenu) : undefined
-        }
-        onKeyDownCapture={
-          authenticated ? (event) => handleWorkspaceMenu(event, openContextMenu) : undefined
-        }
       >
         <header className={styles.bar}>
           {workspace ? (
@@ -522,6 +515,7 @@ export function WorkspaceShell() {
           layoutRef={layout}
           wide={wide}
           navigationVisible={navigationVisible}
+          onNavigationContextMenu={(event) => handleWorkspaceMenu(event, openContextMenu)}
           sidebarWidth={preferences.sidebarWidth}
           onWidthChange={(sidebarWidth) => void saveLayout({ sidebarWidth })}
           onCollapse={() => {
@@ -678,10 +672,9 @@ export function WorkspaceShell() {
             )}
           </main>
         </ReaderDock>
-        {authenticated && contextMenu && (
+        {navigationVisible && contextMenu && (
           <WorkspaceContextMenu
             target={contextMenu}
-            hasWorkspace={Boolean(workspace)}
             rename={
               canRename && menuDocument
                 ? () => renameDocument(menuDocument, contextMenu.trigger)
@@ -692,12 +685,10 @@ export function WorkspaceShell() {
             actions={{
               ...(workspace &&
                 canReceiveFiles(workspace) &&
-                inDirectory &&
                 !rowSource && {
                   deleted: () => directoryActions.openDeleted(workspace.id, contextMenu.trigger),
                 }),
               ...(canCreate &&
-                inDirectory &&
                 folderSource && {
                   createFolder: () =>
                     directoryActions.start("createFolder", folderSource, contextMenu.trigger),
@@ -716,13 +707,7 @@ export function WorkspaceShell() {
                   delete: () => directoryActions.start("delete", fileSource, contextMenu.trigger),
                 }),
             }}
-            create={
-              canCreate &&
-              ((!creating && !accountSettings) ||
-                contextMenu.trigger.closest("#workspace-navigation"))
-                ? showCreateDocument
-                : undefined
-            }
+            create={canCreate ? showCreateDocument : undefined}
             search={(origin) => {
               dialogOrigin.current = origin;
               setSearch(true);

@@ -1,0 +1,105 @@
+{
+  "at": "2026-11-21T16:20:08.543Z",
+  "browser": "145.0.7632.6",
+  "engine": "libpinyin",
+  "origin": "http://127.0.0.1:4296",
+  "assetManifestSha256": "1af011d4a0207e60929cb95ba6e9c7eb66402a54b44b928a7e15f76800526691",
+  "initial": "# a\n\n末段。\n",
+  "editorBefore": "a\n\n\n末段。\n\n",
+  "preedit": {
+    "display": "a\n\n\n末段。\n中文",
+    "markdown": "# a\n\n末段。\n"
+  },
+  "heading": {
+    "x": 386,
+    "y": 255.5
+  },
+  "hit": "<div class=\"cm-line\" data-preview-heading=\"1\"><span hidden=\"\"># </span>a</div>",
+  "nativeHit": {
+    "x": 386,
+    "y": 256
+  },
+  "events": [
+    {
+      "phase": "pinyin",
+      "type": "compositionstart",
+      "data": "",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "在",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中哦",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中文",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中巍峨",
+      "trusted": true
+    },
+    {
+      "phase": "pinyin",
+      "type": "compositionupdate",
+      "data": "中文",
+      "trusted": true
+    },
+    {
+      "phase": "heading",
+      "type": "compositionstart",
+      "data": "",
+      "trusted": true
+    },
+    {
+      "phase": "heading",
+      "type": "compositionupdate",
+      "data": "和",
+      "trusted": true
+    },
+    {
+      "phase": "heading",
+      "type": "compositionupdate",
+      "data": "哈",
+      "trusted": true
+    },
+    {
+      "phase": "heading",
+      "type": "compositionupdate",
+      "data": "号",
+      "trusted": true
+    },
+    {
+      "phase": "heading",
+      "type": "compositionupdate",
+      "data": "号",
+      "trusted": true
+    }
+  ],
+  "caret": "# a",
+  "saved": "# a号\n\n末段。\n中文",
+  "after": "# a号\n\n\n末段。\n中文"
+}

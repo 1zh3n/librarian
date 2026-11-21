@@ -35,7 +35,6 @@ test("a readable row can offer copy without move or deletion", async () => {
         actions={{ copy: () => {} }}
         search={() => {}}
         close={() => {}}
-        hasWorkspace
       />,
     );
     expect(await screen.findByRole("menuitem", { name: "复制到…" })).toBeDefined();

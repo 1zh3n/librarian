@@ -1,16 +1,10 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import type { DocumentSummary, Workspace } from "../../src/api/client";
-import { createNote, openFieldWorkspace } from "./productFixture";
+import type { Workspace } from "../../src/api/client";
+import { createNote, fieldDocument } from "./productFixture";
 
 async function readFromField(page: Page) {
-  const field = await openFieldWorkspace(page);
-  const documents = (await (
-    await page.request.get(`/api/v1/workspaces/${field.id}/documents`)
-  ).json()) as DocumentSummary[];
-  const note = documents.find((document) => document.path === "野外/02.md");
-  if (!note) throw new Error("Missing field note");
-  const original = `/workspaces/${field.id}/documents/${note.id}`;
+  const original = await fieldDocument(page, "野外/02.md");
   await page.goto(original);
   await expect(page.getByRole("article")).toContainText("清晨听见鸟鸣。");
   return original;

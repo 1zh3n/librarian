@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import type { DocumentSnapshot, Workspace } from "../../src/api/client";
+import type { DocumentSnapshot, DocumentSummary, Workspace } from "../../src/api/client";
 
 export async function openDocumentTool(
   page: Page,
@@ -42,6 +42,23 @@ export async function openFieldWorkspace(page: Page, name = "田野笔记") {
   const workspace = workspaces.find((item) => item.name === name);
   if (!workspace) throw new Error("Missing test Space");
   return workspace;
+}
+
+export async function fieldDocument(page: Page, path = "野外/01.md") {
+  const workspace = await openFieldWorkspace(page);
+  const endpoint = `/api/v1/workspaces/${workspace.id}/documents`;
+  const limit = 100;
+  const params = new URLSearchParams({ limit: String(limit) });
+  for (;;) {
+    const response = await page.request.get(endpoint, { params });
+    expect(response.ok()).toBe(true);
+    const batch = (await response.json()) as DocumentSummary[];
+    const document = batch.find((item) => item.path === path);
+    if (document) return `/workspaces/${workspace.id}/documents/${document.id}`;
+    const last = batch.at(-1);
+    if (batch.length < limit || !last) throw new Error(`Missing fixture document: ${path}`);
+    params.set("after", last.path);
+  }
 }
 
 export async function createNote(

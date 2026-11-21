@@ -18,6 +18,7 @@ import {
   workspaceKeys,
 } from "../../api/queries";
 import { blockAtOffset, captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
+import type { EditorMountAnchor } from "../../editor/codemirror/adapter";
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { reanalyzeMarkdown } from "../../markdown/reanalyze";
@@ -25,7 +26,7 @@ import { relativeDocumentPath } from "../../markdown/relativePath";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
 import { AiPanel } from "../ai/AiPanel";
 import { ContextUnavailable } from "../ai/aiContext";
-import { readerCaretOffset, readerSelection } from "../ai/readerSelection";
+import { readerSelection } from "../ai/readerSelection";
 import { contextSelection } from "../reading/contextSelection";
 import { isEditingTarget, useReaderLayout } from "../reading/readingFocus";
 import {
@@ -39,7 +40,7 @@ import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
 import { DocumentContents, headingAtReadingPosition } from "./DocumentContents";
 import { DocumentReferencesPanel } from "./DocumentReferencesPanel";
-import { nearbyReadingPosition, textCaretAtClick } from "./readingPositionAtClick";
+import { readingPositionAtClick, textCaretAtClick } from "./readingPositionAtClick";
 import { placeInlineTool } from "./inlineTool";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
@@ -195,7 +196,7 @@ function DocumentWorkspace({
       initial: snapshot,
       readOnly: !writable,
       ariaLabel: "Markdown 正文",
-      hideMetadataInPreview: true,
+      documentBody: true,
       write: async ({ markdown, baseRevision }) => {
         if (baseRevision === null) throw new Error("正文缺少保存版本");
         await queryClient.cancelQueries({ queryKey: bodyKey, exact: true });
@@ -298,7 +299,8 @@ function DocumentWorkspace({
   const canvas = useRef<HTMLDivElement>(null);
   const savedEditorSelection = useRef<EditorSelection>(undefined);
   const pendingAnchor = useRef<AnchorPlacement | undefined>(undefined);
-  const restoringEditor = useRef(false);
+  const editorEntryScroll = useRef<number | undefined>(undefined);
+  const mountAnchor = useRef<EditorMountAnchor | undefined>(undefined);
 
   useEffect(() => {
     if (body.sync(snapshot) && modeRef.current === "read") {
@@ -661,21 +663,41 @@ function DocumentWorkspace({
 
   const blankLineOnMount = useRef(false);
   const enterEditor = useCallback(
-    (next: "preview" | "source", position?: number | "blankLine") => {
+    (
+      next: "preview" | "source",
+      position?: number | "blankLine",
+      clickedAnchor?: Omit<EditorMountAnchor, "viewport">,
+    ) => {
       if (!writable || restoringVersion || body.editor.isComposing()) return;
       if (mode === "read") {
         savedSelection.current = undefined;
         savedEditorSelection.current = undefined;
         const viewport = canvas.current?.closest("main");
         blankLineOnMount.current = position === "blankLine";
+        const sameSource = reading.source === body.editor.source();
         const anchor =
-          viewport && position !== "blankLine"
-            ? captureReaderAnchor(viewport, analysis.blocks)
-            : undefined;
+          viewport && sameSource ? captureReaderAnchor(viewport, analysis.blocks) : undefined;
         body.editor.trackAnchor(anchor);
-        pendingAnchor.current = anchor ? { anchor, sameRevision: true } : undefined;
-        if (typeof position === "number" && reading.source === body.editor.source()) {
-          body.editor.select({ anchor: position, head: position });
+        mountAnchor.current = undefined;
+        if (viewport && clickedAnchor && sameSource) {
+          mountAnchor.current = {
+            viewport,
+            ...clickedAnchor,
+            keepCaretVisible: position === "blankLine",
+          };
+        } else if (viewport && anchor) {
+          mountAnchor.current = {
+            viewport,
+            sourceOffset: anchor.sourceOffset,
+            screenTop: viewport.getBoundingClientRect().top + anchor.insetPx,
+          };
+        }
+        // With no previous edit or pointer, start typing in the visible passage.
+        const firstEntry = next === "preview" && editorEntryScroll.current === undefined;
+        const at =
+          position ?? (firstEntry ? (anchor?.sourceOffset ?? analysis.blocks[0]?.from) : undefined);
+        if (typeof at === "number" && sameSource) {
+          body.editor.select({ anchor: at, head: at });
         }
       }
       if (body.editor.setSourceMode(next === "source")) {
@@ -710,11 +732,9 @@ function DocumentWorkspace({
       const anchor = viewport
         ? body.editor.captureAnchor(viewport, next.analysis.blocks)
         : undefined;
-      pendingAnchor.current = restoringEditor.current
-        ? body.editor.trackedAnchor()
-        : anchor
-          ? { anchor, sameRevision: true }
-          : undefined;
+      const stayedAtEntry = viewport && viewport.scrollTop === editorEntryScroll.current;
+      const entry = stayedAtEntry ? body.editor.trackedAnchor() : undefined;
+      pendingAnchor.current = entry ?? (anchor ? { anchor, sameRevision: true } : undefined);
       body.editor.trackAnchor(undefined);
     }
     modeRef.current = "read";
@@ -769,11 +789,13 @@ function DocumentWorkspace({
   const mountBody = useCallback(
     (parent: HTMLDivElement | null) => {
       if (!parent) return;
-      const unmount = body.editor.mount(parent);
       if (blankLineOnMount.current) {
         blankLineOnMount.current = false;
         body.editor.moveToFinalBlankLine();
       }
+      const unmount = body.editor.mount(parent, true, mountAnchor.current);
+      editorEntryScroll.current = parent.closest("main")?.scrollTop;
+      mountAnchor.current = undefined;
       return unmount;
     },
     [body],
@@ -782,31 +804,9 @@ function DocumentWorkspace({
   useLayoutEffect(() => {
     const viewport = canvas.current?.closest("main");
     const placement = pendingAnchor.current;
-    if (!viewport || !placement) return;
-    if (mode === "read") {
-      return restoreReaderAnchor(
-        viewport,
-        analysis.blocks,
-        placement.anchor,
-        placement.sameRevision,
-      );
-    }
-    restoringEditor.current = true;
-    const frame = requestAnimationFrame(() => {
-      const next = body.editor.trackedAnchor() ?? placement;
-      const current = body.editor.source();
-      const blocks =
-        current === reading.source
-          ? analysis.blocks
-          : reanalyzeMarkdown(current, documentId, reading).blocks;
-      void body.editor
-        .restoreAnchor(viewport, blocks, next.anchor, next.sameRevision, true)
-        .finally(() => {
-          restoringEditor.current = false;
-        });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [analysis, body, documentId, mode, reading]);
+    if (mode !== "read" || !viewport || !placement) return;
+    return restoreReaderAnchor(viewport, analysis.blocks, placement.anchor, placement.sameRevision);
+  }, [analysis.blocks, mode]);
 
   const handledCitation = useRef<{ citation: typeof citation; entry: string | undefined }>(
     undefined,
@@ -893,7 +893,9 @@ function DocumentWorkspace({
     const surface = column?.querySelector<HTMLElement>(`.${styles.paper}`);
     const article = surface?.querySelector("article");
     if (!writable || restoringVersion || !page || !surface) return;
-    const click = (event: MouseEvent) => {
+    const handlePaper = (event: MouseEvent) => {
+      const pressing = event.type === "mousedown";
+      if (pressing && (article || body.editor.isComposing())) return;
       const target = event.target;
       if (
         !(target instanceof Element) ||
@@ -926,19 +928,26 @@ function DocumentWorkspace({
         )
           return;
       }
+      if (pressing) {
+        // Keep both native focus and the editor selection in place until the click.
+        if (body.editor.isBelowLastLine(event.clientY)) event.preventDefault();
+        return;
+      }
       const caret = textCaretAtClick(page, event);
       if (caret && !surface.contains(caret.node)) return;
       if (article) {
-        const position =
-          (caret && readerCaretOffset(article, caret, reading.source, analysis)) ??
-          nearbyReadingPosition(article, event, reading.source, analysis);
-        enterEditor("preview", position);
+        const hit = readingPositionAtClick(article, event, reading.source, analysis, caret);
+        enterEditor("preview", hit.position, hit.anchor);
       } else if (!caret && !body.editor.isComposing()) {
-        body.editor.placeCaretAtPaperPoint(event.clientX, event.clientY);
+        body.editor.placeCaretAtPaperPoint(event.clientX, event.clientY, page.closest("main"));
       }
     };
-    page.addEventListener("click", click);
-    return () => page.removeEventListener("click", click);
+    page.addEventListener("mousedown", handlePaper, true);
+    page.addEventListener("click", handlePaper);
+    return () => {
+      page.removeEventListener("mousedown", handlePaper, true);
+      page.removeEventListener("click", handlePaper);
+    };
   }, [analysis, body, enterEditor, mode, reading.source, restoringVersion, writable]);
 
   useEffect(() => {

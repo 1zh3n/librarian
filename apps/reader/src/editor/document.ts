@@ -76,3 +76,19 @@ export function applyTextEdits(source: string, edits: readonly TextEdit[]): stri
   chunks.push(source.slice(end));
   return chunks.join("");
 }
+
+export function minimalChange(before: string, after: string): TextEdit[] {
+  let from = 0;
+  while (from < before.length && before[from] === after[from]) {
+    from++;
+  }
+  let to = before.length;
+  let insertTo = after.length;
+  while (to > from && insertTo > from && before[to - 1] === after[insertTo - 1]) {
+    to--;
+    insertTo--;
+  }
+  return from === to && from === insertTo
+    ? []
+    : [{ from, to, insert: after.slice(from, insertTo) }];
+}

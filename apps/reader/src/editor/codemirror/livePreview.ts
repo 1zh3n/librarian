@@ -7,9 +7,12 @@ import type { SyntaxNode } from "@lezer/common";
 import { toDom } from "hast-util-to-dom";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { composing } from "./composition";
+import { documentTypographyActive } from "./documentTypography";
+export { documentPreviewTypography } from "./documentTypography";
 import { frontMatterRange, selectionTouches } from "./syntax";
 
 const hide = Decoration.replace({});
+const hiddenHeadingText = Decoration.mark({ attributes: { hidden: "" } });
 export const hideFrontMatterControl = Facet.define<boolean, boolean>({
   combine: (values) => values.includes(true),
 });
@@ -51,10 +54,26 @@ function lineDecoration(attribute: string, name: string): Decoration {
   return Decoration.line({ attributes: { [attribute]: name } });
 }
 
-function conceal(ranges: Range<Decoration>[], state: EditorState, from: number, to: number) {
-  if (from < to && state.doc.lineAt(from).number === state.doc.lineAt(to).number) {
-    ranges.push(hide.range(from, to));
+function conceal(
+  ranges: Range<Decoration>[],
+  state: EditorState,
+  from: number,
+  to: number,
+  owner?: SyntaxNode,
+) {
+  if (from >= to || state.doc.lineAt(from).number !== state.doc.lineAt(to).number) return;
+  // A replacement widget's cursor buffers add height to tight title lines.
+  // Hiding just the punctuation keeps the native text baseline for a heading.
+  if (state.facet(documentTypographyActive)) {
+    for (let node = owner; node; node = node.parent ?? undefined) {
+      if (/^(?:ATX|Setext)Heading[1-6]$/.test(node.name)) {
+        ranges.push(hiddenHeadingText.range(from, to));
+        return;
+      }
+      if (node.type.is("Block")) break;
+    }
   }
+  ranges.push(hide.range(from, to));
 }
 
 function formatInline(ranges: Range<Decoration>[], state: EditorState, node: SyntaxNode) {
@@ -66,8 +85,8 @@ function formatInline(ranges: Range<Decoration>[], state: EditorState, node: Syn
     const open = marks[0];
     const close = marks.at(-1);
     if (open && close && open.to < close.from) {
-      conceal(ranges, state, open.from, open.to);
-      conceal(ranges, state, close.from, close.to);
+      conceal(ranges, state, open.from, open.to, node);
+      conceal(ranges, state, close.from, close.to, node);
       ranges.push(Decoration.mark({ tagName: tag }).range(open.to, close.from));
     }
   }
@@ -79,8 +98,8 @@ function formatInline(ranges: Range<Decoration>[], state: EditorState, node: Syn
       open.to < close.from &&
       state.doc.lineAt(close.from).number === state.doc.lineAt(to).number
     ) {
-      conceal(ranges, state, open.from, open.to);
-      conceal(ranges, state, close.from, to);
+      conceal(ranges, state, open.from, open.to, node);
+      conceal(ranges, state, close.from, to, node);
       ranges.push(
         Decoration.mark({ attributes: { "data-preview-link": "" } }).range(open.to, close.from),
       );
@@ -99,11 +118,16 @@ function formatLine(ranges: Range<Decoration>[], state: EditorState, node: Synta
       for (const mark of node.getChildren("HeaderMark")) {
         const tail = state.sliceDoc(mark.to, state.doc.lineAt(mark.to).to);
         const gap = /^[\t ]*/.exec(tail)?.[0].length ?? 0;
-        conceal(ranges, state, mark.from, mark.to + gap);
+        conceal(ranges, state, mark.from, mark.to + gap, node);
       }
     }
   }
   if (name === "QuoteMark") {
+    if (state.facet(documentTypographyActive)) {
+      let block = node;
+      while (block.parent && block.parent.name !== "Document") block = block.parent;
+      if (block.name === "Blockquote") return;
+    }
     ranges.push(lineDecoration("data-preview-quote", "").range(state.doc.lineAt(from).from));
     const next = state.sliceDoc(to, to + 1);
     if (!selectionTouches(state, from, state.doc.lineAt(from).to)) {
@@ -317,9 +341,10 @@ const previewTheme = EditorView.baseTheme({
   },
   "[data-preview-code]": { fontFamily: "monospace", backgroundColor: "var(--inline-code)" },
   ".cm-content code": { backgroundColor: "var(--inline-code)" },
-  "[data-preview-block]": { maxWidth: "100%", overflowX: "auto", padding: "0.2rem 0.4rem" },
+  "[data-preview-block]": { maxWidth: "100%", overflowX: "auto" },
+  "&:not([data-document-preview]) [data-preview-block]": { padding: "0.2rem 0.4rem" },
   "[data-preview-block='table'] table": { borderCollapse: "collapse", cursor: "text" },
-  "[data-preview-block='table'] td, [data-preview-block='table'] th": {
+  "&:not([data-document-preview]) [data-preview-block='table'] :is(td, th)": {
     border: "1px solid currentColor",
     padding: "0.2rem 0.5rem",
   },

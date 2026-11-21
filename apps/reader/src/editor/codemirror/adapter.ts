@@ -1,3 +1,4 @@
+import { forceParsing } from "@codemirror/language";
 import { deleteMarkupBackward, markdown } from "@codemirror/lang-markdown";
 import {
   defaultKeymap,
@@ -22,6 +23,7 @@ import {
   applyTextEdits,
   editorOffset,
   editorText,
+  minimalChange,
   originalLineEndings,
   originalOffset,
   readSource,
@@ -31,7 +33,8 @@ import { anchorSampleInset, blockAtOffset, resolveAnchor } from "../../markdown/
 import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
-import { hideFrontMatterControl, livePreview } from "./livePreview";
+import { documentPreviewTypography, hideFrontMatterControl, livePreview } from "./livePreview";
+import { paperScrollAnchor } from "./paperScrollAnchor";
 import { markdownEnter } from "./markdownEnter";
 import { frontMatterRange } from "./syntax";
 
@@ -107,22 +110,6 @@ const reconcileLineEndings = EditorState.transactionFilter.of((transaction) => {
   ];
 });
 
-function minimalChange(before: string, after: string): TextEdit[] {
-  let from = 0;
-  while (from < before.length && before[from] === after[from]) {
-    from++;
-  }
-  let to = before.length;
-  let insertTo = after.length;
-  while (to > from && insertTo > from && before[to - 1] === after[insertTo - 1]) {
-    to--;
-    insertTo--;
-  }
-  return from === to && from === insertTo
-    ? []
-    : [{ from, to, insert: after.slice(from, insertTo) }];
-}
-
 export interface ExternalPatch {
   readonly baseRevision: string | null;
   readonly revision: string | null;
@@ -137,9 +124,19 @@ type EditorOptions = {
   readonly readOnly?: boolean;
   readonly ariaLabel?: string;
   readonly hideMetadataInPreview?: boolean;
+  readonly documentTypography?: boolean;
   readonly onDeferredExternalResult?: (revision: string | null, result: ExternalResult) => void;
   readonly onBufferChange?: (source: string, composing: boolean) => void;
 };
+
+export interface EditorMountAnchor {
+  readonly viewport: HTMLElement;
+  readonly sourceOffset: number;
+  readonly screenTop: number;
+  /** The side of a caret that supplied the clicked glyph, including at a soft wrap. */
+  readonly glyphSide?: 1 | -1;
+  readonly keepCaretVisible?: boolean;
+}
 
 export interface EditorSession {
   source(): string;
@@ -150,7 +147,8 @@ export interface EditorSession {
   acknowledge(markdown: string, revision: string | null): void;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   moveToFinalBlankLine(): void;
-  placeCaretAtPaperPoint(x: number, y: number): void;
+  isBelowLastLine(y: number): boolean;
+  placeCaretAtPaperPoint(x: number, y: number, viewport?: HTMLElement | null): void;
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
   trackAnchor(anchor: ScrollAnchor | undefined): void;
@@ -163,15 +161,19 @@ export interface EditorSession {
     sameRevision: boolean,
     keepSelection?: boolean,
   ): Promise<boolean>;
-  mount(parent: HTMLElement, autoFocus?: boolean): () => void;
+  mount(parent: HTMLElement, autoFocus?: boolean, anchor?: EditorMountAnchor): () => void;
 }
 
 export function openEditor(initial: string, options: EditorOptions = {}): EditorSession {
   const source = readSource(initial);
   const doc = Text.of(editorText(initial).split("\n"));
   const metadata = frontMatterRange(doc);
+  const previewExtensions = options.documentTypography
+    ? [livePreview, documentPreviewTypography]
+    : livePreview;
   const preview = new Compartment();
   const undoHistory = new Compartment();
+  const paperAnchor = paperScrollAnchor();
   const selection = options.selection;
   let revision = options.revision;
   let confirmedSource = initial;
@@ -192,9 +194,10 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       markdown({ extensions: GFM, completeHTMLTags: false, addKeymap: false }),
       composing,
       compositionEvents,
-      preview.of(livePreview),
+      preview.of(previewExtensions),
       hideFrontMatterControl.of(options.hideMetadataInPreview ?? false),
       editorFocus,
+      paperAnchor.extension,
       keymap.of([
         { key: "Enter", run: markdownEnter },
         { key: "Backspace", run: deleteMarkupBackward },
@@ -285,11 +288,15 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     options.onDeferredExternalResult?.(change.revision, result);
   }
 
-  function moveToFinalBlankLine() {
+  function isBelowLastLine(y: number) {
+    return !!view && y >= view.documentTop + view.lineBlockAt(state.doc.length).bottom;
+  }
+
+  function moveToFinalBlankLine(scrollIntoView = true) {
     if (state.readOnly || state.field(composing)) return;
     const end = state.doc.length;
     if (state.doc.lineAt(end).text.trim() === "") {
-      dispatch(state.update({ selection: { anchor: end }, scrollIntoView: true }));
+      dispatch(state.update({ selection: { anchor: end }, scrollIntoView }));
       return;
     }
     const current = state.field(sourceField).value;
@@ -300,7 +307,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         selection: { anchor: end + 1 },
         effects: replaceSource.of(readSource(current + ending)),
         annotations: isolateHistory.of("full"),
-        scrollIntoView: true,
+        scrollIntoView,
       }),
     );
   }
@@ -327,15 +334,27 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       revision = savedRevision;
     },
     moveToFinalBlankLine,
-    placeCaretAtPaperPoint(x, y) {
+    isBelowLastLine,
+    placeCaretAtPaperPoint(x, y, viewport) {
       if (!view || state.readOnly || state.field(composing) || view.compositionStarted) return;
       const end = state.doc.length;
-      if (y >= view.documentTop + view.lineBlockAt(end).bottom) {
-        moveToFinalBlankLine();
+      if (isBelowLastLine(y)) {
+        let line = state.doc.lineAt(end);
+        while (line.number > 1 && !line.text.trim()) line = state.doc.line(line.number - 1);
+        const glyph = viewport && view.coordsAtPos(line.to, -1);
+        moveToFinalBlankLine(!glyph);
+        if (viewport && glyph)
+          paperAnchor.hold(view, {
+            viewport,
+            at: line.to,
+            screenTop: glyph.top,
+            glyphSide: -1,
+            keepCaretVisible: true,
+          });
       } else {
         const { pos, assoc } = view.posAndSideAtCoords({ x, y }, false);
         const hiddenMetadata =
-          options.hideMetadataInPreview && preview.get(state) === livePreview
+          options.hideMetadataInPreview && preview.get(state) === previewExtensions
             ? frontMatterRange(state.doc)
             : undefined;
         if (hiddenMetadata && hiddenMetadata.to === end) {
@@ -366,7 +385,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
         return false;
       }
       const transaction = state.update({
-        effects: preview.reconfigure(enabled ? [] : livePreview),
+        effects: preview.reconfigure(enabled ? [] : previewExtensions),
       });
       dispatch(transaction);
       view?.focus();
@@ -430,12 +449,20 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       }
       return true;
     },
-    mount(parent, autoFocus = true) {
+    mount(parent, autoFocus = true, anchor) {
       if (view) {
         throw new Error("The editor is already mounted");
       }
+      const at = anchor && editorOffset(state.field(sourceField), anchor.sourceOffset);
       const mounted = new EditorView({
         state,
+        ...(at !== undefined &&
+          anchor && {
+            scrollTo: EditorView.scrollIntoView(at, {
+              y: "start",
+              yMargin: anchor.screenTop - anchor.viewport.getBoundingClientRect().top,
+            }),
+          }),
         parent,
         dispatchTransactions(transactions, editor) {
           const wasComposing = state.field(composing);
@@ -450,7 +477,15 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       });
       view = mounted;
       if (autoFocus) mounted.focus();
+      if (anchor && at !== undefined) {
+        // Measure the target viewport and its preview decorations before the first paint.
+        mounted.coordsAtPos(at);
+        if (preview.get(state) === previewExtensions)
+          forceParsing(mounted, mounted.viewport.to, 32);
+        paperAnchor.hold(mounted, { ...anchor, at });
+      }
       return () => {
+        paperAnchor.release();
         mounted.destroy();
         if (view === mounted) {
           view = undefined;

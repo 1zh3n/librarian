@@ -1,22 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
-import type { DocumentSummary } from "../../src/api/client";
-import {
-  closeDocumentTool,
-  createNote,
-  openDocumentTool,
-  openFieldWorkspace,
-} from "./productFixture";
-
-async function fieldDocument(page: Page): Promise<string> {
-  const space = await openFieldWorkspace(page);
-  const documents = (await (
-    await page.request.get(`/api/v1/workspaces/${space.id}/documents`)
-  ).json()) as DocumentSummary[];
-  const document = documents.find((item) => item.path === "野外/01.md");
-  if (!document) throw new Error("Missing test document");
-  return `/workspaces/${space.id}/documents/${document.id}`;
-}
+import { closeDocumentTool, createNote, openDocumentTool, fieldDocument } from "./productFixture";
 
 test("reloads a document deep link", async ({ page }) => {
   const target = await fieldDocument(page);
@@ -32,13 +15,7 @@ test("opens one accessible document tool pane and keeps AI input when switching 
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const field = await openFieldWorkspace(page);
-  const notes = (await (
-    await page.request.get(`/api/v1/workspaces/${field.id}/documents`)
-  ).json()) as DocumentSummary[];
-  const note = notes.find(({ path }) => path === "野外/02.md");
-  if (!note) throw new Error("Missing outline fixture");
-  await page.goto(`/workspaces/${field.id}/documents/${note.id}`);
+  await page.goto(await fieldDocument(page, "野外/02.md"));
   const open = page.getByRole("button", { name: "打开文档辅助区" });
   const tabs = page.getByRole("tablist", { name: "文档工具" });
   await expect(open).toBeVisible();

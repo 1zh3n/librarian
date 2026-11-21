@@ -79,7 +79,6 @@ export function WorkspaceContextMenu({
   rename,
   actions,
   search,
-  hasWorkspace,
   close,
 }: {
   target: WorkspaceMenuTarget;
@@ -87,10 +86,8 @@ export function WorkspaceContextMenu({
   rename: (() => void) | undefined;
   create: ((folder: string, origin: HTMLElement) => void) | undefined;
   search: (origin: HTMLElement) => void;
-  hasWorkspace: boolean;
   close: () => void;
 }) {
-  const inNavigation = Boolean(target.trigger.closest("#workspace-navigation"));
   return (
     <ContextMenuPopover
       trigger={target.trigger}
@@ -99,7 +96,7 @@ export function WorkspaceContextMenu({
       className={styles.contextMenu}
     >
       <Menu
-        label={inNavigation ? "目录操作" : "应用操作"}
+        label="目录操作"
         focusFirst
         items={[
           ...(create
@@ -118,7 +115,7 @@ export function WorkspaceContextMenu({
           {
             id: "search",
             className: styles.menuItem,
-            label: hasWorkspace ? "搜索文档…" : "查找命令…",
+            label: "搜索文档…",
             run: () => {
               close();
               search(target.trigger);
