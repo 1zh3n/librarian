@@ -160,7 +160,7 @@ export function BackupPanel({ workspace }: { workspace: string }) {
           <div className={styles.actions}>
             <Button
               variant="outline"
-              className={styles.secondary}
+              className={styles.formAction}
               type="submit"
               isDisabled={settings.isPending || start.isPending}
             >
@@ -168,7 +168,7 @@ export function BackupPanel({ workspace }: { workspace: string }) {
             </Button>
             <Button
               variant="primary"
-              className={styles.primary}
+              className={styles.formAction}
               isDisabled={!startReady || start.isPending || targetChanged}
               onPress={() => {
                 if (latest?.status === "succeeded" && latest.id === operation.current) {

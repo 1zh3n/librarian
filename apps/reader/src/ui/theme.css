@@ -39,18 +39,38 @@
   --accent-foreground: var(--paper);
 }
 
+.button--icon-only {
+  font-size: 1rem;
+}
+
+:where(.button--primary, .button--outline) {
+  min-block-size: var(--control-height);
+  block-size: auto;
+  max-inline-size: 100%;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  font-size: var(--ui-size);
+  line-height: 1.4;
+  white-space: normal;
+}
+
 .button--primary {
-  color: var(--accent-foreground);
-  background: var(--accent);
+  --button-bg: var(--accent);
+  --button-bg-hover: color-mix(in srgb, var(--accent) 86%, var(--ink));
+  --button-fg: var(--accent-foreground);
 }
 
-.button--primary[data-hovered] {
-  background: color-mix(in srgb, var(--accent) 86%, var(--ink));
+.button--outline {
+  --button-bg: var(--surface);
+  --button-bg-hover: var(--surface-hover);
+  --button-fg: var(--ink);
+  border: 1px solid var(--border-strong);
 }
 
-.button--primary[data-disabled] {
-  color: var(--ink-secondary);
-  background: var(--surface-muted);
+:is(.button--primary, .button--outline)[data-disabled] {
+  --button-bg: var(--surface-muted);
+  --button-fg: var(--ink-secondary);
+  border-color: var(--border);
   opacity: 1;
 }
 

@@ -130,7 +130,7 @@ function EntryRow({
             style={{ paddingInlineStart: 8 + 14 * (level - 1) }}
           >
             {entry.children?.length ? (
-              <Button slot="chevron" className={styles.disclosure}>
+              <Button isIconOnly slot="chevron" className={styles.disclosure}>
                 <Icon name={isExpanded ? "chevron-down" : "chevron-right"} />
               </Button>
             ) : (

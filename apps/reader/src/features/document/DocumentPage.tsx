@@ -1007,6 +1007,7 @@ function DocumentWorkspace({
         {!tool && (
           <Button
             ref={openToolButton}
+            isIconOnly
             aria-label="打开文档辅助区"
             aria-controls={paneId}
             aria-expanded={false}
@@ -1024,6 +1025,7 @@ function DocumentWorkspace({
             trigger={
               <Button
                 ref={moreButton}
+                isIconOnly
                 aria-label="文档更多"
                 className={styles.iconButton}
                 isDisabled={restoringVersion}

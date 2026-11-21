@@ -133,7 +133,7 @@ export function DocumentToolPanel({
         width={preferences.toolsWidth}
         onWidthChange={(toolsWidth) => savePreferences({ toolsWidth })}
       />
-      <Button className={styles.closePane} aria-label="收起文档辅助区" onPress={onClose}>
+      <Button className={styles.closePane} isIconOnly aria-label="收起文档辅助区" onPress={onClose}>
         <Icon name="panel-right-close" />
       </Button>
       <div hidden={!tabbed}>

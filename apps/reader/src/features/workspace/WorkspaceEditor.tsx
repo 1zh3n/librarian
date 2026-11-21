@@ -169,7 +169,8 @@ export function WorkspaceEditor({
         </Feedback>
       )}
       <Button
-        className={styles.primary}
+        variant="primary"
+        className={styles.formAction}
         type="submit"
         loading={save.isPending}
         isDisabled={!name.trim()}

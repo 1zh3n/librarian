@@ -143,7 +143,7 @@ export function PublicationPanel({
           )}
           <Button
             variant="primary"
-            className={styles.primary}
+            className={styles.formAction}
             type="submit"
             isDisabled={!ready || busy}
           >
@@ -181,7 +181,7 @@ export function PublicationPanel({
                   )}
                   <Button
                     variant="outline"
-                    className={styles.secondary}
+                    className={styles.formAction}
                     isDisabled={busy}
                     onPress={() => confirm.mutate(result.id)}
                   >

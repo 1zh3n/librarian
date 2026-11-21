@@ -81,7 +81,7 @@ export function RenameDocumentDialog({
           </Feedback>
         )}
         <div className={styles.actions}>
-          <Button isDisabled={rename.isPending} onPress={close}>
+          <Button variant="outline" isDisabled={rename.isPending} onPress={close}>
             取消
           </Button>
           <Button variant="primary" type="submit" loading={rename.isPending} isDisabled={!ready}>

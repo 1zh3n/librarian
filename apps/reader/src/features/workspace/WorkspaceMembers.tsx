@@ -66,7 +66,8 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
             </div>
             <Button
               type="submit"
-              className={styles.primary}
+              variant="primary"
+              className={styles.formAction}
               loading={mutation.isPending && mutation.variables.next !== null}
               isDisabled={
                 !username.trim() || (mutation.isPending && mutation.variables.next === null)
@@ -99,7 +100,8 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
                   {!member.isOwner && (
                     <div className={styles.actions}>
                       <Button
-                        className={styles.secondary}
+                        variant="outline"
+                        className={styles.formAction}
                         isDisabled={mutation.isPending}
                         onPress={() => {
                           mutation.reset();
@@ -110,7 +112,8 @@ export function WorkspaceMembers({ workspace }: { workspace: string }) {
                         编辑权限
                       </Button>
                       <Button
-                        className={styles.secondary}
+                        variant="outline"
+                        className={styles.formAction}
                         isDisabled={mutation.isPending}
                         onPress={() => mutation.mutate({ name: member.username, next: null })}
                       >

@@ -81,7 +81,7 @@ function PasswordForm({
           {error}
         </Feedback>
       )}
-      <Button type="submit" className={styles.primary} loading={pending}>
+      <Button type="submit" variant="primary" className={styles.formAction} loading={pending}>
         {pending ? "正在保存…" : "保存密码"}
       </Button>
     </Form>
@@ -147,7 +147,7 @@ function NewAccount({ onCreated }: { onCreated: () => void }) {
           {notice}
         </Feedback>
       )}
-      <Button type="submit" className={styles.primary} loading={pending}>
+      <Button type="submit" variant="primary" className={styles.formAction} loading={pending}>
         {pending ? "正在创建…" : "创建账号"}
       </Button>
     </Form>
@@ -195,7 +195,8 @@ function AccountRow({
         {!self && (
           <>
             <Button
-              className={styles.secondary}
+              variant="outline"
+              className={styles.formAction}
               isDisabled={action.isPending || resetting}
               onPress={() => action.mutate("toggle")}
             >
@@ -206,7 +207,8 @@ function AccountRow({
                   : "停用账号"}
             </Button>
             <Button
-              className={styles.secondary}
+              variant="outline"
+              className={styles.formAction}
               isDisabled={action.isPending}
               onPress={() => {
                 action.reset();
@@ -219,7 +221,8 @@ function AccountRow({
           </>
         )}
         <Button
-          className={styles.secondary}
+          variant="outline"
+          className={styles.formAction}
           isDisabled={action.isPending || resetting}
           onPress={() => action.mutate("revoke")}
         >

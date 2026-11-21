@@ -574,6 +574,7 @@ export function WorkspaceShell() {
                   <Tooltip text="空间设置" className={styles.tooltip}>
                     <Button
                       aria-label="空间设置"
+                      isIconOnly
                       className={styles.workspaceSettings}
                       onPress={() => {
                         if (!wide) setNavigationOverride(false);

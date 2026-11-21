@@ -149,7 +149,7 @@ export function SnapshotPanel({
           )}
           <Button
             variant="primary"
-            className={styles.primary}
+            className={styles.formAction}
             type="submit"
             isDisabled={!documentIds.length || create.isPending}
           >
@@ -174,7 +174,7 @@ export function SnapshotPanel({
               </div>
               <Button
                 variant="outline"
-                className={styles.secondary}
+                className={styles.formAction}
                 isDisabled={revoke.isPending}
                 onPress={() => revoke.mutate(address.id)}
               >

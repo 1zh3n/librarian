@@ -342,7 +342,7 @@ function WorkspaceDelivery({
           <div className={styles.actions}>
             <Button
               variant="primary"
-              className={styles.primary}
+              className={styles.formAction}
               type="submit"
               isDisabled={!ready || upload.isPending || Boolean(recovered)}
             >
@@ -351,7 +351,7 @@ function WorkspaceDelivery({
             {(source || resumed || upload.isError) && (
               <Button
                 variant="outline"
-                className={styles.secondary}
+                className={styles.formAction}
                 onPress={cancel}
                 isDisabled={upload.isPending}
               >
@@ -387,7 +387,7 @@ function WorkspaceDelivery({
                 {writable && latest.get(record.deliveryId) === record.operationId && (
                   <Button
                     variant="outline"
-                    className={styles.secondary}
+                    className={styles.formAction}
                     isDisabled={upload.isPending}
                     onPress={() => editSource(record)}
                   >

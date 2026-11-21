@@ -71,7 +71,7 @@ export function CreateFolderForm({
         </Feedback>
       )}
       <div className={styles.actions}>
-        <Button isDisabled={create.isPending} onPress={close}>
+        <Button variant="outline" isDisabled={create.isPending} onPress={close}>
           {dialog ? "取消" : "取消新建"}
         </Button>
         <Button variant="primary" type="submit" isDisabled={!valid} loading={create.isPending}>

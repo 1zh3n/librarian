@@ -110,7 +110,7 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
           )}
           <Button
             variant="primary"
-            className={styles.primary}
+            className={styles.formAction}
             type="submit"
             isDisabled={!canIssue || issue.isPending}
           >
@@ -131,7 +131,7 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
               </p>
               <Button
                 variant="outline"
-                className={styles.secondary}
+                className={styles.formAction}
                 onPress={() => setIssued(undefined)}
               >
                 关闭凭证
@@ -147,7 +147,7 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
           {navigator.clipboard && (
             <Button
               variant="outline"
-              className={styles.secondary}
+              className={styles.formAction}
               onPress={() => {
                 void navigator.clipboard.writeText(command).then(
                   () => setCopyStatus("已复制命令。"),
@@ -204,7 +204,7 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
                       )}
                       <Button
                         variant="outline"
-                        className={styles.secondary}
+                        className={styles.formAction}
                         isDisabled={revoke.isPending}
                         onPress={() => revoke.mutate(token.id)}
                       >

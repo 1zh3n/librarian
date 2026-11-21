@@ -61,3 +61,16 @@
 导入丢回执后聚焦「重试导入」以及发布提交无效版本后的两种历史问题画面也已复拍，设置区外框均已消失。[焦点实测修前](evidence/reader-management/tabs-broken.json) · [焦点实测修后](evidence/reader-management/tabs-fixed.json) · [导入重试](evidence/reader-management/verified-import-retry.png) · [发布纠错](evidence/reader-management/verified-publication-error.png)
 
 该联合构建的管理、账号、导入、备份、发布与离线产品回归 20/20 通过。Reader 生产构建与类型检查通过，变更的两个 TypeScript 文件通过 Oxlint 和 Oxfmt。[最终 20 项回归结果](evidence/reader-management/final-regression.json)
+
+## 目录图标与表单按钮
+
+对照基线为 `2c90891b`，改后画面来自与本记录同一提交的 Reader。通过生产网页和隔离的 Rust 服务，用同一篇中文文档在 Chromium 1440 × 900 桌面、390 × 844 模拟触屏上操作。另在 320 × 760、暗色、200% 根字号下复测新建弹窗。
+
+| 操作 | 实测 | 画面 |
+| --- | --- | --- |
+| 在当前文档的父目录上按方向键展开、折叠，再打开行菜单 | 改前齿轮与文件夹箭头在桌面向左偏 2 px、向下偏 4 px。改后两个 16 px 的 SVG 都在各自按钮正中。44 × 44 px 的齿轮四边各留 14 px，桌面目录箭头两侧各留 4 px、上下各留 10 px。触屏上的两种按钮均为 44 × 44 px。 | [改前目录](evidence/reader-controls/before-desktop-nav.png) · [改后目录](evidence/reader-controls/after-desktop-nav.png) |
+| 从齿轮进入「空间设置」，改名并保存 | 原来用 HeroUI 的 ghost 变体加页面样式。现在保存使用主按钮，与创建文档使用相同的字号和内边距。提交后显示「空间设置已保存」。 | [改前设置](evidence/reader-controls/before-desktop-settings.png) · [改后设置](evidence/reader-controls/after-desktop-settings.png) |
+| 从目录新建文档，输入文档名后取消或创建 | 主按钮和描边取消按钮的内边距均为左右 16 px、上下 8 px。默认字号时，桌面高度 40 px，模拟触屏高度 44 px。 | [改前弹窗](evidence/reader-controls/before-desktop-create.png) · [改后弹窗](evidence/reader-controls/after-desktop-create.png) · [390 px 触屏](evidence/reader-controls/after-phone-create.png) |
+| 在 320 px 屏幕将字号放大到 200% 后创建文档 | 输入框完整落在弹窗内。操作区按可用宽度换行，「创建文档」四个字保持在同一行，点按后焦点进入 Markdown 编辑器。 | [改前大字](evidence/reader-controls/before-zoom-create.png) · [改后大字](evidence/reader-controls/after-zoom-create.png) |
+
+219 项产品浏览器用例通过，其中 3 项直接覆盖这次反馈。另有 83 项组件测试及 36 项编辑器浏览器用例通过。控件回归测量实际 SVG 和按钮的边界，并检查禁用、取消、保存反馈与新建后焦点。[控件布局浏览器用例](../../apps/reader/tests/e2e/document-control-layout.spec.ts)

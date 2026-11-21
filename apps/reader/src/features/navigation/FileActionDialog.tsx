@@ -304,7 +304,7 @@ export function FileActionDialog({
             )}
             {access && <Feedback className={styles.access}>{access}</Feedback>}
             <div className={styles.actions}>
-              <Button isDisabled={busy} onPress={close}>
+              <Button variant="outline" isDisabled={busy} onPress={close}>
                 取消
               </Button>
               <Button

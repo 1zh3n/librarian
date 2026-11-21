@@ -4,7 +4,7 @@
   display: grid;
   inset: 0;
   place-items: center;
-  padding: 1rem;
+  padding: min(1rem, 4vw);
   overflow: auto;
   background: var(--overlay);
 }
@@ -16,7 +16,7 @@
 }
 
 .dialog {
-  padding: clamp(1.25rem, 4vw, 2rem);
+  padding: clamp(16px, 5vw, 2rem);
   border: 1px solid var(--border-strong);
   border-radius: calc(var(--radius) * 2);
   background: var(--surface);
@@ -44,6 +44,8 @@
 }
 
 .field input {
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
   font-size: 1rem;
 }
@@ -53,12 +55,6 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
-}
-
-.actions button {
-  min-height: 44px;
-  padding-inline: 0.875rem;
-  border-radius: var(--radius);
 }
 
 .error {
@@ -98,6 +94,7 @@
 }
 
 .deleteButton {
-  color: white;
-  background: #942e26;
+  --button-bg: #942e26;
+  --button-bg-hover: #78251f;
+  --button-fg: white;
 }

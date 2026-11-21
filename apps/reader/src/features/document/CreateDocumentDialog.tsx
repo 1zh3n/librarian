@@ -87,7 +87,7 @@ export function CreateDocumentDialog({
           </Feedback>
         )}
         <div className={styles.actions}>
-          <Button isDisabled={create.isPending} onPress={close}>
+          <Button variant="outline" isDisabled={create.isPending} onPress={close}>
             取消
           </Button>
           <Button
