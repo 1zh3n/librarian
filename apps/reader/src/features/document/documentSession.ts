@@ -1,4 +1,5 @@
 import { openEditor } from "../../editor/codemirror/adapter";
+import { minimalChange } from "../../editor/document";
 import { SaveController } from "./saveController";
 import type { MarkdownSnapshot, MarkdownWrite } from "./saveController";
 
@@ -46,7 +47,7 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
       const result = editor.applyExternal({
         baseRevision: previous.revision,
         revision: remote.revision,
-        edits: [{ from: 0, to: previous.markdown.length, insert: remote.markdown }],
+        edits: minimalChange(previous.markdown, remote.markdown),
       });
       return result === "applied";
     });

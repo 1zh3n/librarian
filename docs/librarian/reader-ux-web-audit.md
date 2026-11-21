@@ -101,3 +101,9 @@
 在原预览文档滚到底，第一次点击最后一段下方，旧版最后一个字从屏幕 y=740 一度移出视口，回落到 y=836。修正后，光标在末段下方的空行，正文区高度从 1502 增至 1536 px，末字仍在 y=740。已经进入编辑时，按住正文列外侧的底部留白再松开，编辑框也持续持有焦点。回归从按下指针开始逐帧记录，并覆盖已有 3 个换行、12 个换行加缩进，以及输入后回读完整 Markdown。
 
 另一篇 16 节手记在 1440 px 桌面点击和 390 px 模拟触屏点按下分别采样 40 帧，末字的最大位移为 0.49 和 0.04 px 以内。下图按相同坐标裁切，上幅是阅读，下幅是点过文末之后。 [文末落笔前后](evidence/reader-editing-workflow/steady-end-line.png) · [按下指针至光标落定的浏览器用例](../../apps/reader/tests/e2e/document-end-click-stability.spec.ts)
+
+## 标题与手动空行
+
+2026-11-22 的书写规则保留用户主动输入的每一行。连续按两次 Enter 后，两个「啊」之间有一个可点的空行；按四次则有三个。逐行点击、输入、撤销，再回读 CRLF 原文，插入位置都在点击的空行上。段内一次 Enter 在阅读时也换行，Markdown 显式硬换行只占一行。文末已有的手动空行逐行显示，从整篇正文下方点击时复用最后一行。图中左右是在同一位置阅读和落笔的画面。 [空行位置对照](evidence/reader-editing-workflow/blank-line-activation.png) · [阅读编辑往返与保存](../../apps/reader/tests/e2e/document-blank-lines.spec.ts) · [文末十二行与撤销](../../apps/reader/tests/e2e/editor-blank-lines.spec.ts)
+
+在局域网预览中点击《步行路线2》的标题文字，再单独点击两个「啊」之间的第一个空行。各采样 40 帧，标题及四个「啊」的屏幕纵坐标均保持原位。隔离工作区另测真实 IBus 拼音。末行正在组合「中文」时用鼠标点击标题字母 a，然后在标题用拼音输入第二个字。保存后「中文」在原末行，新字在标题。后台刷新追加段落的回归同时核对原光标和选区。 [IBus 输入与保存结果](evidence/reader-editing-workflow/heading-ibus.json) · [标题激活回归](../../apps/reader/tests/e2e/document-heading-activation.spec.ts)

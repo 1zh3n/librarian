@@ -23,6 +23,7 @@ import {
   applyTextEdits,
   editorOffset,
   editorText,
+  minimalChange,
   originalLineEndings,
   originalOffset,
   readSource,
@@ -33,7 +34,6 @@ import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
 import { documentPreviewTypography, hideFrontMatterControl, livePreview } from "./livePreview";
-import { placeOnWritingLine } from "./documentTypography";
 import { paperScrollAnchor } from "./paperScrollAnchor";
 import { markdownEnter } from "./markdownEnter";
 import { frontMatterRange } from "./syntax";
@@ -109,22 +109,6 @@ const reconcileLineEndings = EditorState.transactionFilter.of((transaction) => {
     },
   ];
 });
-
-function minimalChange(before: string, after: string): TextEdit[] {
-  let from = 0;
-  while (from < before.length && before[from] === after[from]) {
-    from++;
-  }
-  let to = before.length;
-  let insertTo = after.length;
-  while (to > from && insertTo > from && before[to - 1] === after[insertTo - 1]) {
-    to--;
-    insertTo--;
-  }
-  return from === to && from === insertTo
-    ? []
-    : [{ from, to, insert: after.slice(from, insertTo) }];
-}
 
 export interface ExternalPatch {
   readonly baseRevision: string | null;
@@ -312,13 +296,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     if (state.readOnly || state.field(composing)) return;
     const end = state.doc.length;
     if (state.doc.lineAt(end).text.trim() === "") {
-      dispatch(
-        state.update({
-          selection: { anchor: end },
-          effects: placeOnWritingLine.of(null),
-          scrollIntoView,
-        }),
-      );
+      dispatch(state.update({ selection: { anchor: end }, scrollIntoView }));
       return;
     }
     const current = state.field(sourceField).value;

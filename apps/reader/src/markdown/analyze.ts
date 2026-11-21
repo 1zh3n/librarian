@@ -8,11 +8,23 @@ import { unified } from "unified";
 import { collectBlocks } from "./blocks";
 import type { Block } from "./blocks";
 
+import type { BlankRun } from "./paperSpacing";
+
 const reader = unified()
   .use(remarkParse)
   .use(remarkFrontmatter)
   .use(remarkGfm)
-  .use(remarkRehype)
+  .use(remarkRehype, {
+    handlers: {
+      // The reading surface preserves soft newlines. A hard break already has
+      // a semantic BR and needs no additional newline text node.
+      break(state, node) {
+        const br: Element = { type: "element", tagName: "br", properties: {}, children: [] };
+        state.patch(node, br);
+        return state.applyData(node, br);
+      },
+    },
+  })
   .use(rehypeSanitize)
   .freeze();
 
@@ -25,6 +37,7 @@ export type DocumentHeading = {
 export type MarkdownAnalysis = {
   readonly blocks: readonly Block[];
   readonly headings: readonly DocumentHeading[];
+  readonly blankLines: readonly BlankRun[];
   readonly tree: HastRoot;
 };
 
@@ -66,5 +79,15 @@ export function analyzeMarkdown(markdown: string, documentId: string): MarkdownA
       }
     }
   }
-  return { blocks, headings, tree };
+  const blankLines: BlankRun[] = [];
+  let firstLine = 1;
+  for (const node of parsed.children) {
+    if (!node.position) continue;
+    const count = node.position.start.line - firstLine;
+    if (count > 0) blankLines.push({ firstLine, count });
+    firstLine = node.position.end.line + 1;
+  }
+  const count = (parsed.position?.end.line ?? 1) - firstLine + 1;
+  if (count > 0) blankLines.push({ firstLine, count });
+  return { blocks, headings, tree, blankLines };
 }

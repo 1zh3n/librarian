@@ -43,6 +43,31 @@ export const compositionEvents = ViewPlugin.fromClass(
   },
   {
     eventHandlers: {
+      mousedown(event, view) {
+        if (
+          !view.compositionStarted ||
+          event.button !== 0 ||
+          event.defaultPrevented ||
+          event.shiftKey ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey ||
+          event.target === view.contentDOM
+        )
+          return false;
+        const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        const { doc, selection } = view.state;
+        if (
+          position !== null &&
+          doc.lineAt(position).number !== doc.lineAt(selection.main.head).number
+        ) {
+          // Native IME still owns the old range. Confirm its text before CodeMirror
+          // places a new selection on another line, including the start of a drag.
+          view.contentDOM.blur();
+          view.focus();
+        }
+        return false;
+      },
       compositionstart(_event, view) {
         this.cancelPendingEnd();
         view.dispatch({ effects: setComposing.of(true) });

@@ -1,23 +1,17 @@
 import { syntaxTree } from "@codemirror/language";
-import { Facet, StateEffect, StateField } from "@codemirror/state";
+import { Facet, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
+import { blockEndMargin, headingSizes } from "../../markdown/paperSpacing";
 import { composing } from "./composition";
 import { frontMatterRange } from "./syntax";
 
-// Block margins in the reading canvas collapse. A visible Markdown separator
-// occupies that same space even if the author used several blank source lines.
-const bodySize = "var(--reading-size)";
-const headingSizes = [
-  "var(--reading-title-size)",
-  ...[1.45, 1.17, 1, 0.83, 0.67].map((scale) => `calc(${bodySize} * ${scale})`),
-];
 const leadLine = Decoration.line({ attributes: { "data-preview-lead": "" } });
 
 function documentTypography(state: EditorState) {
   const ranges: Range<Decoration>[] = [];
   const metadata = frontMatterRange(state.doc);
-  let previousLine = metadata ? state.doc.lineAt(metadata.to).number : 0;
+  let previousLine = 0;
   let previousEndMargin = "0px";
   const tree = syntaxTree(state);
   let blocks = 0;
@@ -27,49 +21,31 @@ function documentTypography(state: EditorState) {
     const first = state.doc.lineAt(node.from);
     const last = state.doc.lineAt(node.to);
     const heading = /^(?:ATX|Setext)Heading([1-6])$/.exec(node.name);
-    const headingSize = heading && headingSizes[Number(heading[1]) - 1];
+    const headingSize = heading ? headingSizes[Number(heading[1]) - 1] : undefined;
     const lead = node.name === "Paragraph" && (blocks === 0 || (blocks === 1 && firstWasTitle));
     if (lead) {
       for (let i = first.number; i <= last.number; i++)
         ranges.push(leadLine.range(state.doc.line(i).from));
     }
-    const before = headingSize && blocks > 0 ? `calc(${headingSize} * 1.7)` : "0px";
-    const gap = `max(${previousEndMargin}, ${before})`;
-    const blanks = first.number - previousLine - 1;
-    if (blanks > 0) {
-      addBlankLines(previousLine + 1, blanks, gap);
-    } else if (blocks > 0) {
-      ranges.push(
-        Decoration.line({ attributes: { style: `padding-block-start: ${gap}` } }).range(first.from),
-      );
+    if (blocks > 0) {
+      const before = headingSize ? `calc(${headingSize} * 1.7)` : "0px";
+      const gap = `max(${previousEndMargin}, ${before})`;
+      // The first separating line absorbs the collapsed block margin. All other
+      // blank source lines keep their native height, including at either end.
+      const hasBlank = previousLine + 1 < first.number;
+      const firstGapLine = hasBlank ? state.doc.line(previousLine + 1) : first;
+      const style = hasBlank ? `min-height: max(1lh, ${gap})` : `padding-block-start: ${gap}`;
+      ranges.push(Decoration.line({ attributes: { style } }).range(firstGapLine.from));
     }
-    previousEndMargin = headingSize
-      ? `calc(${headingSize} * .45)`
-      : lead
-        ? `calc(${bodySize} * 1.075 * 1.45)`
-        : bodySize;
-    // Reading tables live in a scroll container with no outer paragraph margin.
-    if (node.name === "Table") previousEndMargin = "0px";
+    previousEndMargin = blockEndMargin(headingSize, lead, node.name === "Table");
     previousLine = last.number;
     if (blocks === 0) firstWasTitle = heading?.[1] === "1";
     blocks++;
   }
-  const complete = tree.length === state.doc.length;
-  const lastContentEnd = previousLine > 0 ? state.doc.line(previousLine).to : 0;
-  const end = complete ? lastContentEnd : state.doc.length;
   return {
     ranges: Decoration.set(ranges, true),
-    endMargin: complete ? previousEndMargin : "0px",
-    endOfText: /^[\n\t ]*$/.test(state.sliceDoc(end)) ? end : state.doc.length,
+    endMargin: tree.length === state.doc.length ? previousEndMargin : "0px",
   };
-
-  function addBlankLines(first: number, count: number, gap: string) {
-    const separator = Decoration.line({
-      attributes: { "data-preview-blank": "", style: `--preview-gap: calc(${gap} / ${count})` },
-    });
-    for (let line = first; line < first + count; line++)
-      ranges.push(separator.range(state.doc.line(line).from));
-  }
 }
 
 const documentTypographyTheme = EditorView.baseTheme({
@@ -83,16 +59,6 @@ const documentTypographyTheme = EditorView.baseTheme({
     lineHeight: "1.7",
     maxInlineSize: "38em",
     color: "var(--ink-secondary)",
-  },
-  "&[data-document-preview] [data-preview-blank]": {
-    height: "var(--preview-gap)",
-    lineHeight: "0",
-    overflow: "hidden",
-  },
-  "&[data-document-preview] [data-preview-blank][data-preview-caret]": {
-    minHeight: "1lh",
-    lineHeight: "inherit",
-    overflow: "visible",
   },
   "&[data-document-preview] [data-preview-heading]": { fontWeight: "700", lineHeight: "1.38" },
   ...Object.fromEntries(
@@ -114,12 +80,7 @@ const typography = StateField.define<ReturnType<typeof documentTypography>>({
   create: documentTypography,
   update(value, transaction) {
     const { state, startState } = transaction;
-    if (state.field(composing))
-      return {
-        ...value,
-        ranges: value.ranges.map(transaction.changes),
-        endOfText: transaction.changes.mapPos(value.endOfText),
-      };
+    if (state.field(composing)) return { ...value, ranges: value.ranges.map(transaction.changes) };
     return transaction.docChanged ||
       startState.field(composing) ||
       syntaxTree(state) !== syntaxTree(startState)
@@ -134,40 +95,10 @@ const typography = StateField.define<ReturnType<typeof documentTypography>>({
   ],
 });
 
-export const placeOnWritingLine = StateEffect.define<null>();
-const writingLineStart = StateField.define<number | null>({
-  create: () => null,
-  update(start, tr) {
-    if (tr.effects.some((effect) => effect.is(placeOnWritingLine)))
-      return tr.newDoc.line(tr.newDoc.lines).from;
-    if (start === null) return null;
-    const mapped = tr.changes.mapPos(start, -1);
-    return tr.newSelection.main.from >= mapped ? mapped : null;
-  },
-});
-
 const caretLine = Decoration.line({ attributes: { "data-preview-caret": "" } });
 export const documentPreviewTypography: Extension = [
   documentTypographyActive.of(true),
   typography,
-  writingLineStart,
-  EditorView.decorations.compute(
-    [typography, writingLineStart, "selection", composing],
-    (state) => {
-      const { endOfText } = state.field(typography);
-      const onTail = state.selection.ranges.some((range) => range.to > endOfText);
-      const writingLine = state.field(writingLineStart);
-      // A paper click opens one working line below the prose, even when the source
-      // already ends in several blank lines. Keyboard navigation can enter them.
-      let to = state.doc.length;
-      if (onTail) {
-        if (writingLine === null) return Decoration.none;
-        to = writingLine - 1;
-      } else if (state.field(composing)) return Decoration.none;
-      if (endOfText >= to) return Decoration.none;
-      return Decoration.set([Decoration.replace({}).range(endOfText, to)]);
-    },
-  ),
   EditorView.decorations.compute(["selection", "doc"], (state) => {
     const lines = state.selection.ranges.map(({ head }) => state.doc.lineAt(head));
     return Decoration.set(

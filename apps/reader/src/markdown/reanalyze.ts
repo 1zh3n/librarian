@@ -122,7 +122,12 @@ function reparseLine(
   const position: Position | undefined = root.position
     ? { start: root.position.start, end: mapOldPoint(root.position.end) }
     : undefined;
-  return { blocks, headings, tree: { ...root, children, ...(position && { position }) } };
+  return {
+    blankLines: previous.analysis.blankLines,
+    blocks,
+    headings,
+    tree: { ...root, children, ...(position && { position }) },
+  };
 }
 
 export function reanalyzeMarkdown(

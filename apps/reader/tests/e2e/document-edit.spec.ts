@@ -122,10 +122,14 @@ for (const prefix of ["", "---\ntitle: 未填写\n---"]) {
   }) => {
     const source = prefix + "\r\n".repeat(120) + "    ";
     const { apiUrl } = await createNote(page, prefix ? "待填写属性.md" : "待填写.md", source);
-    const point = await page.getByRole("article").evaluate((article) => ({
-      x: article.getBoundingClientRect().left + 20,
-      y: article.closest("main")!.getBoundingClientRect().bottom - 20,
-    }));
+    const point = await page.getByRole("article").evaluate((article) => {
+      const main = article.closest("main")!;
+      main.scrollTop = main.scrollHeight;
+      return {
+        x: article.getBoundingClientRect().left + 20,
+        y: main.getBoundingClientRect().bottom - 20,
+      };
+    });
     await page.mouse.click(point.x, point.y);
     const body = editor(page, "Markdown 正文");
     await expect(body).toBeFocused();
@@ -224,7 +228,7 @@ test("reading paper just past the text ends the short line inside the body colum
 });
 
 for (const nearer of ["upper", "lower"] as const) {
-  test(`reading paper in the paragraph gap targets the ${nearer} paragraph`, async ({ page }) => {
+  test(`the ${nearer} edge of a real blank line targets its source line`, async ({ page }) => {
     const upper = "上段**重点**收尾。";
     const lower = "下段从这里开始。";
     const original = "\uFEFF" + upper + "\r\n\r\n" + lower;
@@ -240,7 +244,7 @@ for (const nearer of ["upper", "lower"] as const) {
         y: nearer === "upper" ? top + 2 : bottom - 2,
       };
     }, nearer);
-    const offset = nearer === "upper" ? original.indexOf("\r\n") : original.indexOf(lower);
+    const offset = original.indexOf("\r\n") + 2;
     await checkReadingInsertion(page, note, point, offset);
   });
 }
@@ -279,13 +283,13 @@ test("reading paper at the viewport bottom targets the nearby passage while more
       const bottom = main.getBoundingClientRect().bottom;
       main.scrollTop += el.getBoundingClientRect().bottom - (bottom - 10);
       const upper = el.getBoundingClientRect();
-      const lower = el.nextElementSibling!.getBoundingClientRect();
+      const lower = el.parentElement!.querySelectorAll("p")[31]!.getBoundingClientRect();
       const y = upper.bottom + 2;
       if (bottom - y > 10 || y >= bottom || lower.top <= bottom)
         throw new Error("Expected a gap at the fold with the next paragraph below it");
       return { x: upper.left + 8, y };
     });
-  await checkReadingInsertion(page, note, point, original.indexOf(passage) + passage.length);
+  await checkReadingInsertion(page, note, point, original.indexOf(passage) + passage.length + 1);
 });
 
 test("document controls, modified clicks and native text selection keep the reader intact", async ({

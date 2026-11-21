@@ -78,6 +78,26 @@ function nearestTextPoint(element: HTMLElement, x: number, y: number) {
   return { node, offset, glyph };
 }
 
+// Source lines may have mixed CRLF, CR and LF endings. Preserve the author's
+// indentation when placing a caret on an otherwise empty line.
+function blankLineHit(run: HTMLElement, y: number, source: string): ReadingHit {
+  const rect = run.getBoundingClientRect();
+  const count = Number(run.dataset.blankCount);
+  const lineHeight = parseFloat(getComputedStyle(run).lineHeight);
+  const firstHeight = rect.height - (count - 1) * lineHeight;
+  const row = Math.min(
+    count - 1,
+    Math.max(0, 1 + Math.floor((y - rect.top - firstHeight) / lineHeight)),
+  );
+  const line = Number(run.dataset.blankLine) + row;
+  const endings = /\r\n|[\r\n]/g;
+  let start = 0;
+  for (let n = 1; n < line && endings.exec(source); n++) start = endings.lastIndex;
+  const position = start + (/^[ \t]*/.exec(source.slice(start))?.[0].length ?? 0);
+  const screenTop = rect.top + (row ? firstHeight + (row - 1) * lineHeight : 0);
+  return { position, anchor: { sourceOffset: position, screenTop } };
+}
+
 export function readingPositionAtClick(
   article: HTMLElement,
   { clientX: x, clientY: y }: MouseEvent,
@@ -89,7 +109,7 @@ export function readingPositionAtClick(
     const position = readerCaretOffset(article, caret, source, analysis);
     if (position !== undefined) return textHit(position, caret.glyph);
   }
-  const blocks = article.querySelectorAll<HTMLElement>("[data-block-id]");
+  const blocks = article.querySelectorAll<HTMLElement>("[data-block-id], [data-blank-line]");
   let lo = 0;
   let hi = blocks.length;
   while (lo < hi) {
@@ -97,9 +117,19 @@ export function readingPositionAtClick(
     if (blocks[mid]!.getBoundingClientRect().bottom <= y) lo = mid + 1;
     else hi = mid;
   }
-  const next = blocks[lo];
+  let next = blocks[lo];
+  if (next?.hasAttribute("data-blank-line")) {
+    if (y >= next.getBoundingClientRect().top) return blankLineHit(next, y, source);
+    // Above the writing surface, enter at the first visible content.
+    next = article.querySelector<HTMLElement>("[data-block-id]") ?? next;
+    if (next.hasAttribute("data-blank-line")) return blankLineHit(next, y, source);
+  }
   if (!next) {
     const last = blocks[lo - 1];
+    if (last?.hasAttribute("data-blank-line")) {
+      const hit = blankLineHit(last, y, source);
+      return { position: "blankLine", anchor: hit.anchor };
+    }
     const block = analysis.blocks.find(({ id }) => id === last?.dataset.blockId);
     if (!last || !block) return { position: "blankLine" };
     const rect = last.getBoundingClientRect();

@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ComponentProps, KeyboardEventHandler } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import type { MarkdownAnalysis } from "./analyze";
+import { paperTree } from "./paperSpacing";
 import styles from "./ReaderSurface.module.css";
 
 const components = {
@@ -31,7 +32,7 @@ export function ReaderSurface({
   const article = useRef<HTMLElement>(null);
   const content = useMemo(
     () =>
-      toJsxRuntime(analysis.tree, {
+      toJsxRuntime(paperTree(analysis.tree, analysis.blankLines), {
         Fragment,
         jsx,
         jsxs,
@@ -80,7 +81,7 @@ export function ReaderSurface({
           }),
         },
       }),
-    [analysis.tree, resolveImage, resolveLink],
+    [analysis, resolveImage, resolveLink],
   );
   useLayoutEffect(() => {
     if (!article.current || !activeBlocks?.length) return;

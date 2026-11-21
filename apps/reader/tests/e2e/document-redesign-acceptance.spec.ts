@@ -181,7 +181,7 @@ for (const width of [1440, 390]) {
       await shot(page, `first-edit-${width}`);
       await body.press("Escape");
       const station = await placeStation(page);
-      const paragraph = station.locator("+ p");
+      const paragraph = station.locator("~ p").first();
       const original = await position(station);
       const lines = await paragraph.boundingBox();
       await shot(page, `deep-reading-${width}`);
@@ -304,7 +304,7 @@ test("typing on the first editor frame keeps the reading anchor when search take
   await openLongNote(page, "frame-input");
   const station = await placeStation(page);
   const original = await position(station);
-  const passage = station.locator("+ p");
+  const passage = station.locator("~ p").first();
   const marker = "核对测点";
   // Insert through the focused contenteditable during its first layout pass.
   // Waiting for a Playwright keyboard round trip can miss the affected frame.
@@ -330,7 +330,7 @@ test("no-result search and settings return to the deep passage with its unconfir
   await page.setViewportSize({ width: 1440, height: 900 });
   const { apiUrl } = await openLongNote(page, "draft");
   const station = await placeStation(page);
-  const paragraph = station.locator("+ p");
+  const paragraph = station.locator("~ p").first();
   const marker = "本地待核对";
   let release!: () => void;
   const pending = new Promise<void>((resolve) => {

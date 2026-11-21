@@ -186,12 +186,11 @@
   padding-block-start: clamp(1rem, 3vw, 2.5rem);
 }
 
-.canvas article > :first-child {
+.canvas article > [data-paper-first] {
   margin-block-start: 0;
 }
 
-.canvas article > p:first-child,
-.canvas article > h1:first-child + p {
+.canvas article > [data-paper-lead] {
   max-inline-size: 38em;
   margin-block-end: 1.45em;
   color: var(--ink-secondary);
@@ -281,6 +280,23 @@
   min-width: 100%;
   border-collapse: collapse;
   margin-block-end: 0.5rem;
+}
+
+.canvas article p {
+  white-space: pre-line;
+}
+
+/* One full text line for every intentional blank line in the source. */
+.canvas article > [data-blank-line] {
+  height: calc(max(1lh, var(--paragraph-gap)) + var(--extra-lines) * 1lh);
+}
+
+.canvas article > :has(+ [data-blank-line]) {
+  margin-block-end: 0;
+}
+
+.canvas article > [data-blank-line] + * {
+  margin-block-start: 0;
 }
 
 .canvas :where(th, td) {
