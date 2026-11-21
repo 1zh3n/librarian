@@ -61,7 +61,7 @@ export function useDevicePreferences(enabled: boolean) {
     root.dataset.eink = String(preferences.eink);
     root.dataset.reduceMotion = String(preferences.reduceMotion);
     root.dataset.readingFont = preferences.font;
-    root.style.setProperty("--reading-size", `${preferences.fontSize}px`);
+    root.style.setProperty("--reading-size", `${preferences.fontSize / 16}rem`);
     root.style.setProperty("--reading-measure", String(preferences.measure));
     root.style.setProperty("--reading-line-height", String(preferences.lineHeight));
   }, [preferences]);

@@ -144,7 +144,7 @@ test("settings tabs preserve drafts and save values from inactive tabs", async (
 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-reduce-motion", "true");
-  await expect(page.locator("html")).toHaveCSS("--reading-size", "23px");
+  await expect(page.getByRole("article")).toHaveCSS("font-size", "23px");
   await page.getByRole("article").press("g");
   await expect(page.getByText("专注阅读 · Esc 退出")).toBeVisible();
 });
