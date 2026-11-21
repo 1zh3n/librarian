@@ -5334,6 +5334,14 @@
                 "type": "string"
               }
             }
+          },
+          "contextWindow": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxOutputTokens": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },

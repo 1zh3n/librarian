@@ -1257,6 +1257,8 @@ export interface components {
         supportedLevels: string[];
         defaultLevel?: string;
       };
+      contextWindow?: number;
+      maxOutputTokens?: number;
     };
     AiDiscovery: {
       discoveryId: string;

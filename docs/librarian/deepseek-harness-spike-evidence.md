@@ -102,4 +102,6 @@ node bin/librarian/examples/deepseek-harness-spike/runner.mjs --once
 
 认证目录 `GET /models` 于 2026-11-21 13:44 UTC 返回 200。返回的两个 ID 为 `deepseek-flash` 和 `deepseek-v4-pro`，名称为 DeepSeek-V4.1-Flash 和 DeepSeek-V4-Pro，均声明 low、high、max，默认 high。仅 flash 执行了上述生成任务。目录为此次响应样本，产品应采用发现结果。
 
+受管适配注意事项：此次 Harness 真实任务显式关闭思考。锁定版本的 Messages 序列化器在没有设置等级时会写入 high，且总会携带 thinking。A3 需要在受管传输边界实现“供应商默认”省略这两个参数，保留所选动态等级，按实际脱敏请求和回包验收。用户配置的端点需要支持模型目录和 Messages。
+
 同一工作树复跑 Reader 构建、10 项 Rust AI 操作、5 项旧 Node、15 项 Harness（启用 Chromium）、10 项 AI 和版本浏览器用例、11 项 Fork 接缝及 6 项投递用例。既有 MCP 工具和权限回归通过；新增受管协议、网页配置和真实外部客户端发行验收属于后续工作。
