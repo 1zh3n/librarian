@@ -28,6 +28,10 @@ AI 功能在 `spike/librarian-ai-workspace` 保存到 `b6ada3b3`。集成分支 
 
 真实 DeepSeek 读取一份带 BOM、CRLF 和行末空格的 Markdown，改写水位并生成 Git 提交。从 Reader 的「版本」选中写入前的版本并恢复，历史中同时保留原始、AI 写入和恢复三次提交。随后在「文档更多 → 重命名」改名，再用原 ID 和原 revision 的链接重新打开。读回的新文件名、文档 ID 和原始 Markdown 的 SHA-256 均已核对。[改名后从原链接打开](evidence/ai-workspace/restore-rename-reader.png)
 
+Reader 接下来合入的 `5177a45d` 和 `a2eb4c97` 优化了点击页面留白时的光标落点。集成代码 `f16ae23b` 在相同 HTTPS 服务重跑了设置回读、三轮选区问答、版本恢复、使用原链接打开改名文档，以及 PDF 和 DOCX 问答、写入和撤销。正文 SHA-256 在版本恢复与撤销两条路径上均回到写入前的值。[最新生成回执](evidence/ai-workspace/reader-integration-receipts.json) · [引用返回后的现场](evidence/ai-workspace/reader-integration-back.png)
+
+针对复用路径，回归先移动原文档，再在旧路径创建另一份相同正文。旧改名弹窗提交后得到 409，两篇文档保持原位。另一组用例复用历史文件名并从旧 AI 版本恢复，检查差异和恢复取自同一文档。复制出来的 Markdown 从其创建提交开始显示历史。输入时的验证覆盖 Markdown 行内代码跨行选区，以及正文保存与中文输入法组字同时进行时打开同文档引用。后退后的追问使用服务端确认的 revision 和原选区范围。
+
 ## 网页设置与模型目录
 
 管理员从文档打开顶栏设置，在 AI 标签输入 DeepSeek 凭据。浏览器提交同源发现请求，真实供应商返回两个模型。换到下一个控件，目录返回后按 Escape，焦点回到原设置按钮。四个视口的页面横向溢出均为 0 CSS px。
@@ -60,10 +64,10 @@ AI 功能在 `spike/librarian-ai-workspace` 保存到 `b6ada3b3`。集成分支 
 
 | 验证对象 | 结果 |
 | --- | --- |
-| Reader 产品 Playwright | 175/175，采用真实 Rust 服务和 Chromium，2 个 worker |
-| 编辑器与阅读锚点 Playwright | 16/16 |
-| Reader Vitest | 63/63 |
-| Librarian 与 docs Rust 测试 | 149 项通过，0 项忽略 |
+| Reader 产品 Playwright | 207/207，采用真实 Rust 服务和 Chromium，2 个 worker |
+| 编辑器与阅读锚点 Playwright | 36/36 |
+| Reader Vitest | 75/75 |
+| Librarian 与 docs Rust 测试 | 152 项通过，另跑版本读取单测 40/40 |
 | 受管 Node 执行器、旧执行器、Harness Spike | 38/38、5/5、15/15，Spike 开启浏览器路径 |
 | 接口与静态检查 | OpenAPI 生成一致性、TypeScript、UI 组件边界、Oxlint、Oxfmt、Cargo fmt、Clippy 全部通过 |
 

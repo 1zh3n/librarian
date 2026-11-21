@@ -1,0 +1,273 @@
+{
+  "selectionTrip": {
+    "conversation": "e2b61011-7198-4984-8595-a64605a2c437",
+    "operations": [
+      "e7d5114a-7df0-450a-b385-6d2b298b1801",
+      "97cc8e03-e699-41b8-8cac-bf68619ea51e",
+      "451d443f-d009-4593-b68b-e9043b85405f"
+    ],
+    "context": {
+      "documentId": "doc_19a874e545f24344af2e9c55cb17b24d",
+      "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c",
+      "from": 637,
+      "to": 659
+    },
+    "sourceRevision": "98654f445945a04788e61e7d0a9d25646fa96f449d15bfa638e01e7fd4909058",
+    "readingTop": [
+      458.21875,
+      458.21875,
+      458.21875
+    ],
+    "transcriptTop": [
+      98,
+      98
+    ],
+    "restoredFocus": true,
+    "restoredDraft": true
+  },
+  "versionRename": {
+    "model": {
+      "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+      "modelId": "deepseek-v4-pro",
+      "thinking": {
+        "mode": "effort",
+        "level": "high"
+      }
+    },
+    "documentId": "doc_c29f0794b0f64ac08f86151ceffe40f6",
+    "pathBefore": "验收/版本前-ac1a0626.md",
+    "pathAfter": "验收/版本后-ac1a0626.md",
+    "originalCitation": "/workspaces/ws_b53203d18789403cae1dae2e5f325fbf/documents/doc_c29f0794b0f64ac08f86151ceffe40f6#reader-source?revision=17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a",
+    "operationId": "9f139428-d113-4e4f-9b82-a3dd9850f8b2",
+    "initialCommit": "8efc60a659f2529cd4235a2eacf8c58c09902649",
+    "aiCommit": "6d6ee596ee11fa7c544e39297077a5642561d7e2",
+    "restoreCommit": "86809809419d0af3b1e6d6c777d616ca4ac2408f",
+    "markdownSha256": {
+      "before": "17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a",
+      "afterAI": "fd72e87ff4ba89fa8aeb82c8bf7b467a9c735f07bcfb2e2c6697cf59fa6637f4",
+      "afterRestore": "17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a"
+    }
+  },
+  "reopenedModel": {
+    "connection": "DeepSeek 验收",
+    "model": "deepseek-flash",
+    "effort": "low",
+    "viewports": [
+      1440,
+      390,
+      360,
+      320
+    ]
+  },
+  "materialWrite": {
+    "before": "9e773a609f5f3f74fa1150707f63a8733b07f116da1371b449898a7c77c2ccb3",
+    "after": "2fae6290cf09452a4333dff61acc5d1b51d736772f10f382e1477bea8f3d0b7c",
+    "restored": "9e773a609f5f3f74fa1150707f63a8733b07f116da1371b449898a7c77c2ccb3",
+    "commit": "ea651a9f032661571e7b23b060f06deffe2c6e38",
+    "undo": "5ed78584cb695d7b36a92f43b523c8c71cd9d2bb"
+  },
+  "readerCommit": "a2eb4c97d3d7817a53c7f8edbae0b8bced546413",
+  "integrationCommit": "f16ae23b34a428c87987e08f66caf6476ab3b9c7",
+  "turns": [
+    {
+      "id": "e7d5114a-7df0-450a-b385-6d2b298b1801",
+      "conversationId": "e2b61011-7198-4984-8595-a64605a2c437",
+      "status": "succeeded",
+      "selection": {
+        "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+        "modelId": "deepseek-flash",
+        "thinking": {
+          "mode": "effort",
+          "level": "low"
+        }
+      },
+      "elapsedMs": 6186,
+      "sources": [
+        {
+          "id": "87eb11c6-8e5b-440f-8ad0-bceb81f1d68b",
+          "documentId": "doc_19a874e545f24344af2e9c55cb17b24d",
+          "path": "验收/选区回访-3f7fd9c7.md",
+          "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c",
+          "from": 637,
+          "to": 659
+        },
+        {
+          "id": "cd30cb14-9c37-4662-a309-583d9222bc91",
+          "documentId": "doc_19a874e545f24344af2e9c55cb17b24d",
+          "path": "验收/选区回访-3f7fd9c7.md",
+          "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c"
+        }
+      ],
+      "commitId": null
+    },
+    {
+      "id": "97cc8e03-e699-41b8-8cac-bf68619ea51e",
+      "conversationId": "e2b61011-7198-4984-8595-a64605a2c437",
+      "status": "succeeded",
+      "selection": {
+        "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+        "modelId": "deepseek-v4-pro",
+        "thinking": {
+          "mode": "effort",
+          "level": "high"
+        }
+      },
+      "elapsedMs": 13747,
+      "sources": [
+        {
+          "id": "eb375bfa-1559-409a-8c94-a5e302d271aa",
+          "documentId": "doc_19a874e545f24344af2e9c55cb17b24d",
+          "path": "验收/选区回访-3f7fd9c7.md",
+          "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c",
+          "from": 637,
+          "to": 659
+        },
+        {
+          "id": "28b17650-7601-4f8e-ac88-4f5db52ccc31",
+          "documentId": "doc_87699b145bc14d87b25aac716cc9cd8f",
+          "path": "验收/乙组记录.md",
+          "revision": "98654f445945a04788e61e7d0a9d25646fa96f449d15bfa638e01e7fd4909058"
+        }
+      ],
+      "commitId": null
+    },
+    {
+      "id": "451d443f-d009-4593-b68b-e9043b85405f",
+      "conversationId": "e2b61011-7198-4984-8595-a64605a2c437",
+      "status": "succeeded",
+      "selection": {
+        "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+        "modelId": "deepseek-v4-pro",
+        "thinking": {
+          "mode": "effort",
+          "level": "high"
+        }
+      },
+      "elapsedMs": 19671,
+      "sources": [
+        {
+          "id": "def375c4-94c8-4486-9d9e-ffc004501ccc",
+          "documentId": "doc_19a874e545f24344af2e9c55cb17b24d",
+          "path": "验收/选区回访-3f7fd9c7.md",
+          "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c",
+          "from": 637,
+          "to": 659
+        },
+        {
+          "id": "04f23911-c0e4-40bc-aec6-5b1546e96e22",
+          "documentId": "doc_19a874e545f24344af2e9c55cb17b24d",
+          "path": "验收/选区回访-3f7fd9c7.md",
+          "revision": "f3fccd02e6a96a1fb253233c5dc52253c5d952cd773fa5ee9262aca3bec6329c"
+        },
+        {
+          "id": "74f62962-9701-4107-8261-ed6761d779dc",
+          "documentId": "doc_87699b145bc14d87b25aac716cc9cd8f",
+          "path": "验收/乙组记录.md",
+          "revision": "98654f445945a04788e61e7d0a9d25646fa96f449d15bfa638e01e7fd4909058"
+        }
+      ],
+      "commitId": null
+    },
+    {
+      "id": "9f139428-d113-4e4f-9b82-a3dd9850f8b2",
+      "conversationId": "620d2dfa-02e4-46e4-9087-d051381b94d3",
+      "status": "succeeded",
+      "selection": {
+        "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+        "modelId": "deepseek-v4-pro",
+        "thinking": {
+          "mode": "effort",
+          "level": "high"
+        }
+      },
+      "elapsedMs": 8481,
+      "sources": [
+        {
+          "id": "cfddeba1-48a3-4906-8e7e-ebb1c06e3990",
+          "documentId": "doc_c29f0794b0f64ac08f86151ceffe40f6",
+          "path": "验收/版本前-ac1a0626.md",
+          "revision": "17404132e2fb8413fa2a37c68ac48c7c8d1577bf495a42b0024349a5096df58a"
+        }
+      ],
+      "commitId": "6d6ee596ee11fa7c544e39297077a5642561d7e2"
+    },
+    {
+      "id": "a9e3477e-4afa-4127-b364-19c59e63bfb5",
+      "conversationId": "ef04619b-3e48-4d82-92e8-2621f0000486",
+      "status": "succeeded",
+      "selection": {
+        "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+        "modelId": "deepseek-flash",
+        "thinking": {
+          "mode": "effort",
+          "level": "low"
+        }
+      },
+      "elapsedMs": 6115,
+      "sources": [
+        {
+          "id": "22aa3a98-124a-4d43-abd0-35713d14992d",
+          "kind": "material",
+          "conversationId": "ef04619b-3e48-4d82-92e8-2621f0000486",
+          "materialId": "b620bfaba0b640b3b06d38c3dd35b3e4",
+          "name": "budget.pdf",
+          "segmentId": "s2",
+          "page": 2
+        },
+        {
+          "id": "6f9428b8-0894-4d7f-8c63-5030e27afc1e",
+          "kind": "material",
+          "conversationId": "ef04619b-3e48-4d82-92e8-2621f0000486",
+          "materialId": "f157619d6a0741d689d1a9f23dd755a4",
+          "name": "meeting.docx",
+          "segmentId": "s2",
+          "paragraphStart": 2,
+          "paragraphEnd": 2
+        }
+      ],
+      "commitId": null
+    },
+    {
+      "id": "a47e7484-7819-4956-8395-e902cd64d0ac",
+      "conversationId": "ef04619b-3e48-4d82-92e8-2621f0000486",
+      "status": "succeeded",
+      "selection": {
+        "connectionId": "00fbeec8-a2ad-47e2-8e1b-d18dca276804",
+        "modelId": "deepseek-flash",
+        "thinking": {
+          "mode": "effort",
+          "level": "low"
+        }
+      },
+      "elapsedMs": 6372,
+      "sources": [
+        {
+          "id": "80d7384e-4f5e-49cc-a12f-db63962110e8",
+          "kind": "material",
+          "conversationId": "ef04619b-3e48-4d82-92e8-2621f0000486",
+          "materialId": "b620bfaba0b640b3b06d38c3dd35b3e4",
+          "name": "budget.pdf",
+          "segmentId": "s2",
+          "page": 2
+        },
+        {
+          "id": "d5439480-cd4b-4691-8f22-254a3174d710",
+          "kind": "material",
+          "conversationId": "ef04619b-3e48-4d82-92e8-2621f0000486",
+          "materialId": "f157619d6a0741d689d1a9f23dd755a4",
+          "name": "meeting.docx",
+          "segmentId": "s2",
+          "paragraphStart": 2,
+          "paragraphEnd": 2
+        },
+        {
+          "id": "fe11a2d0-d033-4d8b-911d-dcfda61b070c",
+          "documentId": "doc_e0e17daeabd94d0fa07b75a36a68fabe",
+          "path": "验收/材料汇总.md",
+          "revision": "9e773a609f5f3f74fa1150707f63a8733b07f116da1371b449898a7c77c2ccb3"
+        }
+      ],
+      "commitId": "ea651a9f032661571e7b23b060f06deffe2c6e38"
+    }
+  ]
+}
