@@ -164,7 +164,7 @@ impl Authenticator {
         encode(
             &Header::new(Algorithm::HS256),
             &claims,
-            &EncodingKey::from_secret(&self.secret),
+            &EncodingKey::from_secret(&self.secret)?,
         )
     }
 
@@ -235,11 +235,11 @@ impl Authenticator {
         let Some(sessions) = &self.browser_sessions else {
             return Ok(());
         };
-        let Ok(claims) = decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(&self.secret),
-            &Validation::new(Algorithm::HS256),
-        ) else {
+        let Ok(decoding_key) = DecodingKey::from_secret(&self.secret) else {
+            return Ok(());
+        };
+        let Ok(claims) = decode::<Claims>(token, &decoding_key, &Validation::new(Algorithm::HS256))
+        else {
             return Ok(());
         };
         if claims.claims.token_use.is_none() && claims.claims.space.is_none() {
@@ -252,11 +252,13 @@ impl Authenticator {
 
     /// The server-wide HS256 keys, for token kinds that decode their own
     /// claims (MCP OAuth) instead of going through `verify_jwt`.
-    pub(crate) fn hs256_keys(&self) -> (EncodingKey, DecodingKey) {
-        (
-            EncodingKey::from_secret(&self.secret),
-            DecodingKey::from_secret(&self.secret),
-        )
+    pub(crate) fn hs256_keys(
+        &self,
+    ) -> Result<(EncodingKey, DecodingKey), jsonwebtoken::errors::Error> {
+        Ok((
+            EncodingKey::from_secret(&self.secret)?,
+            DecodingKey::from_secret(&self.secret)?,
+        ))
     }
 
     /// The base64 encryption salt handed to the login page.
@@ -314,7 +316,7 @@ impl Authenticator {
         encode(
             &Header::new(Algorithm::HS256),
             &claims,
-            &EncodingKey::from_secret(&self.secret),
+            &EncodingKey::from_secret(&self.secret)?,
         )
     }
 
@@ -338,7 +340,7 @@ impl Authenticator {
         encode(
             &Header::new(Algorithm::HS256),
             &claims,
-            &EncodingKey::from_secret(&self.secret),
+            &EncodingKey::from_secret(&self.secret)?,
         )
     }
 
@@ -362,7 +364,7 @@ impl Authenticator {
     pub fn verify_jwt(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
         let data = decode::<Claims>(
             token,
-            &DecodingKey::from_secret(&self.secret),
+            &DecodingKey::from_secret(&self.secret)?,
             &Validation::new(Algorithm::HS256),
         )?;
         if data.claims.aud.is_some()
@@ -685,7 +687,7 @@ mod tests {
     }
 
     fn raw_token(a: &Authenticator, claims: serde_json::Value) -> String {
-        let (encoding, _) = a.hs256_keys();
+        let (encoding, _) = a.hs256_keys().unwrap();
         encode(&Header::new(Algorithm::HS256), &claims, &encoding).unwrap()
     }
 

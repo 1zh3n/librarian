@@ -70,7 +70,7 @@ impl Authenticator {
         encode(
             &Header::new(Algorithm::HS256),
             &claims,
-            &self.hs256_keys().0,
+            &self.hs256_keys()?.0,
         )
     }
 
@@ -78,7 +78,7 @@ impl Authenticator {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_audience(&[audience]);
         validation.set_required_spec_claims(&["exp", "aud", "sub"]);
-        let claims = decode::<McpAccessClaims>(token, &self.hs256_keys().1, &validation)?.claims;
+        let claims = decode::<McpAccessClaims>(token, &self.hs256_keys()?.1, &validation)?.claims;
         if claims.token_use != ACCESS_USE || !claims.scope.split(' ').any(|s| s == SCOPE) {
             return Err(ErrorKind::InvalidToken.into());
         }
@@ -93,7 +93,7 @@ impl Authenticator {
         encode(
             &Header::new(Algorithm::HS256),
             &claims,
-            &self.hs256_keys().0,
+            &self.hs256_keys()?.0,
         )
     }
 
@@ -101,7 +101,7 @@ impl Authenticator {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.validate_aud = false;
         validation.set_required_spec_claims(&["exp", "sub"]);
-        let claims = decode::<McpRefreshClaims>(token, &self.hs256_keys().1, &validation)?.claims;
+        let claims = decode::<McpRefreshClaims>(token, &self.hs256_keys()?.1, &validation)?.claims;
         if claims.token_use != REFRESH_USE {
             return Err(ErrorKind::InvalidToken.into());
         }

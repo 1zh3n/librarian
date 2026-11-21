@@ -101,7 +101,7 @@ impl Fixture {
     /// Shaped like an MCP access token, signed with the server secret, and
     /// carrying the `username` a space token would.
     fn mcp_bearer(&self) -> String {
-        let encoding = jsonwebtoken::EncodingKey::from_secret(&SECRET);
+        let encoding = jsonwebtoken::EncodingKey::from_secret(&SECRET).unwrap();
         let exp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

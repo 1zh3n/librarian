@@ -142,7 +142,7 @@ async fn bad_assertions_are_invalid_client() {
             b64(claims)
         )
     };
-    let hs_key = EncodingKey::from_secret(b"shared-secret");
+    let hs_key = EncodingKey::from_secret(b"shared-secret").unwrap();
     let cases: Vec<(&str, String)> = vec![
         (
             "wrong signature",
@@ -219,7 +219,7 @@ async fn bad_assertions_are_invalid_client() {
 
 #[tokio::test]
 async fn hs256_with_a_symmetric_key_in_the_jwks_is_refused() {
-    let secret = EncodingKey::from_secret(b"shared-secret");
+    let secret = EncodingKey::from_secret(b"shared-secret").unwrap();
     let set = JwkSet {
         keys: vec![jwk(&secret, Algorithm::HS256, "oct")],
     };

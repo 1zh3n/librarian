@@ -45,7 +45,7 @@ async-trait = "0.1"
 tower-http = "0.7"
 axum = "0.8"
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "sync"] }
-jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto"] }
 sha2 = "0.10"
 getrandom = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
