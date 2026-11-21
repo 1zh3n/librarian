@@ -679,6 +679,12 @@ export function WorkspaceShell() {
                   : undefined
             }
             actions={{
+              ...(workspace &&
+                canReceiveFiles(workspace) &&
+                inDirectory &&
+                !rowSource && {
+                  deleted: () => directoryActions.openDeleted(workspace.id, contextMenu.trigger),
+                }),
               ...(canCreate &&
                 inDirectory &&
                 folderSource && {
@@ -738,6 +744,7 @@ export function WorkspaceShell() {
           />
         )}
         {directoryActions.dialogs}
+        {directoryActions.deletedDialog}
         {directoryActions.notice}
         {settingsError && (
           <p role="alert" className={styles.notice}>

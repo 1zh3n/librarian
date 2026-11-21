@@ -64,7 +64,13 @@ export function handleWorkspaceMenu(
   const row = target.closest<HTMLElement>("[data-context-folder]");
   const trigger =
     row ?? target.closest<HTMLElement>("button:not(:disabled), [tabindex]") ?? currentTarget;
-  open(trigger, row?.dataset.contextFolder ?? "", point);
+  const folder = row?.dataset.contextFolder ?? "";
+  if ("key" in event) {
+    // Focusing an off-screen row queues a scroll that would immediately dismiss the popover.
+    requestAnimationFrame(() => {
+      if (trigger.contains(document.activeElement)) open(trigger, folder);
+    });
+  } else open(trigger, folder, point);
 }
 
 export function WorkspaceContextMenu({
@@ -77,7 +83,7 @@ export function WorkspaceContextMenu({
   close,
 }: {
   target: WorkspaceMenuTarget;
-  actions: Partial<Record<"createFolder" | "move" | "copy" | "delete", () => void>>;
+  actions: Partial<Record<"createFolder" | "move" | "copy" | "delete" | "deleted", () => void>>;
   rename: (() => void) | undefined;
   create: ((folder: string, origin: HTMLElement) => void) | undefined;
   search: (origin: HTMLElement) => void;
@@ -137,6 +143,7 @@ export function WorkspaceContextMenu({
               ["move", "移动到…"],
               ["copy", "复制到…"],
               ["delete", "删除…"],
+              ["deleted", "最近删除"],
             ] as const
           ).flatMap(([id, label]) => {
             const run = actions[id];

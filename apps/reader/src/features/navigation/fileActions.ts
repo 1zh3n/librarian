@@ -34,6 +34,14 @@ export function validFolderName(name: string) {
   return Boolean(name.trim()) && !/[/\\:]|^\./iu.test(name.trim());
 }
 
+export function fileActionName(value: string, kind: DirectorySource["kind"]): string | undefined {
+  const name = value.trim();
+  if (!validFolderName(name) || /\p{Cc}/u.test(name)) return undefined;
+  if (kind === "folder") return name;
+  const stem = name.replace(/\.md$/iu, "");
+  return stem && !/\.outline$/iu.test(stem) ? `${stem}.md` : undefined;
+}
+
 export function actionError(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 403) return "操作权限已更改，请选择有写权限的位置或联系空间管理员。";
@@ -67,4 +75,19 @@ export function accessMessage(action: "copy" | "move", access: FileActionPreview
   return action === "copy"
     ? `复制后，${changes.join("，")}。原件权限不变。`
     : `移动后，${changes.join("，")}。`;
+}
+
+export function availableCopyName(
+  filename: string,
+  kind: DirectorySource["kind"],
+  folder: string,
+  occupied: ReadonlySet<string>,
+  start = 1,
+) {
+  const stem = kind === "document" ? filename.slice(0, -3) : filename;
+  for (let ordinal = start; ; ordinal++) {
+    const suffix = ordinal === 1 ? "副本" : `副本 ${ordinal}`;
+    const name = `${stem}（${suffix}）${kind === "document" ? ".md" : ""}`;
+    if (!occupied.has(joinPath(folder, name))) return { name, ordinal };
+  }
 }

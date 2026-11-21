@@ -7,10 +7,17 @@ import { Button } from "../../ui/Button";
 import { Icon } from "../../ui/Icon";
 import { Tooltip } from "../../ui/Tooltip";
 import { Feedback } from "../../ui/Feedback";
+import {
+  RecentlyDeletedDialog,
+  deletedFilesQuery,
+  restoreConflict,
+  type RestoreConflict,
+} from "./RecentlyDeletedDialog";
 import { CreateFolderForm } from "./CreateFolderForm";
 import { DraftSaveError, FileActionDialog } from "./FileActionDialog";
 import {
   actionError,
+  canReceiveFiles,
   foldersQuery,
   parentPath,
   type DirectoryCommand,
@@ -51,6 +58,11 @@ export function useDirectoryActions({
   const client = useQueryClient();
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<DialogState>();
+  const [deleted, setDeleted] = useState<{
+    workspace: string;
+    origin: HTMLElement;
+    conflict?: RestoreConflict;
+  }>();
   const [notice, setNotice] = useState<Notice>();
   const [revealed, setRevealed] = useState<ResultRow>();
   const [undoing, setUndoing] = useState(false);
@@ -116,6 +128,7 @@ export function useDirectoryActions({
     const location = [dest, parentPath(result.path) || "根目录"].join(" / ");
     setDialog(undefined);
     if (action === "delete") {
+      void client.invalidateQueries({ queryKey: deletedFilesQuery(workspace).queryKey });
       setNotice({
         workspace,
         message: `已删除「${source.path}」`,
@@ -160,16 +173,38 @@ export function useDirectoryActions({
     showDirectory();
     reveal(target.workspaceId, target.path);
   }
-  async function undo(current: Notice) {
+  async function restore(workspace: string, operationId: string, targetPath?: string) {
+    const result = await api.undoFileAction(workspace, operationId, targetPath);
+    const query = deletedFilesQuery(workspace);
+    await client.cancelQueries({ queryKey: query.queryKey });
+    client.setQueryData(
+      query.queryKey,
+      (prior) =>
+        prior && {
+          items: prior.items.filter((item) => item.operationId !== operationId),
+        },
+    );
+    await refreshDirectory(result.workspaceId);
+    setNotice((prior) => (prior?.undo === operationId ? undefined : prior));
+    return result;
+  }
+  function openDeleted(workspace: string, origin: HTMLElement) {
+    setRevealed(undefined);
+    setDeleted({ workspace, origin });
+  }
+  async function undo(current: Notice, origin: HTMLElement) {
     if (!current.undo || undoing) return;
     setUndoing(true);
     try {
-      const result = await api.undoFileAction(current.workspace, current.undo);
-      await refreshDirectory(result.workspaceId);
+      const result = await restore(current.workspace, current.undo);
       setNotice({ workspace: result.workspaceId, message: `已恢复「${result.path}」` });
       reveal(result.workspaceId, result.path);
     } catch (error) {
-      setNotice({ ...current, error: actionError(error) });
+      const conflict = restoreConflict(current.undo, error);
+      if (conflict) {
+        setRevealed(undefined);
+        setDeleted({ workspace: current.workspace, origin, conflict });
+      } else setNotice({ ...current, error: actionError(error) });
     } finally {
       setUndoing(false);
     }
@@ -178,6 +213,23 @@ export function useDirectoryActions({
   const row = revealed?.workspace === selected ? revealed : undefined;
   return {
     start,
+    openDeleted,
+    deletedDialog: deleted?.workspace === selected &&
+      workspaces.some((space) => space.id === selected && canReceiveFiles(space)) && (
+        <RecentlyDeletedDialog
+          key={selected}
+          workspace={selected}
+          conflict={deleted.conflict}
+          restore={(operationId, path) => restore(selected, operationId, path)}
+          close={(result) => {
+            setDeleted(undefined);
+            if (result) {
+              showDirectory();
+              reveal(result.workspaceId, result.path);
+            } else requestAnimationFrame(() => deleted.origin.focus({ preventScroll: true }));
+          }}
+        />
+      ),
     reveal: row,
     markedPath: visibleDialog?.source.path ?? row?.path,
     dialogs:
@@ -235,7 +287,12 @@ export function useDirectoryActions({
           </Button>
         )}
         {notice.undo && (
-          <Button loading={undoing} onPress={() => void undo(notice)}>
+          <Button
+            loading={undoing}
+            onPress={(event) => {
+              if (event.target instanceof HTMLElement) void undo(notice, event.target);
+            }}
+          >
             {undoing ? "正在恢复…" : "撤销"}
           </Button>
         )}

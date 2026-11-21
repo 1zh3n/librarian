@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Workspace } from "../src/api/client";
+import { fileActionName } from "../src/features/navigation/fileActions";
 import { FileActionDialog } from "../src/features/navigation/FileActionDialog";
 
 afterEach(() => {
@@ -269,4 +270,94 @@ test("the first preview includes the flushed content of the affected source", as
   fireEvent.click(screen.getByRole("button", { name: "删除" }));
   await waitFor(() => expect(tokens).toHaveLength(1));
   expect(tokens).toEqual(["saved"]);
+});
+
+test("same-folder copy skips a server-side collision but leaves a user's conflicting name editable", async () => {
+  const paths: string[] = [];
+  const applied: string[] = [];
+  vi.stubGlobal("fetch", (url: string, options: RequestInit) => {
+    if (url.endsWith("/folders"))
+      return Promise.resolve(Response.json({ folders: ["采编"], identities: {} }));
+    if (typeof options.body !== "string") throw new Error("Expected a file action body");
+    const { targetPath } = JSON.parse(options.body) as { targetPath: string };
+    if (url.endsWith("/preview")) {
+      paths.push(targetPath);
+      if (targetPath === "采编/周报（副本）.md" || targetPath === "采编/占用.md")
+        return Promise.resolve(
+          Response.json({ code: "path_exists", message: "path occupied" }, { status: 409 }),
+        );
+      return Promise.resolve(Response.json({ token: targetPath, access: counts, fileCount: 1 }));
+    }
+    if (url.endsWith("/apply")) {
+      applied.push(targetPath);
+      return Promise.resolve(
+        Response.json({
+          workspaceId: "personal",
+          path: targetPath,
+          undoable: false,
+          operationId: "copy",
+        }),
+      );
+    }
+    throw new Error(url);
+  });
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <FileActionDialog
+        action="copy"
+        source={{ workspace, kind: "document", path: "采编/周报.md", documentId: "doc" }}
+        workspaces={[workspace]}
+        prepareSource={async () => {}}
+        done={() => {}}
+        close={() => {}}
+      />
+    </QueryClientProvider>,
+  );
+  const name = screen.getByRole<HTMLInputElement>("textbox", { name: "副本名称" });
+  await waitFor(() => expect(name.value).toBe("周报（副本 2）.md"));
+  expect(paths).toContain("采编/周报（副本）.md");
+  fireEvent.change(name, { target: { value: "占用.md" } });
+  expect((await screen.findByRole("alert")).textContent).toMatch(/同名/u);
+  const submit = screen.getByRole<HTMLButtonElement>("button", { name: "复制到此处" });
+  expect(submit.disabled || submit.getAttribute("aria-disabled") === "true").toBe(true);
+  fireEvent.change(name, { target: { value: "新标题.md" } });
+  await waitFor(() =>
+    expect(submit.disabled || submit.getAttribute("aria-disabled") === "true").toBe(false),
+  );
+  fireEvent.click(submit);
+  await waitFor(() => expect(applied).toEqual(["采编/新标题.md"]));
+});
+
+test("shows the first locally free sibling name while its server preview is pending", () => {
+  const client = new QueryClient();
+  client.setQueryData(
+    ["workspaces", "personal", "documents"],
+    [{ path: "采编/周报（副本）.md" }, { path: "外地/周报（副本 2）.md" }],
+  );
+  vi.stubGlobal("fetch", () => new Promise<Response>(() => {}));
+  render(
+    <QueryClientProvider client={client}>
+      <FileActionDialog
+        action="copy"
+        source={{ workspace, kind: "document", path: "采编/周报.md", documentId: "doc" }}
+        workspaces={[workspace]}
+        prepareSource={async () => {}}
+        done={() => {}}
+        close={() => {}}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByRole<HTMLInputElement>("textbox", { name: "副本名称" }).value).toBe(
+    "周报（副本 2）.md",
+  );
+});
+
+test("destination names keep folder suffixes and protect Markdown outline paths", () => {
+  expect(fileActionName(" 纪要 ", "document")).toBe("纪要.md");
+  expect(fileActionName(" 纪要.MD ", "document")).toBe("纪要.md");
+  expect(fileActionName("纪要.outline.md", "document")).toBeUndefined();
+  expect(fileActionName("../其他", "folder")).toBeUndefined();
+  expect(fileActionName("归档.md", "folder")).toBe("归档.md");
 });
