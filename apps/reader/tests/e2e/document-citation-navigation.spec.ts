@@ -161,6 +161,13 @@ test("two history entries for the same document keep independently edited AI dra
   await expect(page).toHaveURL(citationUrl);
   await openDocumentTool(page, "AI");
   await expect(note.prompt).toHaveValue("来源条目上的追问");
+  await note.link.click();
+  await expect(
+    page.getByRole("article").getByText(original.trimEnd(), { exact: true }),
+  ).toBeFocused();
+  await page.goBack();
+  await expect(note.link).toBeFocused();
+  await expect(note.prompt).toHaveValue("来源条目上的追问");
 });
 
 test("the follow-up uses the selected text and revision saved while leaving for a citation", async ({

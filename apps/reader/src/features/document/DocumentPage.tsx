@@ -39,21 +39,28 @@ import { OutlineCanvas } from "./OutlineCanvas";
 import type { OutlineSession } from "./OutlineCanvas";
 import type { MarkdownWrite } from "./saveController";
 import { parseCitationHash } from "./sourceVisit";
+import type { CitationDraft } from "./citationHistory";
 import type { AiTranscriptVisit, SourceVisit } from "./sourceVisit";
 import { SaveNotice } from "./SaveNotice";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
 type SourceNavigation = {
+  citationDraft: CitationDraft | undefined;
   visit: SourceVisit | undefined;
-  onSourceVisit: (visit: SourceVisit) => void;
+  onSourceVisit: (sourceId: string, capture: () => SourceVisit) => void;
 };
+
+function unavailableDocument(error: unknown) {
+  return error instanceof ApiError && [401, 403, 404].includes(error.status);
+}
 
 export function DocumentPage({
   workspace,
   document,
   writable,
   visit,
+  citationDraft,
   onSourceVisit,
 }: SourceNavigation & {
   workspace: string;
@@ -61,15 +68,16 @@ export function DocumentPage({
   writable: boolean;
 }) {
   const result = useQuery(documentQuery(workspace, document));
+  if (result.isError && (!result.data || unavailableDocument(result.error))) {
+    return (
+      <Feedback tone="error" className={styles.message}>
+        {result.error instanceof ApiError && result.error.status === 404
+          ? "此文档不存在"
+          : "无法读取文档"}
+      </Feedback>
+    );
+  }
   if (!result.data) {
-    if (result.isError) {
-      const missing = result.error instanceof ApiError && result.error.status === 404;
-      return (
-        <Feedback tone="error" className={styles.message}>
-          {missing ? "此文档不存在" : "无法读取文档"}
-        </Feedback>
-      );
-    }
     return (
       <Feedback tone="status" className={styles.message}>
         正在打开文档…
@@ -83,6 +91,7 @@ export function DocumentPage({
       snapshot={result.data}
       writable={writable}
       visit={visit}
+      citationDraft={citationDraft}
       onSourceVisit={onSourceVisit}
     />
   );
@@ -93,6 +102,7 @@ function DocumentWorkspace({
   snapshot,
   writable,
   visit: returnVisit,
+  citationDraft,
   onSourceVisit,
 }: SourceNavigation & {
   workspace: string;
@@ -181,15 +191,16 @@ function DocumentWorkspace({
   const [outlineRequested, setOutlineRequested] = useState(false);
   const [outlineSession, setOutlineSession] = useState<OutlineSession>();
   const outlineEnabled = outlineRequested || snapshot.document.outlineEnabled;
+  const showOutline = outlineEnabled || citation?.outline === true;
   const initialTool = returnVisit
     ? "ai"
     : citation
-      ? citation.outline && outlineEnabled
+      ? citation.outline
         ? "outline"
         : "paper"
       : "layout";
   const { tool, rememberedTab, chooseTool } = useDocumentTools(
-    outlineEnabled,
+    showOutline,
     location.state.__TSR_key,
     initialTool,
   );
@@ -244,7 +255,18 @@ function DocumentWorkspace({
     }
     chooseTool(next);
   }
-  const outline = useQuery({ ...outlineQuery(workspace, documentId), enabled: outlineEnabled });
+  const outline = useQuery({
+    ...outlineQuery(workspace, documentId),
+    enabled: showOutline,
+    ...(citation?.outline && { staleTime: 0 }),
+  });
+  const outlineSnapshot = unavailableDocument(outline.error) ? undefined : outline.data;
+  const missingCitedOutline =
+    citation?.outline &&
+    outline.isSuccess &&
+    outlineSnapshot?.revision === null &&
+    !outlineRequested;
+  const sourceRevision = citation?.outline ? outlineSnapshot?.revision : snapshot.revision;
   const canvas = useRef<HTMLDivElement>(null);
   const savedEditorSelection = useRef<{
     source: string;
@@ -344,11 +366,11 @@ function DocumentWorkspace({
     const viewport = canvas.current?.closest("main");
     if (!viewport) return;
     const inline = inlineVisit.current;
-    onSourceVisit({
+    const source = mode === "read" ? reading.source : body.editor.source();
+    const selection = selectedContext(source);
+    const visit = {
       documentId,
-      revision: snapshot.revision,
       transcript,
-      selection: snapshot.markdown === reading.source ? selectedContext(reading.source) : undefined,
       reading: {
         anchor: captureReaderAnchor(viewport, analysis.blocks),
         scrollTop: viewport.scrollTop,
@@ -358,6 +380,14 @@ function DocumentWorkspace({
         scrollTop: inline.scrollTop,
         passage: inline.passage,
       },
+    };
+    onSourceVisit(transcript.sourceId, () => {
+      const confirmed = body.saves.confirmed();
+      return {
+        ...visit,
+        revision: confirmed.revision,
+        selection: confirmed.markdown === source ? selection : undefined,
+      };
     });
   }
 
@@ -407,39 +437,6 @@ function DocumentWorkspace({
       stop?.();
     };
   }, [tool, returnVisit, analysis.blocks, snapshot.revision]);
-
-  const handledCitation = useRef<typeof citation>(undefined);
-  useLayoutEffect(() => {
-    if (!citation || returnVisit) {
-      handledCitation.current = undefined;
-      return;
-    }
-    if (handledCitation.current === citation) return;
-    const destination = citation.outline && outlineEnabled ? "outline" : undefined;
-    if (tool !== destination) return;
-    const frame = requestAnimationFrame(() => {
-      const surface = canvas.current;
-      if (!surface) return;
-      const block = citation.block ? renderedBlock(surface, citation.block) : undefined;
-      const from =
-        citation.from !== undefined && citation.revision === snapshot.revision
-          ? blockAtOffset(analysis.blocks, citation.from)
-          : undefined;
-      const target =
-        destination === "outline"
-          ? toolPane.current
-          : (block ??
-            (from && renderedBlock(surface, from.id)) ??
-            surface.querySelector("article"));
-      if (target) {
-        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-        target.focus({ preventScroll: true });
-        target.scrollIntoView({ block: destination || from || block ? "center" : "start" });
-      }
-      handledCitation.current = citation;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [citation, returnVisit, analysis.blocks, outlineEnabled, snapshot.revision, tool]);
 
   const rememberReadingSelection = useCallback(() => {
     if (modeRef.current !== "read") return;
@@ -738,6 +735,84 @@ function DocumentWorkspace({
     return () => cancelAnimationFrame(frame);
   }, [analysis, body, documentId, mode, reading]);
 
+  const handledCitation = useRef<{ citation: typeof citation; entry: string | undefined }>(
+    undefined,
+  );
+  const citationEntry = location.state.__TSR_key;
+  useLayoutEffect(() => {
+    if (!citation || returnVisit) {
+      handledCitation.current = undefined;
+      return;
+    }
+    if (
+      handledCitation.current?.citation === citation &&
+      handledCitation.current.entry === citationEntry
+    )
+      return;
+    const destination = citation.outline ? "outline" : undefined;
+    if (tool !== destination) return;
+    if (!destination && mode !== "read") {
+      const showReading = () => {
+        leaveEditor();
+        pendingAnchor.current = undefined;
+      };
+      if (body.editor.isComposing()) {
+        const surface = canvas.current;
+        // The editor commits composition on the frame following compositionend.
+        const whenCommitted = () => {
+          if (!body.editor.isComposing()) showReading();
+        };
+        let frame = requestAnimationFrame(whenCommitted);
+        const afterComposition = () => {
+          cancelAnimationFrame(frame);
+          frame = requestAnimationFrame(whenCommitted);
+        };
+        surface?.addEventListener("compositionend", afterComposition);
+        return () => {
+          cancelAnimationFrame(frame);
+          surface?.removeEventListener("compositionend", afterComposition);
+        };
+      }
+      showReading();
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const surface = canvas.current;
+      if (!surface) return;
+      const block = citation.block ? renderedBlock(surface, citation.block) : undefined;
+      const from =
+        citation.from !== undefined &&
+        citation.revision === snapshot.revision &&
+        reading.source === snapshot.markdown
+          ? blockAtOffset(analysis.blocks, citation.from)
+          : undefined;
+      const target =
+        destination === "outline"
+          ? toolPane.current
+          : (block ??
+            (from && renderedBlock(surface, from.id)) ??
+            surface.querySelector("article"));
+      if (!target) return;
+      if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: destination || from || block ? "center" : "start" });
+      handledCitation.current = { citation, entry: citationEntry };
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    citation,
+    citationEntry,
+    returnVisit,
+    analysis.blocks,
+    snapshot.revision,
+    snapshot.markdown,
+    reading.source,
+    tool,
+    mode,
+    leaveEditor,
+    body,
+  ]);
+
   useEffect(() => {
     const surface = canvas.current?.querySelector<HTMLElement>(`.${styles.paper}`);
     const article = surface?.querySelector("article");
@@ -808,12 +883,14 @@ function DocumentWorkspace({
       }
     >
       <div className={styles.documentTools} ref={toolbar}>
-        {citation?.revision && citation.revision !== snapshot.revision && (
+        {citation?.revision && sourceRevision && citation.revision !== sourceRevision && (
           <Feedback tone="status" className={styles.citationNotice}>
-            引用时的正文已更新，当前显示最新版本。
+            {citation.outline
+              ? "引用时的提纲已更新，当前显示最新版本。"
+              : "引用时的正文已更新，当前显示最新版本。"}
           </Feedback>
         )}
-        {citation?.outline && !outlineEnabled && (
+        {missingCitedOutline && (
           <Feedback tone="status" className={styles.citationNotice}>
             引用的提纲已移除。
           </Feedback>
@@ -858,7 +935,7 @@ function DocumentWorkspace({
                     { id: "metadata", label: "文档属性", run: () => setTool("metadata") },
                   ]
                 : []),
-              ...(writable && !outlineEnabled
+              ...(writable && !outlineEnabled && (!showOutline || missingCitedOutline)
                 ? [
                     {
                       id: "outline",
@@ -890,11 +967,11 @@ function DocumentWorkspace({
             setTool(undefined);
           }}
           outline={
-            outlineEnabled ? (
+            showOutline ? (
               <>
-                {outline.data && (
+                {outlineSnapshot && !missingCitedOutline && (
                   <OutlineCanvas
-                    snapshot={outline.data}
+                    snapshot={outlineSnapshot}
                     visible={tool === "outline"}
                     focusOnCreate={outlineRequested && !snapshot.document.outlineEnabled}
                     writable={writable}
@@ -919,6 +996,8 @@ function DocumentWorkspace({
           }
           ai={
             <AiPanel
+              key={location.state.__TSR_key}
+              citationDraft={citationDraft}
               active={tool === "ai"}
               workspace={workspace}
               documentId={documentId}

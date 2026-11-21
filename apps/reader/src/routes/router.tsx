@@ -6,6 +6,7 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
+import { trackCitationVisits } from "../features/document/citationHistory";
 import { WorkspaceShell } from "./WorkspaceShell";
 
 function RootRoute() {
@@ -72,6 +73,8 @@ export const router = createRouter({
     snapshot,
   ]),
 });
+
+export const citationVisits = trackCitationVisits(router.history);
 
 declare module "@tanstack/react-router" {
   interface Register {

@@ -7,6 +7,7 @@ import { workspaceKeys } from "../../api/queries";
 import { Button, ToggleButton } from "../../ui/Button";
 import { Form, TextAreaField } from "../../ui/Forms";
 import { Feedback } from "../../ui/Feedback";
+import type { CitationDraft } from "../document/citationHistory";
 import { citationHash } from "../document/sourceVisit";
 import type { AiTranscriptVisit } from "../document/sourceVisit";
 import { ContextUnavailable, explicitReferences, referenceContext } from "./aiContext";
@@ -34,8 +35,10 @@ export function AiPanel({
   writable,
   resolveContext,
   returnVisit,
+  citationDraft,
   onSourceVisit,
 }: {
+  citationDraft?: CitationDraft | undefined;
   returnVisit?: AiTranscriptVisit | undefined;
   onSourceVisit?: (visit: AiTranscriptVisit) => void;
   id?: string;
@@ -47,7 +50,13 @@ export function AiPanel({
   resolveContext?: () => Promise<AiContext[]>;
 }) {
   const client = useQueryClient();
-  const [prompt, setPrompt] = useState(returnVisit?.draft ?? "");
+  const [prompt, setPromptState] = useState(
+    () => returnVisit?.draft ?? citationDraft?.read() ?? "",
+  );
+  function setPrompt(value: string) {
+    citationDraft?.update(value);
+    setPromptState(value);
+  }
   const [local, setLocal] = useState<Turn[]>([]);
   const history = useQuery({
     queryKey: [...workspaceKeys.workspace(workspace), "ai", "operations", documentId ?? null],
@@ -238,7 +247,11 @@ export function AiPanel({
                         <Link
                           to="/workspaces/$workspaceId/documents/$documentId"
                           params={{ workspaceId: workspace, documentId: source.documentId }}
-                          hash={citationHash(source, source.documentId === documentId)}
+                          hash={citationHash(source)}
+                          state={(origin) => ({
+                            readerCitation: source.id,
+                            readerCitationOrigin: origin.__TSR_key,
+                          })}
                           hashScrollIntoView={false}
                           title={source.revision}
                           ref={returnVisit?.sourceId === source.id ? sourceLink : undefined}
