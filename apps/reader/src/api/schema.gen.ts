@@ -1703,6 +1703,8 @@ export interface components {
       operationId: string;
       from: string;
       to: string;
+      /** @description Stable ID of the selected document. If it no longer occupies the source path in this workspace, the server returns 409 rename_source_changed. Omit for path-based operations, including directory moves. */
+      expectedDocumentId?: string;
     };
     DeliveryManifest: {
       deliveryId: string;

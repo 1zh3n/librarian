@@ -562,6 +562,7 @@ struct Rename {
     operation_id: String,
     from: String,
     to: String,
+    expected_document_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
@@ -572,6 +573,8 @@ struct PathMove {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 struct RenamePlan {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_document_id: Option<String>,
     documents: Vec<PathMove>,
     changes: Vec<FileChange>,
 }
@@ -751,6 +754,7 @@ pub(super) fn conditional_rename(
             operation_id: operation.to_owned(),
             from: from.to_owned(),
             to: to.to_owned(),
+            expected_document_id: None,
         },
         Some(expected),
     )
@@ -800,6 +804,7 @@ fn rename_locked(
                 || intent.account != account.username()
                 || intent.from != input.from
                 || intent.to != input.to
+                || intent.plan.expected_document_id != input.expected_document_id
             {
                 return Err(operation_reused());
             }
@@ -814,7 +819,21 @@ fn rename_locked(
             intent.finish(metadata, &receipt)?;
             return Ok(receipt);
         }
-        let (plan, edits) = plan_rename(state, &input.from, &input.to).map_err(|e| {
+        if let Some(id) = &input.expected_document_id {
+            let matches_source: bool = metadata.connection()?.query_row(
+                "SELECT EXISTS(SELECT 1 FROM documents WHERE workspace_id = ?1 AND path = ?2 AND id = ?3)",
+                params![workspace, input.from, id],
+                |row| row.get(0),
+            )?;
+            if !matches_source || !attributes(state, &input.from)?.is_some_and(|file| file.is_file()) {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "rename_source_changed",
+                    "The selected document is no longer at the source path",
+                ));
+            }
+        }
+        let (plan, edits) = plan_rename(state, &input.from, &input.to, input.expected_document_id).map_err(|e| {
             if expected.is_some() {
                 super::ai_reorganization::conflict_if_missing(e)
             } else {
@@ -893,7 +912,7 @@ pub(super) fn preview_rename(
     to: &str,
 ) -> Result<(Vec<FileChange>, Vec<RenameIdentity>), ApiError> {
     validate_move(from, to)?;
-    let (plan, _) = plan_rename(state, from, to)?;
+    let (plan, _) = plan_rename(state, from, to, None)?;
     let mut identities = Vec::with_capacity(plan.documents.len());
     for document in plan.documents {
         let id = metadata.document_id(workspace, &document.from)?;
@@ -1010,6 +1029,7 @@ fn plan_rename(
     state: &ServerState,
     from: &str,
     to: &str,
+    expected_document_id: Option<String>,
 ) -> Result<(RenamePlan, Vec<FileEdit>), ApiError> {
     let root = Path::new(&state.space_folder_path);
     let paths = move_paths(state, from, to)?;
@@ -1045,7 +1065,14 @@ fn plan_rename(
         }
     }
     changes.sort_unstable_by(|a, b| a.path.cmp(&b.path));
-    Ok((RenamePlan { documents, changes }, files))
+    Ok((
+        RenamePlan {
+            expected_document_id,
+            documents,
+            changes,
+        },
+        files,
+    ))
 }
 
 fn path_conflict() -> ApiError {

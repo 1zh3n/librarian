@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import { api, ApiError } from "../../api/client";
+import { api, ApiError, type RenameWorkspacePath } from "../../api/client";
 import { operationId } from "../../api/operationId";
 import { workspaceKeys } from "../../api/queries";
 
-type Paths = { from: string; to: string };
+type Paths = Omit<RenameWorkspacePath, "operationId">;
 
 export function useRenamePath(workspace: string) {
   const client = useQueryClient();
@@ -12,14 +12,17 @@ export function useRenamePath(workspace: string) {
     undefined,
   );
   return useMutation({
-    mutationFn: ({ from, to }: Paths) => {
+    mutationFn: (paths: Paths) => {
       const last = previous.current;
       const id =
-        last?.workspace === workspace && last.from === from && last.to === to
+        last?.workspace === workspace &&
+        last.from === paths.from &&
+        last.to === paths.to &&
+        last.expectedDocumentId === paths.expectedDocumentId
           ? last.operationId
           : operationId();
-      previous.current = { workspace, from, to, operationId: id };
-      return api.renameWorkspacePath(workspace, { from, to, operationId: id });
+      previous.current = { workspace, ...paths, operationId: id };
+      return api.renameWorkspacePath(workspace, { ...paths, operationId: id });
     },
     onSuccess: async () => {
       previous.current = undefined;
@@ -28,6 +31,8 @@ export function useRenamePath(workspace: string) {
     onError: (error) => {
       if (error instanceof ApiError && error.status === 403) {
         void client.invalidateQueries({ queryKey: workspaceKeys.all, exact: true });
+      } else if (error instanceof ApiError && error.code === "rename_source_changed") {
+        void client.invalidateQueries({ queryKey: workspaceKeys.workspace(workspace) });
       }
     },
   });

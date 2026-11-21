@@ -44,6 +44,8 @@ export function RenameDocumentDialog({
     message = "请输入同一目录内的有效 Markdown 文件名。";
   } else if (error instanceof ApiError && error.code === "path_exists") {
     message = "该目录已有同名文件，请更换文件名。";
+  } else if (error instanceof ApiError && error.code === "rename_source_changed") {
+    message = "文档已移出原路径。请关闭弹窗，重新打开要重命名的文档。";
   } else if (error) {
     message = "无法重命名，请核对原路径和文件名后重试。";
   }
@@ -53,7 +55,11 @@ export function RenameDocumentDialog({
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
-          if (ready) rename.mutate({ from: path, to }, { onSuccess: close });
+          if (ready)
+            rename.mutate(
+              { from: path, to, expectedDocumentId: document.id },
+              { onSuccess: close },
+            );
         }}
       >
         <div>{path}</div>

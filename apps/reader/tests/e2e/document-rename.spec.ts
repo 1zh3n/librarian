@@ -1,9 +1,73 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import type { DocumentSnapshot, Workspace } from "../../src/api/client";
 import { openFieldWorkspace } from "./productFixture";
 
 const markdown = "---\ntitle: 雨季观察\n---\n\n## 河岸\n\n记录初夏的水位。\n";
+async function loginAdmin(request: APIRequestContext, origin: string) {
+  const login = await request.post("/.auth/librarian/login", {
+    headers: { origin },
+    form: { username: "fixture-admin", password: "fixture-admin-test-password" },
+    maxRedirects: 0,
+  });
+  expect(login.status()).toBe(303);
+}
+
+test("bound rename rejects a reused source path and replays only the original request", async ({
+  request,
+  baseURL,
+}) => {
+  if (!baseURL) throw new Error("Expected the Reader fixture URL");
+  const headers = { origin: new URL(baseURL).origin };
+  await loginAdmin(request, headers.origin);
+  const created = await request.post("/api/v1/workspaces", {
+    headers,
+    data: { name: "重命名回执" },
+  });
+  expect(created.status()).toBe(201);
+  const workspace = (await created.json()) as Workspace;
+  const api = `/api/v1/workspaces/${workspace.id}`;
+  const from = "草稿/原名.md";
+  const add = async () => {
+    const response = await request.post(`${api}/documents`, {
+      headers,
+      data: { path: from, markdown, baseRevision: null },
+    });
+    expect(response.status()).toBe(201);
+    return (await response.json()) as DocumentSnapshot;
+  };
+  const original = await add();
+  const move = {
+    operationId: randomUUID(),
+    from,
+    to: "归档.md",
+    expectedDocumentId: original.document.id,
+  };
+  const rename = (data: typeof move) => request.post(`${api}/rename`, { headers, data });
+  const receipt = await rename(move);
+  expect(receipt.status()).toBe(200);
+  const replacement = await add();
+  expect(replacement.document.id).not.toBe(original.document.id);
+  const stale = await rename({ ...move, operationId: randomUUID(), to: "意外.md" });
+  expect(stale.status()).toBe(409);
+  expect(await stale.json()).toMatchObject({ code: "rename_source_changed" });
+  expect(await (await rename(move)).json()).toEqual(await receipt.json());
+  const reused = await rename({ ...move, expectedDocumentId: replacement.document.id });
+  expect(reused.status()).toBe(409);
+  expect(await reused.json()).toMatchObject({ code: "operation_id_reused" });
+  const snapshot = (id: string) =>
+    request.get(`/api/v1/documents/${id}`).then((response) => response.json());
+  expect(await snapshot(original.document.id)).toMatchObject({ path: move.to, markdown });
+  expect(await snapshot(replacement.document.id)).toEqual(replacement);
+  const directory = await request.post(`${api}/rename`, {
+    headers,
+    data: { operationId: randomUUID(), from: "草稿", to: "稿件" },
+  });
+  expect(directory.status()).toBe(200);
+  expect(await snapshot(replacement.document.id)).toMatchObject({ path: "稿件/原名.md", markdown });
+});
+
 async function sample(page: Page, path = "研究/旧档.md") {
   await openFieldWorkspace(page);
   const headers = { origin: new URL(page.url()).origin };
@@ -68,7 +132,11 @@ test("renames the keyboard-targeted document in place, retaining title, stable l
   await expect(name).toHaveValue("已占用.md");
   await page.screenshot({ path: info.outputPath("conflict.png") });
   await name.fill("雨后复测.MD");
+  const submitted = page.waitForRequest(
+    (req) => req.url().endsWith("/rename") && req.method() === "POST",
+  );
   await name.press("Enter");
+  expect((await submitted).postDataJSON()).toMatchObject({ expectedDocumentId: note.document.id });
   await expect(dialog).toBeHidden();
   await expect(row).toContainText("雨后复测.md");
   await expect(row).toBeFocused();
@@ -98,6 +166,48 @@ test("renames the keyboard-targeted document in place, retaining title, stable l
   await expect(page.getByRole("main").getByRole("heading", { name: "雨季观察" })).toBeVisible();
   await expect(page.getByRole("banner")).toContainText("雨后复测.md");
   await page.screenshot({ path: info.outputPath("renamed.png") });
+});
+
+test("a stale document menu cannot rename the replacement at the original path", async ({
+  page,
+  request,
+}) => {
+  const { address, apiUrl, workspace, note, headers } = await sample(page);
+  await page.goto(address);
+  await page.getByRole("button", { name: "文档更多" }).click();
+  await page.getByRole("menuitem", { name: "重命名…" }).click();
+  const dialog = page.getByRole("dialog", { name: "重命名文档" });
+  const name = dialog.getByLabel("文件名");
+  await name.fill("原计划文件名");
+
+  await loginAdmin(request, headers.origin);
+  const api = `/api/v1/workspaces/${workspace.id}`;
+  const moved = await request.post(`${api}/rename`, {
+    headers,
+    data: { operationId: randomUUID(), from: note.document.path, to: "归档.md" },
+  });
+  expect(moved.status()).toBe(200);
+  const created = await request.post(`${api}/documents`, {
+    headers,
+    data: { path: note.document.path, markdown, baseRevision: null },
+  });
+  expect(created.status()).toBe(201);
+  const replacement = (await created.json()) as DocumentSnapshot;
+
+  const response = page.waitForResponse((res) => res.url().endsWith(`${api}/rename`));
+  await dialog.getByRole("button", { name: "保存文件名" }).click();
+  expect((await response).status()).toBe(409);
+  await expect(dialog.getByRole("alert")).toContainText("原路径");
+  await expect(name).toHaveValue("原计划文件名");
+  expect(await (await request.get(apiUrl)).json()).toMatchObject({ path: "归档.md", markdown });
+  expect(await (await request.get(`/api/v1/documents/${replacement.document.id}`)).json()).toEqual(
+    replacement,
+  );
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(page.getByRole("banner")).toContainText("归档.md");
+  await page.getByRole("button", { name: "文档更多" }).click();
+  await page.getByRole("menuitem", { name: "重命名…" }).click();
+  await expect(name).toHaveValue("归档");
 });
 
 test.describe("touchscreen", () => {

@@ -44,7 +44,7 @@ type AiConfirm = components["schemas"]["AiConfirmRequest"];
 
 type CreateWorkspace = components["schemas"]["CreateWorkspace"];
 type UpdateWorkspace = components["schemas"]["UpdateWorkspace"];
-type RenameWorkspacePath = components["schemas"]["RenameWorkspacePaths"];
+export type RenameWorkspacePath = components["schemas"]["RenameWorkspacePaths"];
 export type WorkspaceSettings = Omit<CreateWorkspace, "origin">;
 export type DeliveryManifest = components["schemas"]["DeliveryManifest"];
 type DeliveryInput = components["schemas"]["DeliveryRequest"];
