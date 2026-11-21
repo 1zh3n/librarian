@@ -61,18 +61,21 @@ test("places the editor caret at the clicked text within a paragraph", async ({ 
   await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe("甲乙中丙丁\n");
 });
 
-for (const [name, original] of [
-  ["short", "\uFEFF---\r\ntitle: 留白\r\n---\r\n\r\n短文。  \r\n\r\n"],
-  ["empty", ""],
-  ["metadata", "---\ntitle: 只有属性\n---\n"],
+for (const [name, original, firstEnding] of [
+  ["text", "上文。\r\n正文。", "\r\n"],
+  ["existing lines", "\uFEFF---\r\ntitle: 留白\r\n---\r\n\r\n短文。  \r\n\r\n", ""],
+  ["empty", "", ""],
+  ["metadata", "---\ntitle: 只有属性\n---\n", ""],
+  ["indented", "正文。\n  ", ""],
 ] as const) {
-  test(`blank paper appends one undoable newline per click in reading and editing (${name})`, async ({
+  test(`blank paper reuses the final writing line until it contains text (${name})`, async ({
     page,
   }) => {
     const { apiUrl } = await createNote(page, `Paper-${name}.md`, original);
-    const point = await page.getByRole("article").evaluate((article) => {
-      const column = article.getBoundingClientRect();
-      const viewport = article.closest("main")!.getBoundingClientRect();
+    const article = page.getByRole("article");
+    const point = await article.evaluate((element) => {
+      const column = element.getBoundingClientRect();
+      const viewport = element.closest("main")!.getBoundingClientRect();
       return {
         x: column.left + column.width / 2,
         edge: viewport.left + 4,
@@ -81,28 +84,35 @@ for (const [name, original] of [
     });
     const body = editor(page, "Markdown 正文");
     const newline = original.includes("\r\n") ? "\r\n" : "\n";
+    const ready = original + firstEnding;
     const saved = () => expect.poll(async () => (await readNote(page, apiUrl)).markdown);
     await page.mouse.click(point.x, point.y);
     await expect(body).toBeFocused();
-    await saved().toBe(original + newline);
-    await page.keyboard.insertText("初");
     await body.press("Control+Home");
     await page.mouse.click(point.edge, point.y);
+    await body.press("Escape");
+    await expect(article).toBeVisible();
+    await page.mouse.click(point.x, point.y);
     await expect(body).toBeFocused();
-    await saved().toBe(original + newline + "初" + newline);
+    await page.keyboard.insertText("初");
+    await saved().toBe(ready + "初");
+
+    await body.press("Control+Home");
+    await page.mouse.click(point.edge, point.y);
+    await saved().toBe(ready + "初" + newline);
+    await page.mouse.click(point.edge, point.y);
     await page.keyboard.insertText("续");
-    await saved().toBe(original + newline + "初" + newline + "续");
-    for (const prior of [
-      original + newline + "初" + newline,
-      original + newline + "初",
-      original + newline,
-      original,
-    ]) {
+    await saved().toBe(ready + "初" + newline + "续");
+    for (const prior of [ready + "初" + newline, ready + "初", ready]) {
       await body.press("Control+z");
       await saved().toBe(prior);
     }
-    await body.press("Control+Shift+z");
-    await saved().toBe(original + newline);
+    if (firstEnding) {
+      await body.press("Control+z");
+      await saved().toBe(original);
+      await body.press("Control+Shift+z");
+      await saved().toBe(ready);
+    }
   });
 }
 
