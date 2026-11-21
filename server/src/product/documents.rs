@@ -36,12 +36,15 @@ const METADATA_LIMIT: usize = 32 * 1024;
 pub(crate) struct DocumentService {
     pub(crate) spaces: NativeSpaces,
     pub(super) metadata: Metadata,
+    pub(super) ai_discovery: super::ai_settings::AiDiscoveryService,
 }
 
 impl DocumentService {
     pub(crate) fn open(root: &Path, spaces: NativeSpaces) -> Result<Self, String> {
+        let metadata = Metadata::open(root)?;
         Ok(Self {
-            metadata: Metadata::open(root)?,
+            ai_discovery: super::ai_settings::AiDiscoveryService::open(&metadata)?,
+            metadata,
             spaces,
         })
     }
@@ -529,6 +532,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
             get(super::settings::get_preferences).put(super::settings::save_preferences),
         )
         .merge(super::ai::routes())
+        .merge(super::ai_settings::routes())
         .merge(super::accounts::routes())
         .merge(super::workspace::routes())
         .merge(super::ai_materials::routes())

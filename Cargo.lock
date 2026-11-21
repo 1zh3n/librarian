@@ -4270,6 +4270,7 @@ dependencies = [
  "chrono",
  "form_urlencoded",
  "getrandom 0.4.3",
+ "hmac",
  "jsonwebtoken",
  "libc",
  "minijinja",

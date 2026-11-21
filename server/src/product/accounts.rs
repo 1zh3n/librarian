@@ -54,11 +54,11 @@ fn browser(
     Account::authenticate(&service.spaces, headers, mutation)
 }
 
-fn administrator(
+pub(super) fn administrator(
     service: &DocumentService,
     headers: &HeaderMap,
     mutation: bool,
-) -> Result<(), ApiError> {
+) -> Result<Account, ApiError> {
     let account = browser(service, headers, mutation)?;
     if !service.spaces.users.is_admin(account.username()) {
         return Err(ApiError::new(
@@ -67,7 +67,7 @@ fn administrator(
             "Server administrator access is required",
         ));
     }
-    Ok(())
+    Ok(account)
 }
 
 fn password(value: &str) -> Result<(), ApiError> {
