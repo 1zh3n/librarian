@@ -3,7 +3,7 @@ import { ToggleButton as HeroToggleButton } from "@heroui/react/toggle-button";
 import type { ReactNode, Ref } from "react";
 
 type ButtonProps = {
-  "aria-current"?: "page";
+  "aria-current"?: "page" | undefined;
   "aria-label"?: string;
   "aria-keyshortcuts"?: string;
   "aria-haspopup"?: "menu" | "dialog";
