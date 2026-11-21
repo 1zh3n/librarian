@@ -7,19 +7,11 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  Button,
-  Menu,
-  MenuItem,
-  MenuSection,
-  MenuTrigger,
-  Popover,
-  ToggleButton,
-  Tooltip,
-  TooltipTrigger,
-} from "../ui/primitives";
-import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "../ui/Button";
+import { ActionMenu } from "../ui/Menu";
+import { Tooltip } from "../ui/Tooltip";
+import { ReaderDock } from "../ui/ReaderDock/ReaderDock";
 import { api, ApiError } from "../api/client";
 import type { DevicePreferences, DocumentSnapshot, DocumentSummary } from "../api/client";
 import { documentsQuery, sessionQuery, workspaceKeys, workspacesQuery } from "../api/queries";
@@ -33,7 +25,7 @@ import type {
   OpenWorkspaceMenu,
   WorkspaceMenuTarget,
 } from "../features/navigation/WorkspaceContextMenu";
-import { SpaceTree } from "../features/navigation/SpaceTree";
+import { DirectoryTree } from "../ui/DirectoryTree/DirectoryTree";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
 import {
   isEditingTarget,
@@ -100,7 +92,7 @@ export function WorkspaceShell() {
   const firstDocument = documents[0]?.id;
   const viewport = useRef<HTMLElement>(null);
   const layout = useRef<HTMLDivElement>(null);
-  const navigationPanel = usePanelRef();
+  const navigationToggle = useRef<HTMLButtonElement>(null);
   const { preferences, settingsQuery, save } = useDevicePreferences(Boolean(workspaces.data));
   const focus = useReadingFocus(viewport, layout, documentId);
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
@@ -187,16 +179,6 @@ export function WorkspaceShell() {
     query.addEventListener("change", change);
     return () => query.removeEventListener("change", change);
   }, []);
-
-  useLayoutEffect(() => {
-    const panel = navigationPanel.current;
-    if (!panel) return;
-    if (!navigationVisible) panel.collapse();
-    else {
-      panel.expand();
-      panel.resize(wide ? preferences.sidebarWidth : 190);
-    }
-  }, [navigationPanel, navigationVisible, preferences.sidebarWidth, wide]);
 
   useEffect(() => {
     if (!selected || documentId || toolRoute || !firstDocument || createDocumentFor) return;
@@ -352,19 +334,21 @@ export function WorkspaceShell() {
       >
         <header className={styles.bar}>
           {workspace ? (
-            <ToggleButton
+            <Button
+              ref={navigationToggle}
               aria-label={navigation ? "收起目录" : "展开目录"}
               aria-controls="workspace-navigation"
               className={styles.button}
-              isSelected={navigationVisible}
+              aria-pressed={navigationVisible}
               isDisabled={focus.active}
-              onChange={(next) => {
+              onPress={() => {
+                const next = !navigation;
                 setNavigationOverride(next);
                 void saveLayout({ navigation: next });
               }}
             >
               目录
-            </ToggleButton>
+            </Button>
           ) : (
             <Link to="/" className={styles.brand}>
               Librarian
@@ -377,45 +361,48 @@ export function WorkspaceShell() {
           {authenticated && (
             <div className={styles.topActions}>
               {workspace && (
-                <MenuTrigger>
-                  <Button className={styles.button}>布局</Button>
-                  <Popover className={styles.popover}>
-                    <Menu className={styles.layoutMenu}>
-                      <MenuSection
-                        aria-label="布局预设"
-                        className={styles.presets}
-                        selectionMode="single"
-                        selectedKeys={preferences.layout === "custom" ? [] : [preferences.layout]}
-                        shouldCloseOnSelect
-                      >
-                        {presets.map((preset) => {
-                          const [id, label, navigation] = preset;
-                          return (
-                            <MenuItem
-                              key={id}
-                              id={id}
-                              textValue={label}
-                              className={styles.layoutOption}
-                              onAction={() => void selectLayout(preset)}
-                            >
-                              <span aria-hidden="true" className={styles.preview} data-preset={id}>
-                                {navigation && <span className={styles.previewNavigation} />}
-                                <span className={styles.previewBody} />
-                                {id !== "reading" && <span className={styles.previewTools} />}
-                              </span>
-                              {label}
-                            </MenuItem>
-                          );
-                        })}
-                      </MenuSection>
-                      {documentId && (
-                        <MenuItem id="focus" className={styles.spaceOption} onAction={focus.toggle}>
-                          {focusLabel}
-                        </MenuItem>
-                      )}
-                    </Menu>
-                  </Popover>
-                </MenuTrigger>
+                <ActionMenu
+                  label="布局"
+                  trigger={<Button className={styles.button}>布局</Button>}
+                  popoverClassName={styles.popover}
+                  className={styles.layoutMenu}
+                  choiceGroup={{
+                    label: "布局预设",
+                    className: styles.presets,
+                    selectedId: preferences.layout === "custom" ? undefined : preferences.layout,
+                    items: presets.map((preset) => {
+                      const [id, label, navigation] = preset;
+                      return {
+                        id,
+                        label,
+                        className: styles.layoutOption,
+                        run: () => void selectLayout(preset),
+                        content: (
+                          <>
+                            <span aria-hidden="true" className={styles.preview} data-preset={id}>
+                              {navigation && <span className={styles.previewNavigation} />}
+                              <span className={styles.previewBody} />
+                              {id !== "reading" && <span className={styles.previewTools} />}
+                            </span>
+                            {label}
+                          </>
+                        ),
+                      };
+                    }),
+                  }}
+                  items={
+                    documentId
+                      ? [
+                          {
+                            id: "focus",
+                            label: focusLabel,
+                            className: styles.spaceOption,
+                            run: focus.toggle,
+                          },
+                        ]
+                      : []
+                  }
+                />
               )}
               <Button
                 aria-label={workspace ? "搜索文档" : "命令"}
@@ -442,32 +429,19 @@ export function WorkspaceShell() {
             </div>
           )}
         </header>
-        <Group
-          className={styles.columns}
-          elementRef={layout}
-          orientation={wide ? "horizontal" : "vertical"}
-          resizeTargetMinimumSize={{ coarse: 44, fine: 14 }}
-          onLayoutChanged={(_layout, meta) => {
-            if (!meta.isUserInteraction || !wide || !navigationVisible) return;
-            const panel = navigationPanel.current;
-            if (!panel) return;
-            const width = Math.round(panel.getSize().inPixels);
-            if (width >= 176 && width <= 360 && width !== preferences.sidebarWidth) {
-              void saveLayout({ sidebarWidth: width });
-            }
+        <ReaderDock
+          layoutRef={layout}
+          wide={wide}
+          navigationVisible={navigationVisible}
+          sidebarWidth={preferences.sidebarWidth}
+          onWidthChange={(sidebarWidth) => void saveLayout({ sidebarWidth })}
+          onCollapse={() => {
+            setNavigationOverride(false);
+            void saveLayout({ navigation: false });
+            navigationToggle.current?.focus({ preventScroll: true });
           }}
-        >
-          <Panel
-            id="navigation-panel"
-            panelRef={navigationPanel}
-            collapsible
-            collapsedSize={0}
-            minSize={wide ? 176 : 130}
-            maxSize={wide ? 360 : "34%"}
-            defaultSize={navigationVisible ? (wide ? preferences.sidebarWidth : 190) : 0}
-            groupResizeBehavior="preserve-pixel-size"
-          >
-            {workspace && (
+          navigation={
+            workspace && (
               <aside
                 id="workspace-navigation"
                 tabIndex={-1}
@@ -475,64 +449,57 @@ export function WorkspaceShell() {
                 hidden={!navigationVisible}
               >
                 <div className={styles.workspaceBar}>
-                  <MenuTrigger>
-                    <Button
-                      aria-label={`切换空间，当前为${workspace.name}`}
-                      className={styles.workspace}
-                    >
-                      <span className={styles.workspaceName}>{workspace.name}</span>
-                      <span className={styles.workspaceArrow} aria-hidden="true" />
-                    </Button>
-                    <Popover placement="bottom start" className={styles.popover}>
-                      <Menu aria-label="空间" className={styles.spaces}>
-                        <MenuSection
-                          aria-label="已有空间"
-                          className={styles.presets}
-                          selectionMode="single"
-                          selectedKeys={[workspace.id]}
-                          shouldCloseOnSelect
-                        >
-                          {workspaces.data?.map((item) => (
-                            <MenuItem
-                              key={item.id}
-                              id={item.id}
-                              textValue={item.name}
-                              className={styles.spaceOption}
-                              onAction={() => {
-                                if (item.id !== selected || creating) {
-                                  void navigate({
-                                    to: "/workspaces/$workspaceId",
-                                    params: { workspaceId: item.id },
-                                  });
-                                }
-                              }}
-                            >
-                              {({ isSelected }) => (
-                                <>
-                                  {item.name}
-                                  {isSelected && <span aria-hidden="true">✓</span>}
-                                </>
-                              )}
-                            </MenuItem>
-                          ))}
-                        </MenuSection>
-                        <MenuItem
-                          id="new-workspace"
-                          className={styles.spaceOption}
-                          isDisabled={creating}
-                          onAction={() =>
+                  <ActionMenu
+                    label="空间"
+                    className={styles.spaces}
+                    popoverClassName={styles.popover}
+                    trigger={
+                      <Button
+                        aria-label={`切换空间，当前为${workspace.name}`}
+                        className={styles.workspace}
+                      >
+                        <span className={styles.workspaceName}>{workspace.name}</span>
+                        <span className={styles.workspaceArrow} aria-hidden="true" />
+                      </Button>
+                    }
+                    choiceGroup={{
+                      label: "已有空间",
+                      selectedId: workspace.id,
+                      className: styles.presets,
+                      items: (workspaces.data ?? []).map((item) => ({
+                        id: item.id,
+                        label: item.name,
+                        className: styles.spaceOption,
+                        content: (
+                          <>
+                            {item.name}
+                            {item.id === workspace.id && <span aria-hidden="true">✓</span>}
+                          </>
+                        ),
+                        run: () => {
+                          if (item.id !== selected || creating)
                             void navigate({
-                              to: "/workspaces/new",
-                              state: { workspaceCreationSource: selected },
-                            })
-                          }
-                        >
-                          新建空间
-                        </MenuItem>
-                      </Menu>
-                    </Popover>
-                  </MenuTrigger>
-                  <TooltipTrigger>
+                              to: "/workspaces/$workspaceId",
+                              params: { workspaceId: item.id },
+                            });
+                        },
+                      })),
+                    }}
+                    items={[
+                      {
+                        id: "new-workspace",
+                        label: "新建空间",
+                        className: styles.spaceOption,
+                        disabled: creating,
+                        run: () =>
+                          void navigate({
+                            to: "/workspaces/new",
+                            state: { workspaceCreationSource: selected },
+                          }),
+                      },
+                    ]}
+                  />
+                  <Tooltip text="空间设置" className={styles.tooltip}>
                     <Button
                       aria-label="空间设置"
                       className={styles.workspaceSettings}
@@ -546,11 +513,10 @@ export function WorkspaceShell() {
                     >
                       <span aria-hidden="true">⚙</span>
                     </Button>
-                    <Tooltip className={styles.tooltip}>空间设置</Tooltip>
-                  </TooltipTrigger>
+                  </Tooltip>
                 </div>
                 {resource.data && (
-                  <SpaceTree
+                  <DirectoryTree
                     key={selected}
                     documents={documents}
                     activeDocument={documentId}
@@ -559,75 +525,71 @@ export function WorkspaceShell() {
                   />
                 )}
               </aside>
-            )}
-          </Panel>
-          {wide && navigationVisible && (
-            <Separator className={styles.separator} aria-label="调整空间目录宽度" />
-          )}
-          <Panel id="document-panel" minSize={wide ? 300 : "50%"}>
-            <main
-              ref={viewport}
-              tabIndex={-1}
-              className={styles.viewport}
-              style={{ paddingBlockStart: wide ? 0 : focus.navigationInset }}
-            >
-              {unauthorized ? (
-                <div className={styles.state}>
-                  <h1>登录 Librarian</h1>
-                  <a className={styles.signIn} href={login}>
-                    登录
-                  </a>
-                </div>
-              ) : workspacesUnavailable ? (
-                <p role="alert" className={styles.state}>
-                  无法加载空间
-                </p>
-              ) : workspaces.isPending ? (
-                <output className={styles.state}>正在加载空间…</output>
-              ) : creating || accountSettings ? (
-                <Outlet />
-              ) : !workspace ? (
-                <div className={styles.state}>
-                  <p>{workspaceId ? "此空间不可用" : "没有可访问的空间"}</p>
-                  {!workspaceId && (
-                    <>
-                      <Link to="/workspaces/new" className={styles.signIn}>
-                        新建空间
-                      </Link>
-                      <Button
-                        className={styles.button}
-                        isDisabled={signingOut}
-                        onPress={() => void logout()}
-                      >
-                        退出登录
-                      </Button>
-                    </>
-                  )}
-                </div>
-              ) : documentId || toolRoute ? (
-                <Outlet />
-              ) : resource.isError ? (
-                <p role="alert" className={styles.state}>
-                  无法加载目录
-                </p>
-              ) : resource.isPending || firstDocument ? (
-                <output className={styles.state}>正在打开空间…</output>
-              ) : (
-                <div className={styles.state}>
-                  <p>这个空间还没有文档</p>
-                  {canCreate && (
+            )
+          }
+        >
+          <main
+            ref={viewport}
+            tabIndex={-1}
+            className={styles.viewport}
+            style={{ paddingBlockStart: wide ? 0 : focus.navigationInset }}
+          >
+            {unauthorized ? (
+              <div className={styles.state}>
+                <h1>登录 Librarian</h1>
+                <a className={styles.signIn} href={login}>
+                  登录
+                </a>
+              </div>
+            ) : workspacesUnavailable ? (
+              <p role="alert" className={styles.state}>
+                无法加载空间
+              </p>
+            ) : workspaces.isPending ? (
+              <output className={styles.state}>正在加载空间…</output>
+            ) : creating || accountSettings ? (
+              <Outlet />
+            ) : !workspace ? (
+              <div className={styles.state}>
+                <p>{workspaceId ? "此空间不可用" : "没有可访问的空间"}</p>
+                {!workspaceId && (
+                  <>
+                    <Link to="/workspaces/new" className={styles.signIn}>
+                      新建空间
+                    </Link>
                     <Button
-                      variant="primary"
-                      onPress={(event) => showCreateDocument("", event.target)}
+                      className={styles.button}
+                      isDisabled={signingOut}
+                      onPress={() => void logout()}
                     >
-                      新建第一篇文档
+                      退出登录
                     </Button>
-                  )}
-                </div>
-              )}
-            </main>
-          </Panel>
-        </Group>
+                  </>
+                )}
+              </div>
+            ) : documentId || toolRoute ? (
+              <Outlet />
+            ) : resource.isError ? (
+              <p role="alert" className={styles.state}>
+                无法加载目录
+              </p>
+            ) : resource.isPending || firstDocument ? (
+              <output className={styles.state}>正在打开空间…</output>
+            ) : (
+              <div className={styles.state}>
+                <p>这个空间还没有文档</p>
+                {canCreate && (
+                  <Button
+                    variant="primary"
+                    onPress={(event) => showCreateDocument("", event.target)}
+                  >
+                    新建第一篇文档
+                  </Button>
+                )}
+              </div>
+            )}
+          </main>
+        </ReaderDock>
         {authenticated && contextMenu && (
           <WorkspaceContextMenu
             target={contextMenu}

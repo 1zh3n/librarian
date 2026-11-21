@@ -1,0 +1,283 @@
+{
+  "directory-widths": {
+    "initial": 236,
+    "resized": 308,
+    "reopened": 308
+  },
+  "tool-widths": {
+    "initial": 370,
+    "capped": 370,
+    "keyboard": 354,
+    "afterReload": 330
+  },
+  "directory-coordinates": [
+    {
+      "x": 51,
+      "y": 240,
+      "menu": {
+        "x": 53,
+        "y": 242,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "x": 183,
+      "y": 240,
+      "menu": {
+        "x": 185,
+        "y": 242,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "x": 1430,
+      "y": 200,
+      "menu": {
+        "x": 1284,
+        "y": 202,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "x": 100,
+      "y": 892,
+      "menu": {
+        "x": 102,
+        "y": 808,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "x": 1430,
+      "y": 892,
+      "menu": {
+        "x": 1284,
+        "y": 808,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    }
+  ],
+  "nested-creation": {
+    "row": {
+      "x": 8,
+      "y": 862,
+      "width": 219,
+      "height": 38
+    },
+    "directory": {
+      "x": 0,
+      "y": 109,
+      "width": 235,
+      "height": 791
+    },
+    "focus": "Markdown 正文",
+    "path": "研究/观测/滚动定位后新建.md"
+  },
+  "workspace-targets": [
+    {
+      "label": "空间切换",
+      "x": 93,
+      "y": 81,
+      "bounds": {
+        "x": 95,
+        "y": 83,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "空间设置",
+      "x": 205,
+      "y": 81,
+      "bounds": {
+        "x": 207,
+        "y": 83,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "侧栏左上留白",
+      "x": 1,
+      "y": 50,
+      "bounds": {
+        "x": 4,
+        "y": 52,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "目录标题",
+      "x": 34,
+      "y": 125,
+      "bounds": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "侧栏最下方",
+      "x": 1,
+      "y": 899,
+      "bounds": {
+        "x": 4,
+        "y": 815,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "侧栏右边线",
+      "x": 235,
+      "y": 114,
+      "bounds": {
+        "x": 237,
+        "y": 116,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "侧栏与正文分隔线",
+      "x": 238,
+      "y": 474,
+      "bounds": {
+        "x": 240,
+        "y": 476,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "顶栏留白",
+      "x": 280,
+      "y": 8,
+      "bounds": {
+        "x": 282,
+        "y": 10,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "顶栏搜索",
+      "x": 1340,
+      "y": 24,
+      "bounds": {
+        "x": 1194,
+        "y": 26,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "正文文字",
+      "x": 522,
+      "y": 254,
+      "bounds": {
+        "x": 524,
+        "y": 256,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "正文行尾",
+      "x": 822,
+      "y": 255,
+      "bounds": {
+        "x": 824,
+        "y": 257,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    {
+      "label": "工作区右下角",
+      "x": 1439,
+      "y": 899,
+      "bounds": {
+        "x": 1292,
+        "y": 815,
+        "width": 144,
+        "height": 82
+      },
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    }
+  ]
+}

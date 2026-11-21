@@ -1058,3 +1058,68 @@ test("a fixed reading address preserves delivered Markdown and its selected atta
     await visitor.close();
   }
 });
+
+test("creates from a keyboard-targeted document after scrolling the tree and saves the first line", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const workspace = await openTreeSample(page, "键盘目录定位");
+  for (let i = 0; i < 24; i++) {
+    await addDocument(
+      page,
+      workspace.id,
+      `研究/观测/样本${String(i).padStart(2, "0")}.md`,
+      "样本笔记",
+    );
+  }
+  await page.reload();
+  const target = page.getByRole("row", { name: "样本23", exact: true });
+  await target.scrollIntoViewIfNeeded();
+  await expect
+    .poll(() => page.getByRole("group", { name: "目录内容" }).evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  const reading = page.url();
+  await target.press("Shift+F10");
+  await page.getByRole("menuitem", { name: "新建文档…" }).press("Enter");
+  const dialog = page.getByRole("dialog", { name: "新建文档" });
+  await expect(dialog.getByLabel("目录（可选）")).toHaveValue("研究/观测");
+  await page.keyboard.press("Escape");
+  await expect(target).toBeFocused();
+  await expect(page).toHaveURL(reading);
+  await target.press("Shift+F10");
+  await page.getByRole("menuitem", { name: "新建文档…" }).press("Enter");
+  await dialog.getByLabel("文档名称").fill("滚动定位后新建");
+  await dialog.getByLabel("文档名称").press("Enter");
+  const editor = page.getByRole("textbox", { name: "Markdown 正文" });
+  await expect(editor).toBeFocused();
+  await page.keyboard.insertText("继续观测。");
+  await page.keyboard.press("Control+s");
+  const id = new URL(page.url()).pathname.split("/").pop();
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/v1/documents/${id}`);
+      const snapshot = (await response.json()) as DocumentSnapshot;
+      return [snapshot.document.path, snapshot.markdown];
+    })
+    .toEqual(["研究/观测/滚动定位后新建.md", "继续观测。"]);
+  const selected = page.getByRole("row", { name: "滚动定位后新建", exact: true });
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+  const directory = await box(page.getByRole("group", { name: "目录内容" }));
+  await expect
+    .poll(async () => {
+      const row = await box(selected);
+      return row.y >= directory.y && row.y + row.height <= directory.y + directory.height + 1;
+    })
+    .toBe(true);
+  await expect(editor).toBeFocused();
+  await info.attach("nested-creation", {
+    body: JSON.stringify({
+      row: await box(selected),
+      directory,
+      focus: await editor.getAttribute("aria-label"),
+      path: "研究/观测/滚动定位后新建.md",
+    }),
+    contentType: "application/json",
+  });
+  await page.screenshot({ path: info.outputPath("nested-editor.png") });
+});

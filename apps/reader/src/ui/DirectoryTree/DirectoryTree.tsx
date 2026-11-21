@@ -1,17 +1,11 @@
 import { useMemo, useState } from "react";
-import {
-  Button,
-  Collection,
-  Group,
-  Tooltip,
-  TooltipTrigger,
-  Tree,
-  TreeItem,
-  TreeItemContent,
-} from "../../ui/primitives";
-import type { OpenWorkspaceMenu } from "./WorkspaceContextMenu";
+import { Collection, Group, Tree, TreeItem, TreeItemContent } from "react-aria-components";
+import { Button } from "../Button";
+import { Tooltip } from "../Tooltip";
 import type { DocumentSummary } from "../../api/client";
-import styles from "./SpaceTree.module.css";
+import styles from "./DirectoryTree.module.css";
+
+type OpenDirectoryMenu = (trigger: HTMLElement, folder: string) => void;
 
 type Entry = {
   id: string;
@@ -50,10 +44,10 @@ function MoreButton({
 }: {
   name: string;
   folder: string;
-  openMenu: OpenWorkspaceMenu;
+  openMenu: OpenDirectoryMenu;
 }) {
   return (
-    <TooltipTrigger>
+    <Tooltip text={name} className={styles.tooltip}>
       <Button
         className={styles.more}
         aria-label={name}
@@ -65,9 +59,24 @@ function MoreButton({
       >
         <span aria-hidden="true" className={styles.moreIcon} />
       </Button>
-      <Tooltip className={styles.tooltip}>{name}</Tooltip>
-    </TooltipTrigger>
+    </Tooltip>
   );
+}
+
+function revealCurrentRow(row: HTMLDivElement | null) {
+  const directory = row?.closest<HTMLElement>(`.${styles.directory}`);
+  if (!row || !directory) return;
+  // A narrow or collapsed dock may have no height when the document opens.
+  const observer = new ResizeObserver(() => {
+    if (!directory.clientHeight) return;
+    observer.disconnect();
+    const item = row.getBoundingClientRect();
+    const view = directory.getBoundingClientRect();
+    if (item.top < view.top) directory.scrollTop += item.top - view.top;
+    else if (item.bottom > view.bottom) directory.scrollTop += item.bottom - view.bottom;
+  });
+  observer.observe(directory);
+  return () => observer.disconnect();
 }
 
 function EntryRow({
@@ -77,7 +86,7 @@ function EntryRow({
 }: {
   entry: Entry;
   open: (id: string) => void;
-  openMenu: OpenWorkspaceMenu | undefined;
+  openMenu: OpenDirectoryMenu | undefined;
 }) {
   return (
     <TreeItem
@@ -88,8 +97,12 @@ function EntryRow({
       data-context-folder={entry.folder}
     >
       <TreeItemContent>
-        {({ level, isExpanded }) => (
-          <div className={styles.item} style={{ paddingInlineStart: 8 + 14 * (level - 1) }}>
+        {({ level, isExpanded, isSelected }) => (
+          <div
+            ref={isSelected ? revealCurrentRow : undefined}
+            className={styles.item}
+            style={{ paddingInlineStart: 8 + 14 * (level - 1) }}
+          >
             {entry.children ? (
               <Button slot="chevron" className={styles.disclosure}>
                 <span aria-hidden="true">{isExpanded ? "▾" : "▸"}</span>
@@ -117,7 +130,7 @@ function EntryRow({
   );
 }
 
-export function SpaceTree({
+export function DirectoryTree({
   documents,
   activeDocument,
   open,
@@ -126,7 +139,7 @@ export function SpaceTree({
   documents: readonly DocumentSummary[];
   activeDocument: string | undefined;
   open: (id: string) => void;
-  openMenu: OpenWorkspaceMenu | undefined;
+  openMenu: OpenDirectoryMenu | undefined;
 }) {
   const { tree, folders } = useMemo(() => entries(documents), [documents]);
   const activePath = documents.find((document) => document.id === activeDocument)?.path;

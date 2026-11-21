@@ -63,10 +63,6 @@
   background: var(--surface-hover);
 }
 
-.columns {
-  min-height: 0;
-}
-
 .topActions {
   display: flex;
   align-items: center;
@@ -153,18 +149,6 @@
 .preview[data-preset="research"] .previewTools,
 .preview[data-preset="review"] .previewTools {
   width: 38%;
-}
-
-.separator {
-  width: 4px;
-  border-inline-start: 1px solid var(--border);
-  background: var(--paper);
-  outline-offset: -2px;
-}
-
-.separator:hover,
-.separator:focus-visible {
-  background: var(--border-strong);
 }
 
 .notice {

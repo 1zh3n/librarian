@@ -1,0 +1,56 @@
+.columns {
+  min-height: 0;
+}
+
+.separator {
+  width: 4px;
+  border-inline-start: 1px solid var(--border);
+  background: var(--paper);
+  outline-offset: -2px;
+}
+
+.separator:hover,
+.separator:focus-visible {
+  background: var(--border-strong);
+}
+
+.toolHandle {
+  display: none;
+}
+
+@container reading-viewport (min-width: 850px) {
+  .toolHandle {
+    position: absolute;
+    display: block;
+    inset-block: 0;
+    inset-inline-start: -9px;
+    width: 14px;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    touch-action: none;
+    cursor: col-resize;
+    z-index: 1;
+  }
+
+  .toolHandle:hover::after,
+  .toolHandle:focus-visible::after {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 7px;
+    border-inline-start: 2px solid var(--accent);
+    content: "";
+  }
+}
+
+@media (any-pointer: coarse) {
+  .toolHandle {
+    inset-inline-start: -32px;
+    width: 44px;
+  }
+
+  .toolHandle:hover::after,
+  .toolHandle:focus-visible::after {
+    inset-inline-start: 30px;
+  }
+}

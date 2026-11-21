@@ -10,10 +10,8 @@ declare const styles: {
   readonly workspaceBar: string;
   readonly workspaceSettings: string;
   readonly tooltip: string;
-  readonly columns: string;
   readonly topActions: string;
   readonly layoutMenu: string;
-  readonly separator: string;
   readonly notice: string;
   readonly navigation: string;
   readonly popover: string;
