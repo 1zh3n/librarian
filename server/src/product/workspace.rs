@@ -17,7 +17,9 @@ use silverbullet_server_common::{revision::sha256_hex, starter_kits::PreparedSta
 
 use crate::{
     auth::{AccessLevel, Actor},
-    multi::{data_root, instance::SpaceInstance, manager::ApiError as NativeError},
+    multi::{
+        config::SpaceConfig, data_root, instance::SpaceInstance, manager::ApiError as NativeError,
+    },
     state::ServerState,
 };
 
@@ -185,13 +187,24 @@ pub(super) fn describe(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Create {
+pub(super) struct Create {
     name: String,
     #[serde(default)]
     origin: Origin,
     #[serde(default)]
     retention: Retention,
     expires_at: Option<i64>,
+}
+
+impl Create {
+    pub(super) fn native(name: String) -> Self {
+        Self {
+            name,
+            origin: Origin::Native,
+            retention: Retention::Persistent,
+            expires_at: None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -207,7 +220,7 @@ fn present_expiry<'de, D: Deserializer<'de>>(value: D) -> Result<Option<Option<i
     Option::deserialize(value).map(Some)
 }
 
-fn name(value: String) -> Result<String, ApiError> {
+pub(super) fn name(value: String) -> Result<String, ApiError> {
     let name = value.trim();
     if name.is_empty()
         || name.chars().count() > 120
@@ -437,25 +450,34 @@ async fn create(
 ) -> Result<(StatusCode, Json<Workspace>), ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let input = body(input)?;
-    run(move || create_locked(&service, &account, input))
-        .await
-        .map(|workspace| (StatusCode::CREATED, Json(workspace)))
+    run(move || {
+        let _guard = service.metadata.workspace_guard()?;
+        let binding = uuid::Uuid::new_v4();
+        let instance = create_under_guard(&service, &account, input, binding)?;
+        let actor = account.actor(&service.spaces, &instance, false)?;
+        describe(&service, &account, &instance, &actor)
+    })
+    .await
+    .map(|workspace| (StatusCode::CREATED, Json(workspace)))
 }
 
-fn create_locked(
+// The binding is part of the same durable native config write as creation.
+// On an interrupted managed request it locates the space even before SQLite registration.
+pub(super) fn create_under_guard(
     service: &DocumentService,
     account: &Account,
     input: Create,
-) -> Result<Workspace, ApiError> {
+    binding: uuid::Uuid,
+) -> Result<Arc<SpaceInstance>, ApiError> {
     let name = name(input.name)?;
     let expires_at = expiry(input.origin, input.retention, input.expires_at)?;
-    let _guard = service.metadata.workspace_guard()?;
     if !service.spaces.users.is_enabled(account.username()) {
         return Err(ApiError::not_found());
     }
+    let prefix = format!("/librarian-space-{}", binding.simple());
     let config = serde_json::from_value(serde_json::json!({
         "name": name,
-        "binding": {"prefix": format!("/librarian-space-{}", uuid::Uuid::new_v4().simple())},
+        "binding": {"prefix": prefix},
         "access": "none",
         "members": {(account.username()): {"role": "write", "runtimeApi": false}},
         "revisions": "managed",
@@ -465,42 +487,87 @@ fn create_locked(
     let (space_id, _) = manager
         .create(config, PreparedStarter::None)
         .map_err(native_error)?;
-    let registered = || -> Result<(), ApiError> {
-        let instance = manager
-            .instance(&space_id)
-            .ok_or_else(ApiError::not_found)?;
-        if super::revisions::mode(instance.revisions.as_deref()) != "managed" {
-            return Err(ApiError::internal(
-                "Could not initialize managed workspace versions",
-            ));
-        }
-        service.metadata.connection()?.execute(
-            "INSERT INTO workspaces (id, space_id, owner, origin, retention, expires_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(space_id) DO UPDATE SET owner = excluded.owner, origin = excluded.origin,
-               retention = excluded.retention, expires_at = excluded.expires_at",
-            params![
-                format!("ws_{}", uuid::Uuid::new_v4().simple()),
-                space_id,
-                account.username(),
-                input.origin.as_str(),
-                input.retention.as_str(),
-                expires_at
-            ],
-        )?;
-        Ok(())
-    };
-    if let Err(error) = registered() {
+    let instance = manager
+        .instance(&space_id)
+        .ok_or_else(ApiError::not_found)?;
+    if let Err(error) = register_created(
+        service,
+        &instance,
+        account.username(),
+        input.origin,
+        input.retention,
+        expires_at,
+    ) {
         if let Err(rollback) = manager.delete(&space_id) {
             tracing::error!(%space_id, ?rollback, "Could not revert workspace setup");
         }
         return Err(error);
     }
-    let instance = manager
-        .instance(&space_id)
-        .ok_or_else(ApiError::not_found)?;
-    let actor = account.actor(&service.spaces, &instance, false)?;
-    describe(service, account, &instance, &actor)
+    Ok(instance)
+}
+
+// A managed create can stop after spaces.json publication, before registration in SQLite.
+pub(super) fn recover_creation_under_guard(
+    service: &DocumentService,
+    owner: &str,
+    binding: uuid::Uuid,
+) -> Result<Option<String>, ApiError> {
+    let prefix = format!("/librarian-space-{}", binding.simple());
+    let registry = service.spaces.manager.registry().current();
+    let Some(instance) = registry.instances.values().find(|space| {
+        space.config.binding.host().is_none() && space.config.binding.prefix() == prefix
+    }) else {
+        return Ok(None);
+    };
+    register_created(
+        service,
+        instance,
+        owner,
+        Origin::Native,
+        Retention::Persistent,
+        None,
+    )?;
+    Ok(Some(service.metadata.workspace_id(&instance.id)?))
+}
+
+fn register_created(
+    service: &DocumentService,
+    instance: &SpaceInstance,
+    owner: &str,
+    origin: Origin,
+    retention: Retention,
+    expires_at: Option<i64>,
+) -> Result<(), ApiError> {
+    if super::revisions::mode(instance.revisions.as_deref()) != "managed" {
+        return Err(ApiError::internal(
+            "Could not initialize managed workspace versions",
+        ));
+    }
+    service.metadata.connection()?.execute(
+        "INSERT INTO workspaces (id, space_id, owner, origin, retention, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(space_id) DO UPDATE SET owner = excluded.owner, origin = excluded.origin,
+           retention = excluded.retention, expires_at = excluded.expires_at WHERE workspaces.owner IS NULL",
+        params![format!("ws_{}", uuid::Uuid::new_v4().simple()), instance.id, owner,
+            origin.as_str(), retention.as_str(), expires_at],
+    )?;
+    Ok(())
+}
+
+const LAST_MANAGEMENT_OPERATION: &str = "librarianManagementOperation";
+
+pub(super) fn last_management_operation(config: &SpaceConfig) -> Option<&str> {
+    config.extra.get(LAST_MANAGEMENT_OPERATION)?.as_str()
+}
+
+// Persisted atomically with the name/role in spaces.json. Ordinary Reader changes
+// preserve this field. A new managed action seals its predecessor's receipt first.
+pub(super) fn mark_management_operation(config: &mut SpaceConfig, operation_id: Option<&str>) {
+    if let Some(id) = operation_id {
+        config
+            .extra
+            .insert(LAST_MANAGEMENT_OPERATION.to_owned(), id.into());
+    }
 }
 
 async fn update(
@@ -511,18 +578,41 @@ async fn update(
 ) -> Result<Json<Workspace>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let input = body(input)?;
-    run(move || update_locked(&service, &account, &workspace, input))
-        .await
-        .map(Json)
+    run(move || {
+        let _guard = service.metadata.workspace_guard()?;
+        update_under_guard(&service, &account, &workspace, input, None)
+    })
+    .await
+    .map(Json)
 }
 
-fn update_locked(
+pub(super) fn rename_under_guard(
+    service: &DocumentService,
+    account: &Account,
+    workspace: &str,
+    new_name: String,
+    operation_id: &str,
+) -> Result<Workspace, ApiError> {
+    update_under_guard(
+        service,
+        account,
+        workspace,
+        Update {
+            name: Some(new_name),
+            retention: None,
+            expires_at: None,
+        },
+        Some(operation_id),
+    )
+}
+
+fn update_under_guard(
     service: &DocumentService,
     account: &Account,
     workspace: &str,
     input: Update,
+    operation_id: Option<&str>,
 ) -> Result<Workspace, ApiError> {
-    let _guard = service.metadata.workspace_guard()?;
     let (instance, _) = require_manage(service, account, workspace)?;
     let details = info(&service.metadata, workspace)?;
     let retention = input.retention.unwrap_or(details.retention);
@@ -538,10 +628,11 @@ fn update_locked(
         .name
         .map(name)
         .transpose()?
-        .filter(|name| *name != instance.config.name)
+        .filter(|name| *name != instance.config.name || operation_id.is_some())
     {
         let mut config = instance.config.clone();
         config.name = name;
+        mark_management_operation(&mut config, operation_id);
         service
             .spaces
             .manager

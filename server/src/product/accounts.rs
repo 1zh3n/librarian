@@ -357,41 +357,54 @@ async fn edit_member(
     run(move || {
         let _guard = service.metadata.workspace_guard()?;
         let account = browser(&service, &headers, true)?;
-        let (instance, _) = workspace::require_manage(&service, &account, &workspace_id)?;
-        let role = role?;
-        let owner = workspace::info(&service.metadata, &workspace_id)?.owner;
-        if owner.as_deref() == Some(username.as_str()) && role != Some(MemberRole::Write) {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                "workspace_owner_protected",
-                "The workspace creator must retain write access",
-            ));
-        }
-        let mut config = instance.config.clone();
-        if let Some(role) = role {
-            if !service.spaces.users.is_enabled(&username) {
-                return Err(ApiError::invalid("Select an enabled account"));
-            }
-            let member = config
-                .members
-                .entry(username)
-                .or_insert_with(|| MemberEntry {
-                    runtime_api: false,
-                    ..MemberEntry::default()
-                });
-            member.role = role;
-        } else {
-            config.members.remove(&username);
-        }
-        let response = members(&config, owner.as_deref());
-        if config != instance.config {
-            service
-                .spaces
-                .manager
-                .update(&instance.id, config)
-                .map_err(workspace::native_error)?;
-        }
-        Ok(response)
+        let (config, owner) =
+            change_member_under_guard(&service, &account, &workspace_id, username, role, None)?;
+        Ok(members(&config, owner.as_deref()))
     })
     .await
+}
+
+pub(super) fn change_member_under_guard(
+    service: &DocumentService,
+    account: &Account,
+    workspace_id: &str,
+    username: String,
+    role: Result<Option<MemberRole>, ApiError>,
+    operation_id: Option<&str>,
+) -> Result<(SpaceConfig, Option<String>), ApiError> {
+    let (instance, _) = workspace::require_manage(service, account, workspace_id)?;
+    let role = role?;
+    let owner = workspace::info(&service.metadata, workspace_id)?.owner;
+    if owner.as_deref() == Some(username.as_str()) && role != Some(MemberRole::Write) {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "workspace_owner_protected",
+            "The workspace creator must retain write access",
+        ));
+    }
+    let mut config = instance.config.clone();
+    if let Some(role) = role {
+        if !service.spaces.users.is_enabled(&username) {
+            return Err(ApiError::invalid("Select an enabled account"));
+        }
+        let member = config
+            .members
+            .entry(username)
+            .or_insert_with(|| MemberEntry {
+                runtime_api: false,
+                ..MemberEntry::default()
+            });
+        member.role = role;
+    } else {
+        config.members.remove(&username);
+    }
+    workspace::mark_management_operation(&mut config, operation_id);
+    if config != instance.config {
+        service
+            .spaces
+            .manager
+            .update(&instance.id, config.clone())
+            .map_err(workspace::native_error)?;
+    }
+    Ok((config, owner))
 }

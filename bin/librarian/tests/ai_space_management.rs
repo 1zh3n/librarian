@@ -76,6 +76,27 @@ impl Site {
         Connection::open(self.root.path().join(".librarian/metadata.sqlite3")).unwrap()
     }
 
+    fn pending_operation(&self) -> String {
+        self.db()
+            .query_row(
+                "SELECT operation_id FROM ai_space_management WHERE receipt IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    async fn operation(&self, op: &str) -> Value {
+        self.ok(
+            &self.owner,
+            "GET",
+            &format!("/ai/operations/{op}"),
+            Value::Null,
+            200,
+        )
+        .await
+    }
+
     async fn call(&self, credential: &str, method: &str, path: &str, body: Value) -> (u16, Value) {
         let mut req = Request::builder()
             .method(method)
@@ -276,11 +297,20 @@ async fn rename_preserves_document_identity_and_replay_preserves_subsequent_manu
         s.ok(&s.owner, "GET", "/workspaces", Value::Null, 200).await[0]["name"],
         "新名"
     );
-    let doc_path = format!("/documents/{}", doc["id"].as_str().unwrap());
-    assert_eq!(
-        s.ok(&s.owner, "GET", &doc_path, Value::Null, 200).await["markdown"],
-        "原文"
-    );
+    let document_id = doc["documentId"].as_str().unwrap();
+    let original_link = format!("/workspaces/{id}/documents/{document_id}");
+    assert_eq!(doc["readerPath"], original_link);
+    let snapshot = s
+        .ok(
+            &s.owner,
+            "GET",
+            &format!("/documents/{document_id}"),
+            Value::Null,
+            200,
+        )
+        .await;
+    assert_eq!(snapshot["readerPath"], original_link);
+    assert_eq!(snapshot["markdown"], "原文");
     s.ok(
         &s.owner,
         "PATCH",
@@ -370,6 +400,96 @@ async fn revoked_account_cannot_use_an_already_issued_lease_to_create() {
     assert!([401, 403, 404, 409].contains(&code), "{code} {body}");
     assert_eq!(
         s.ok(&s.admin, "GET", "/workspaces", Value::Null, 200).await,
+        json!([])
+    );
+}
+
+#[tokio::test]
+async fn interrupted_native_creation_recovers_the_same_workspace_after_restart() {
+    let mut s = Site::new().await;
+    let lease = s.claim(&s.owner, "edit").await;
+    let action = json!({"kind":"create_workspace","name":"初始名称"});
+    s.db()
+        .execute_batch(
+            "CREATE TRIGGER interrupt_receipt BEFORE UPDATE OF receipt ON ai_space_management
+         BEGIN SELECT RAISE(ABORT,'interrupted management receipt'); END;",
+        )
+        .unwrap();
+    assert_eq!(s.result(&lease, &action).await.0, 500);
+    let spaces = s.ok(&s.owner, "GET", "/workspaces", Value::Null, 200).await;
+    let id = spaces[0]["id"].as_str().unwrap();
+    s.ok(
+        &s.owner,
+        "PATCH",
+        &format!("/workspaces/{id}"),
+        json!({"name":"手动更名"}),
+        200,
+    )
+    .await;
+    s.db()
+        .execute_batch("DROP TRIGGER interrupt_receipt;")
+        .unwrap();
+    s.app = Router::new();
+    s.app = librarian::Product::open(s.root.path(), 6947)
+        .unwrap()
+        .router();
+    s.db()
+        .execute("UPDATE ai_connections SET version=version+1", [])
+        .unwrap();
+    let result = s.operation(&s.pending_operation()).await;
+    assert_eq!(result["status"], "succeeded", "{result}");
+    assert_eq!(
+        result["workspaceManagement"],
+        json!({"kind":"create_workspace","workspaceId":id,"name":"初始名称"})
+    );
+    let final_spaces = s.ok(&s.owner, "GET", "/workspaces", Value::Null, 200).await;
+    assert_eq!(final_spaces.as_array().unwrap().len(), 1);
+    assert_eq!(final_spaces[0]["id"], id);
+    assert_eq!(final_spaces[0]["name"], "手动更名");
+}
+
+#[tokio::test]
+async fn interrupted_member_grant_keeps_its_receipt_after_manual_revocation() {
+    let s = Site::new().await;
+    let id = s.manual_space().await;
+    let lease = s.claim(&s.owner, "edit").await;
+    let action =
+        json!({"kind":"set_workspace_member","workspaceId":id,"username":"member","role":"write"});
+    s.db().execute_batch("CREATE TRIGGER interrupt_member BEFORE UPDATE OF receipt ON ai_space_management BEGIN SELECT RAISE(ABORT,'interrupted grant receipt'); END;").unwrap();
+    assert_eq!(s.result(&lease, &action).await.0, 500);
+    let spaces = s
+        .ok(&s.member, "GET", "/workspaces", Value::Null, 200)
+        .await;
+    assert_eq!(spaces[0]["canWrite"], true);
+    s.ok(
+        &s.owner,
+        "DELETE",
+        &format!("/workspaces/{id}/members/member"),
+        Value::Null,
+        200,
+    )
+    .await;
+    let grant_id = s.pending_operation();
+    s.db()
+        .execute_batch("DROP TRIGGER interrupt_member;")
+        .unwrap();
+    s.edit(
+        &s.owner,
+        json!({"kind":"rename_workspace","workspaceId":id,"name":"后续 AI 更名"}),
+    )
+    .await;
+    s.db()
+        .execute("UPDATE ai_connections SET version=version+1", [])
+        .unwrap();
+    let result = s.operation(&grant_id).await;
+    assert_eq!(result["status"], "succeeded", "{result}");
+    assert_eq!(
+        result["workspaceManagement"],
+        json!({"kind":"set_workspace_member","workspaceId":id,"name":"原名","username":"member","role":"write"})
+    );
+    assert_eq!(
+        s.ok(&s.member, "GET", "/workspaces", Value::Null, 200)
+            .await,
         json!([])
     );
 }
