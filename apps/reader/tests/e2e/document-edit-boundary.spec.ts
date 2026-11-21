@@ -26,3 +26,29 @@ for (const formatted of [true, false]) {
       .toBe(formatted ? "甲**新乙**丙。" : "甲**乙**新丙。");
   });
 }
+
+test("clicking the left gutter beside a quoted list item preserves its Markdown prefix", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const original = "> - 第一笔\r\n> - 第二笔\r\n\r\n后记";
+  const { apiUrl } = await createNote(page, "引用列表的留白.md", original);
+  const item = page.getByRole("article").getByText("第二笔", { exact: true });
+  const point = await item.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rect = range.getBoundingClientRect();
+    return {
+      x: el.closest("main")!.getBoundingClientRect().left + 8,
+      y: rect.top + rect.height / 2,
+    };
+  });
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByRole("textbox", { name: "Markdown 正文" })).toBeFocused();
+  await page.keyboard.insertText("补");
+  await expect
+    .poll(
+      async () => ((await (await page.request.get(apiUrl)).json()) as DocumentSnapshot).markdown,
+    )
+    .toBe(original.replace("第二笔", "补第二笔"));
+});

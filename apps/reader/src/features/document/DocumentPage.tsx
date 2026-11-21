@@ -33,7 +33,7 @@ import { VersionPanel } from "../revisions/VersionPanel";
 import { openMarkdownSession } from "./documentSession";
 import { DocumentContents, headingAtReadingPosition } from "./DocumentContents";
 import { DocumentReferencesPanel } from "./DocumentReferencesPanel";
-import { textCaretAtClick } from "./readingPositionAtClick";
+import { nearbyReadingPosition, textCaretAtClick } from "./readingPositionAtClick";
 import { placeInlineTool } from "./inlineTool";
 import { MetadataPanel } from "./MetadataPanel";
 import { OutlineCanvas } from "./OutlineCanvas";
@@ -875,13 +875,12 @@ function DocumentWorkspace({
       const caret = textCaretAtClick(page, event);
       if (caret && !surface.contains(caret.node)) return;
       if (article) {
-        const position = caret
-          ? readerCaretOffset(article, caret, reading.source, analysis)
-          : "blankLine";
+        const position =
+          (caret && readerCaretOffset(article, caret, reading.source, analysis)) ??
+          nearbyReadingPosition(article, event, reading.source, analysis);
         enterEditor("preview", position);
       } else if (!caret && !body.editor.isComposing()) {
-        body.editor.moveToFinalBlankLine();
-        body.editor.focus();
+        body.editor.placeCaretAtPaperPoint(event.clientX, event.clientY);
       }
     };
     page.addEventListener("click", click);

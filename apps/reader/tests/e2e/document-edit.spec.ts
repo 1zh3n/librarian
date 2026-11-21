@@ -116,59 +116,153 @@ for (const [name, original, firstEnding] of [
   });
 }
 
-for (const area of [
-  "left",
-  "right",
-  "gap",
-  "after text",
-  "main left",
-  "main right",
-  "above title",
-  "outside column",
-]) {
-  test(`blank paper near the first paragraph appends at the visible end (${area})`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const original = Array.from({ length: 50 }, (_, i) => `沿岸第${i + 1}站。`).join("\n\n");
-    const { apiUrl } = await createNote(page, `Paper-${area}.md`, original);
-    const paragraph = page.getByRole("article").getByText("沿岸第1站。", { exact: true });
-    const body = editor(page, "Markdown 正文");
-    await paragraph.scrollIntoViewIfNeeded();
-    const { x, y } = await paragraph.evaluate((el, area) => {
-      const box = el.getBoundingClientRect();
-      const column = el.closest("article")!.getBoundingClientRect();
+async function checkReadingInsertion(
+  page: Page,
+  note: Awaited<ReturnType<typeof createNote>>,
+  point: { x: number; y: number },
+  offset: number,
+) {
+  const { markdown, revision } = note.document;
+  const body = editor(page, "Markdown 正文");
+  await page.mouse.click(point.x, point.y);
+  await expect(body).toBeFocused();
+  await body.press("Control+s");
+  expect(await readNote(page, note.apiUrl)).toMatchObject({ markdown, revision });
+  await page.keyboard.insertText("【落点】");
+  const saved = () => expect.poll(async () => (await readNote(page, note.apiUrl)).markdown);
+  await saved().toBe(markdown.slice(0, offset) + "【落点】" + markdown.slice(offset));
+  await body.press("Control+z");
+  await saved().toBe(markdown);
+}
+
+for (const width of [1440, 390]) {
+  for (const side of ["left", "right"] as const) {
+    test(`reading paper at the ${side} page edge targets the wrapped visual line at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const text = "沿河逐站记下晨间水位。".repeat(17);
+      const original =
+        "\uFEFF---\r\ntitle: 河岸校对\r\n---\r\n\r\n前言。\r\n\r\n**" +
+        text +
+        "**\r\n\r\n结语。\r\n";
+      const note = await createNote(page, `Wrap-${side}-${width}.md`, original);
+      const passage = page.getByRole("article").getByText(text, { exact: true });
+      await passage.scrollIntoViewIfNeeded();
+      const point = await passage.evaluate((el, side) => {
+        const node = el.firstChild!;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        // Measure a middle visual line independently of the browser's nearest-caret API.
+        const lines = range.getClientRects();
+        if (lines.length < 3) throw new Error("Expected at least three wrapped lines");
+        const line = lines[1]!;
+        const y = line.top + line.height / 2;
+        const offsets: number[] = [];
+        for (let i = 0; i < node.textContent!.length; i++) {
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const glyph = range.getBoundingClientRect();
+          if (glyph.top <= y && y < glyph.bottom) offsets.push(i);
+        }
+        if (!offsets.length) throw new Error("Expected visible characters on the second line");
+        const main = el.closest("main")!;
+        const viewport = main.getBoundingClientRect();
+        const x = side === "left" ? viewport.left + 4 : viewport.left + main.clientWidth - 4;
+        if (x >= line.left && x <= line.right)
+          throw new Error("Expected a gutter outside the text");
+        return { x, y, offset: side === "left" ? offsets[0]! : offsets.at(-1)! + 1 };
+      }, side);
+      await checkReadingInsertion(page, note, point, original.indexOf(text) + point.offset);
+    });
+  }
+}
+
+test("reading paper just past the text ends the short line inside the body column", async ({
+  page,
+}) => {
+  const passage = "第一个短句。";
+  const original = passage + "\r\n\r\n下一段。\r\n";
+  const note = await createNote(page, "Short-line.md", original);
+  const point = await page
+    .getByRole("article")
+    .getByText(passage, { exact: true })
+    .evaluate((el) => {
       const range = document.createRange();
       range.selectNodeContents(el);
       const text = range.getBoundingClientRect();
-      const y = text.top + text.height / 2;
-      const main = el.closest("main")!;
-      const viewport = main.getBoundingClientRect();
-      if (area === "main left") return { x: viewport.left + 4, y };
-      if (area === "main right") return { x: viewport.left + main.clientWidth - 4, y };
-      if (area === "outside column") return { x: column.left - 48, y };
-      if (area === "above title") {
-        const heading = main.querySelector("h1")!;
-        range.selectNodeContents(heading);
-        const text = range.getBoundingClientRect();
-        const x = text.left + 8;
-        const y = Math.min(text.top, heading.getBoundingClientRect().top) - 6;
-        if (heading.contains(document.elementFromPoint(x, y)))
-          throw new Error("Expected blank space above the title");
-        return { x, y };
-      }
-      if (area === "left") return { x: column.left - 12, y };
-      if (area === "right") return { x: column.right + 12, y };
-      if (area === "gap") return { x: box.left + 8, y: box.bottom + 3 };
-      return { x: text.right + 10, y };
-    }, area);
-    await page.mouse.click(x, y);
-    await expect(body).toBeFocused();
-    await page.keyboard.insertText("光");
-    await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(original + "\n光");
-    await expect(body.getByText("光", { exact: true })).toBeInViewport();
+      const x = text.right + 12;
+      if (x >= el.getBoundingClientRect().right)
+        throw new Error("Expected space inside the paragraph");
+      return { x, y: text.top + text.height / 2 };
+    });
+  await checkReadingInsertion(page, note, point, passage.length);
+});
+
+for (const nearer of ["upper", "lower"] as const) {
+  test(`reading paper in the paragraph gap targets the ${nearer} paragraph`, async ({ page }) => {
+    const upper = "上段**重点**收尾。";
+    const lower = "下段从这里开始。";
+    const original = "\uFEFF" + upper + "\r\n\r\n" + lower;
+    const note = await createNote(page, `Gap-${nearer}.md`, original);
+    const point = await page.getByRole("article").evaluate((article, nearer) => {
+      const [upper, lower] = article.querySelectorAll("p");
+      const top = upper!.getBoundingClientRect().bottom;
+      const bottom = lower!.getBoundingClientRect().top;
+      if (bottom - top < 6) throw new Error("Expected space between paragraphs");
+      const column = article.getBoundingClientRect();
+      return {
+        x: nearer === "upper" ? column.left + 8 : column.right - 8,
+        y: nearer === "upper" ? top + 2 : bottom - 2,
+      };
+    }, nearer);
+    const offset = nearer === "upper" ? original.indexOf("\r\n") : original.indexOf(lower);
+    await checkReadingInsertion(page, note, point, offset);
   });
 }
+
+test("reading paper above the title targets the beginning of the first body paragraph", async ({
+  page,
+}) => {
+  const prefix = "\uFEFF---\r\ntitle: 开头落点\r\n---\r\n\r\n";
+  const note = await createNote(page, "Before-first.md", prefix + "第一段。\r\n\r\n末段。");
+  const heading = page.getByRole("main").getByRole("heading", { name: "开头落点", exact: true });
+  const point = await heading.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const text = range.getBoundingClientRect();
+    const x = text.left + 8;
+    const y = Math.min(text.top, el.getBoundingClientRect().top) - 6;
+    if (el.contains(document.elementFromPoint(x, y)))
+      throw new Error("Expected space above the title");
+    return { x, y };
+  });
+  await checkReadingInsertion(page, note, point, prefix.length);
+});
+
+test("reading paper at the viewport bottom targets the nearby passage while more text follows", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const original = Array.from({ length: 60 }, (_, i) => `沿岸第${i + 1}站。`).join("\n\n");
+  const note = await createNote(page, "Fold.md", original);
+  const passage = "沿岸第31站。";
+  const point = await page
+    .getByRole("article")
+    .getByText(passage, { exact: true })
+    .evaluate((el) => {
+      const main = el.closest("main")!;
+      const bottom = main.getBoundingClientRect().bottom;
+      main.scrollTop += el.getBoundingClientRect().bottom - (bottom - 10);
+      const upper = el.getBoundingClientRect();
+      const lower = el.nextElementSibling!.getBoundingClientRect();
+      const y = upper.bottom + 2;
+      if (bottom - y > 10 || y >= bottom || lower.top <= bottom)
+        throw new Error("Expected a gap at the fold with the next paragraph below it");
+      return { x: upper.left + 8, y };
+    });
+  await checkReadingInsertion(page, note, point, original.indexOf(passage) + passage.length);
+});
 
 test("document controls, modified clicks and native text selection keep the reader intact", async ({
   page,
@@ -418,8 +512,10 @@ test("full source distinguishes a character from blank space on the same line", 
   await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(edited);
   await page.mouse.click(after + 40, y);
   await expect(body).toBeFocused();
-  await page.keyboard.insertText("尾");
-  await expect.poll(async () => (await readNote(page, apiUrl)).markdown).toBe(edited + "\r\n尾");
+  await page.keyboard.insertText("行尾");
+  await expect
+    .poll(async () => (await readNote(page, apiUrl)).markdown)
+    .toBe(edited.replace("丙丁", "丙丁行尾"));
 });
 
 test("blank paper in a read-only note keeps the original revision", async ({ page }) => {
