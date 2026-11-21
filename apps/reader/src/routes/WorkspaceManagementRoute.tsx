@@ -8,6 +8,7 @@ import { PublicationPanel } from "../features/release/PublicationPanel";
 import { SnapshotPanel } from "../features/snapshot/SnapshotPanel";
 import { RenamePathForm } from "../features/workspace/RenamePathForm";
 import { WorkspaceEditor } from "../features/workspace/WorkspaceEditor";
+import { WorkspaceMembers } from "../features/workspace/WorkspaceMembers";
 import styles from "../features/workspace/Management.module.css";
 
 const route = getRouteApi("/workspaces/$workspaceId/manage");
@@ -45,6 +46,7 @@ export function WorkspaceManagementRoute() {
             <h2>空间设置</h2>
             <WorkspaceEditor key={workspaceId} current={workspace} />
           </section>
+          <WorkspaceMembers key={workspaceId} workspace={workspaceId} />
           <section className={styles.section} aria-label="重命名路径">
             <h2>重命名路径</h2>
             <RenamePathForm key={workspaceId} workspace={workspaceId} />

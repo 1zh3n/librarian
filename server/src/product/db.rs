@@ -212,7 +212,11 @@ impl Metadata {
             super::backup::migrate(&transaction)?;
             super::publication::migrate(&transaction)?;
             transaction.pragma_update(None, "user_version", 7)?;
-        } else if version != 7 {
+        }
+        if version <= 7 {
+            super::delivery::migrate_scoped_tokens(&transaction)?;
+            transaction.pragma_update(None, "user_version", 8)?;
+        } else if version != 8 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         transaction.commit()?;

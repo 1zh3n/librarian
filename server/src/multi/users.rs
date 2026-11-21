@@ -108,6 +108,24 @@ pub struct Profile {
     pub email: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AccountSummary {
+    pub username: String,
+    pub is_admin: bool,
+    pub disabled: bool,
+}
+
+impl AccountSummary {
+    fn new(username: &str, user: &UserEntry) -> Self {
+        Self {
+            username: username.to_owned(),
+            is_admin: user.admin,
+            disabled: user.disabled,
+        }
+    }
+}
+
 impl Profile {
     pub fn parse(full_name: &str, email: &str) -> Result<Profile, String> {
         Ok(Profile {
@@ -674,6 +692,25 @@ impl UserStore {
     }
 
     pub fn set_password(&self, name: &str, password: &str) -> Result<(), String> {
+        self.update_password(name, password, None, false)
+    }
+
+    pub(crate) fn set_password_and_revoke_tokens(
+        &self,
+        name: &str,
+        password: &str,
+        expected_version: Option<&str>,
+    ) -> Result<(), String> {
+        self.update_password(name, password, expected_version, true)
+    }
+
+    fn update_password(
+        &self,
+        name: &str,
+        password: &str,
+        expected_version: Option<&str>,
+        revoke_tokens: bool,
+    ) -> Result<(), String> {
         if password.is_empty() {
             return Err("password must not be empty".into());
         }
@@ -696,7 +733,15 @@ impl UserStore {
             if entry.sso.is_some() {
                 return Err("SSO accounts do not have local passwords".into());
             }
+            if expected_version
+                .is_some_and(|version| entry.disabled || entry.credential_version(name) != version)
+            {
+                return Err("account credentials changed".into());
+            }
             entry.password_hash = Some(password_hash);
+            if revoke_tokens {
+                entry.tokens.clear();
+            }
             Ok(())
         })
     }
@@ -734,6 +779,23 @@ impl UserStore {
     }
 
     pub fn set_disabled(&self, name: &str, disabled: bool) -> Result<(), String> {
+        self.update_disabled(name, disabled, false)
+    }
+
+    pub(crate) fn set_disabled_and_revoke_tokens(
+        &self,
+        name: &str,
+        disabled: bool,
+    ) -> Result<(), String> {
+        self.update_disabled(name, disabled, true)
+    }
+
+    fn update_disabled(
+        &self,
+        name: &str,
+        disabled: bool,
+        revoke_tokens: bool,
+    ) -> Result<(), String> {
         self.mutate(|c| {
             let entry = c
                 .users
@@ -751,6 +813,9 @@ impl UserStore {
                 .expect("checked account must still exist");
             if disabled && !entry.disabled {
                 entry.account_generation = Some(uuid::Uuid::new_v4().to_string());
+                if revoke_tokens {
+                    entry.tokens.clear();
+                }
             }
             entry.disabled = disabled;
             Ok(())
@@ -802,6 +867,21 @@ impl UserStore {
             out.insert(name.clone(), user_json(u));
         }
         serde_json::Value::Object(out)
+    }
+
+    pub(crate) fn account_summaries(&self) -> Vec<AccountSummary> {
+        self.read()
+            .users
+            .iter()
+            .map(|(name, user)| AccountSummary::new(name, user))
+            .collect()
+    }
+
+    pub(crate) fn account_summary(&self, name: &str) -> Option<AccountSummary> {
+        self.read()
+            .users
+            .get(name)
+            .map(|user| AccountSummary::new(name, user))
     }
 
     /// Redacted JSON view for one account.

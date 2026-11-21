@@ -75,11 +75,9 @@ impl Fixture {
             &["remote", "add", "origin", distractor.to_str().unwrap()],
         );
         let router = product.router();
-        fs::write(data.join(".librarian/backup-targets.json"), json!({"targets":[{
-            "id":"safe", "label":"Workspace Backup", "repository":remote, "branch":"workspace-backup"
-        }]}).to_string()).unwrap();
         let (_, workspaces) = request(&router, &owner, "GET", "/workspaces", Value::Null).await;
         let workspace = workspaces[0]["id"].as_str().unwrap().to_owned();
+        write_target(&data, &remote, Some(&workspace));
         Self {
             _root: root,
             data,
@@ -189,6 +187,103 @@ fn git(repo: &Path, args: &[&str]) -> Vec<u8> {
         String::from_utf8_lossy(&output.stderr)
     );
     output.stdout
+}
+
+fn write_target(data: &Path, remote: &Path, workspace: Option<&str>) {
+    let mut target = json!({
+        "id": "safe", "label": "Workspace Backup", "repository": remote, "branch": "workspace-backup"
+    });
+    if let Some(workspace) = workspace {
+        target["workspaceId"] = json!(workspace);
+    }
+    fs::write(
+        data.join(".librarian/backup-targets.json"),
+        json!({"targets": [target]}).to_string(),
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn backup_lists_only_the_workspace_binding_and_ignores_legacy_targets() {
+    let f = Fixture::open().await;
+    f.configure("grouped").await;
+    let (status, created) = request(
+        &f.router,
+        &f.member,
+        "POST",
+        "/workspaces",
+        json!({"name": "Independent Workspace"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let other = created["id"].as_str().unwrap();
+    let path = format!("/workspaces/{other}/backup");
+    let (status, view) = request(&f.router, &f.member, "GET", &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["targets"], json!([]));
+    assert_eq!(view["targetId"], Value::Null);
+    let (status, rejected) = request(
+        &f.router,
+        &f.member,
+        "PUT",
+        &path,
+        json!({"targetId": "safe", "mode": "grouped"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{rejected}");
+
+    write_target(&f.data, &f.remote, None);
+    let (status, view) = f.call("GET", "/backup", Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["targets"], json!([]));
+    assert_eq!(view["targetId"], Value::Null);
+    let (status, rejected) = f
+        .call(
+            "POST",
+            "/backup/jobs",
+            json!({"operationId": "b5bb7617-62ac-4b1f-b53c-be4f1b73e967"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
+    assert!(git(&f.remote, &["for-each-ref"]).is_empty());
+}
+
+#[tokio::test]
+async fn backup_rechecks_the_binding_before_retrying_a_job() {
+    let f = Fixture::open().await;
+    f.configure("grouped").await;
+    let unavailable = f.remote.with_extension("offline");
+    fs::rename(&f.remote, &unavailable).unwrap();
+    let operation = "c7f9c664-48df-44c7-b223-d254f0297cf1";
+    let failed = f.job(operation).await;
+    assert_eq!(failed["status"], "failed");
+    fs::rename(&unavailable, &f.remote).unwrap();
+
+    let (status, created) = request(
+        &f.router,
+        &f.member,
+        "POST",
+        "/workspaces",
+        json!({"name": "Replacement Workspace"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    write_target(&f.data, &f.remote, created["id"].as_str());
+    let (status, rejected) = f
+        .call("POST", "/backup/jobs", json!({"operationId": operation}))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
+    assert!(git(&f.remote, &["for-each-ref"]).is_empty());
+
+    write_target(&f.data, &f.remote, Some(&f.workspace));
+    let retried = f.job(operation).await;
+    assert_eq!(retried["status"], "succeeded", "{retried}");
+    assert_eq!(retried["sourceCommitId"], failed["sourceCommitId"]);
+    write_target(&f.data, &f.remote, created["id"].as_str());
+    let (status, rejected) = f
+        .call("POST", "/backup/jobs", json!({"operationId": operation}))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{rejected}");
 }
 
 #[tokio::test]

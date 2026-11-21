@@ -188,6 +188,7 @@ test("shows a delivery credential once and persists its revocation", async ({ pa
   await createWorkspace(page, "浏览器投递凭证");
   const tokens = page.getByRole("region", { name: "投递凭证" });
   await tokens.getByRole("textbox", { name: "凭证名称" }).fill("文档 CI");
+  await tokens.getByRole("textbox", { name: "投递 ID" }).fill("workspace-docs");
   await tokens.getByRole("button", { name: "签发凭证" }).click();
   const secret = tokens.getByRole("textbox", { name: "新签发的凭证" });
   await expect(secret).toBeVisible();

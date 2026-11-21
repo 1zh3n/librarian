@@ -476,7 +476,7 @@ async fn expiry_hides_and_sweeps_only_its_temporary_delivery_workspace() {
             &f.alice,
             "POST",
             &format!("/workspaces/{workspace}/delivery-tokens"),
-            json!({"name":"temporary build"}),
+            json!({"name":"temporary build","deliveryId":"temporary-build"}),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{token}");

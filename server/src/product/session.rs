@@ -43,7 +43,11 @@ async fn identity(
         .credential_version(&username)
         .ok_or_else(unauthorized)?;
     let cache_id = sha256_hex(format!("librarian-offline-v1\0{username}\0{version}").as_bytes());
-    Ok(Json(json!({ "username": username, "cacheId": cache_id })))
+    Ok(Json(json!({
+        "isAdmin": spaces.users.is_admin(&username),
+        "username": username,
+        "cacheId": cache_id,
+    })))
 }
 
 async fn logout(

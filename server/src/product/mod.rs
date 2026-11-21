@@ -1,3 +1,4 @@
+mod accounts;
 mod ai;
 mod ai_runner;
 mod auth;
@@ -8,6 +9,7 @@ mod delivery;
 mod documents;
 pub mod mcp_bridge;
 mod mutations;
+pub mod password_limits;
 mod publication;
 mod revisions;
 pub mod router;

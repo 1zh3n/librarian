@@ -15,15 +15,18 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
     queryFn: ({ signal }) => api.listDeliveryTokens(workspace, signal),
   });
   const [name, setName] = useState("");
+  const [deliveryId, setDeliveryId] = useState("");
+  const canIssue = Boolean(name.trim() && /^[a-z0-9-]{1,64}$/.test(deliveryId.trim()));
   const [issued, setIssued] = useState<{ id: string; token: string }>();
   const issue = useMutation({
-    async mutationFn(label: string) {
-      const { token, ...summary } = await api.issueDeliveryToken(workspace, { name: label });
+    async mutationFn(input: { name: string; deliveryId: string }) {
+      const { token, ...summary } = await api.issueDeliveryToken(workspace, input);
       setIssued({ id: summary.id, token });
       return summary;
     },
     onSuccess: async (summary) => {
       setName("");
+      setDeliveryId("");
       client.setQueryData<DeliveryToken[]>(key, (list) => [summary, ...(list ?? [])]);
       await client.invalidateQueries({ queryKey: key });
     },
@@ -43,20 +46,18 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
-          if (name.trim() && !issue.isPending) issue.mutate(name.trim());
+          if (canIssue && !issue.isPending)
+            issue.mutate({ name: name.trim(), deliveryId: deliveryId.trim() });
         }}
       >
         <Field label="凭证名称" value={name} onChange={setName} required />
+        <Field label="投递 ID" value={deliveryId} onChange={setDeliveryId} required />
         {issue.isError && (
           <p role="alert" className={styles.status}>
             无法签发投递凭证。
           </p>
         )}
-        <Button
-          className={styles.primary}
-          type="submit"
-          isDisabled={!name.trim() || issue.isPending}
-        >
+        <Button className={styles.primary} type="submit" isDisabled={!canIssue || issue.isPending}>
           签发凭证
         </Button>
         {issued && (
@@ -82,6 +83,16 @@ export function DeliveryTokens({ workspace }: { workspace: string }) {
           {tokens.data?.map((token) => (
             <li key={token.id}>
               <div>{token.name}</div>
+              {token.deliveryId && (
+                <div>
+                  投递 ID <code>{token.deliveryId}</code>
+                </div>
+              )}
+              {token.expiresAt !== null && (
+                <time dateTime={new Date(token.expiresAt * 1000).toISOString()}>
+                  到期 {new Date(token.expiresAt * 1000).toLocaleDateString("zh-CN")}
+                </time>
+              )}
               {token.revoked ? (
                 <span>已撤销</span>
               ) : (

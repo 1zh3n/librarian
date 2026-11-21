@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let space = root.path().join("spaces/field");
     fs::create_dir_all(space.join("野外"))?;
     fs::create_dir_all(root.path().join("spaces/other"))?;
+    fs::create_dir_all(root.path().join("spaces/release-backup"))?;
     fs::write(
         root.path().join("spaces.json"),
         json!({
@@ -49,7 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                       "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}},
             "other": {"name":"另一空间","binding":{"prefix":"/other"},"access":"none",
                       "members":{"reader":{"role":"write"},"offline-reader":{"role":"read"}},"revisions":"managed",
-                      "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}}
+                      "revisionsCommit":{"quietSecs":5,"maxIntervalSecs":60}},
+            "release-backup": {"name":"浏览器本地备份","binding":{"prefix":"/release-backup"},
+                      "access":"none","revisions":"managed"}
         })
         .to_string(),
     )?;
@@ -114,6 +117,10 @@ async fn configure_release_targets(
         .iter()
         .find(|value| value["name"] == "田野笔记")
         .ok_or("Missing fixture Workspace")?;
+    let backup = workspaces
+        .iter()
+        .find(|value| value["name"] == "浏览器本地备份")
+        .ok_or("Missing backup fixture Workspace")?;
     git(targets, &["init", "-q", "--bare", "backup.git"])?;
     git(targets, &["init", "-q", "--initial-branch=main", "site"])?;
     let site = targets.join("site");
@@ -147,9 +154,14 @@ async fn configure_release_targets(
     )?;
     git(targets, &["clone", "-q", "--bare", "site", "blog.git"])?;
     let metadata = root.join(".librarian");
-    fs::write(metadata.join("backup-targets.json"), json!({"targets":[{
-        "id":"fixture-backup", "label":"本地备份", "repository":targets.join("backup.git"), "branch":"workspace-backup"
-    }]}).to_string())?;
+    fs::write(
+        metadata.join("backup-targets.json"),
+        json!({"targets":[{
+            "id":"fixture-backup", "label":"本地备份", "workspaceId":backup["id"],
+            "repository":targets.join("backup.git"), "branch":"workspace-backup"
+        }]})
+        .to_string(),
+    )?;
     fs::write(metadata.join("publication-targets.json"), json!({"targets":[{
         "id":"fixture-zola", "label":"本地博客", "workspaceId":field["id"], "repository":targets.join("blog.git"),
         "branch":"main", "contentPath":"content/articles", "template":"article.html", "baseUrl":"https://blog.example.test"

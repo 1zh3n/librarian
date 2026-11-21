@@ -409,7 +409,7 @@ fn mark_retired(metadata: &Metadata, workspace: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn native_error(error: NativeError) -> ApiError {
+pub(super) fn native_error(error: NativeError) -> ApiError {
     match error {
         NativeError::NotFound => ApiError::not_found(),
         NativeError::Validation(_) | NativeError::Conflict(_) => ApiError::new(

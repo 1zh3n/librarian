@@ -7,7 +7,6 @@ import type {
   Publication,
   Workspace,
 } from "../../src/api/client";
-import { openFieldWorkspace } from "./productFixture";
 
 async function deliver(page: Page, workspace: string, id: string) {
   const base = `/api/v1/workspaces/${workspace}`;
@@ -33,7 +32,7 @@ async function deliver(page: Page, workspace: string, id: string) {
   return { note, commitId };
 }
 
-async function fieldAsAdmin(page: Page) {
+async function workspaceAsAdmin(page: Page, name = "田野笔记") {
   await page.goto("/.auth/librarian/login");
   await page.getByLabel("用户名").fill("fixture-admin");
   await page.getByLabel("密码").fill("fixture-admin-test-password");
@@ -46,19 +45,13 @@ async function fieldAsAdmin(page: Page) {
   ]);
   expect(login.status()).toBe(303);
   const workspaces = (await (await page.request.get("/api/v1/workspaces")).json()) as Workspace[];
-  const field = workspaces.find((space) => space.name === "田野笔记");
-  if (!field || !field.canManage) throw new Error("Missing managed publication fixture");
-  return field;
+  const workspace = workspaces.find((space) => space.name === name);
+  if (!workspace || !workspace.canManage) throw new Error("Missing managed release fixture");
+  return workspace;
 }
 
 test("configures a Workspace backup and reloads its confirmed Git receipt", async ({ page }) => {
-  await openFieldWorkspace(page);
-  const created = await page.request.post("/api/v1/workspaces", {
-    headers: { origin: new URL(page.url()).origin },
-    data: { name: "浏览器本地备份" },
-  });
-  expect(created.status()).toBe(201);
-  const workspace = (await created.json()) as Workspace;
+  const workspace = await workspaceAsAdmin(page, "浏览器本地备份");
   const { commitId } = await deliver(page, workspace.id, "browser-backup");
   await page.goto(`/workspaces/${workspace.id}/manage`);
 
@@ -80,7 +73,7 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
 test("publishes the explicitly selected Git version and documents to the configured target", async ({
   page,
 }) => {
-  const workspace = await fieldAsAdmin(page);
+  const workspace = await workspaceAsAdmin(page);
   const { note, commitId } = await deliver(page, workspace.id, "browser-publication");
   await page.goto(`/workspaces/${workspace.id}/manage`);
   const panel = page.getByRole("region", { name: "Zola 发布" });
@@ -113,7 +106,7 @@ test("publishes the explicitly selected Git version and documents to the configu
 test("shows the document scope of a pending publication before explicit confirmation", async ({
   page,
 }) => {
-  const workspace = await fieldAsAdmin(page);
+  const workspace = await workspaceAsAdmin(page);
   const { note, commitId } = await deliver(page, workspace.id, "browser-mcp");
   const pending = await page.request.post("/api/v1/publications", {
     headers: { origin: new URL(page.url()).origin },

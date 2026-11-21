@@ -18,7 +18,7 @@ import {
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { api, ApiError } from "../api/client";
 import type { DevicePreferences, DocumentSummary } from "../api/client";
-import { documentsQuery, workspacesQuery } from "../api/queries";
+import { documentsQuery, sessionQuery, workspacesQuery } from "../api/queries";
 import { SpaceTree } from "../features/navigation/SpaceTree";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
 import {
@@ -51,17 +51,21 @@ const presets = [
 export function WorkspaceShell() {
   const { workspaceId, documentId } = useParams({ strict: false });
   const navigate = useNavigate();
-  const workspaceTool = useRouterState({
+  const toolRoute = useRouterState({
     select: ({ matches }) =>
       matches.find(
         ({ routeId }) =>
           routeId === "/workspaces/new" ||
           routeId === "/workspaces/$workspaceId/manage" ||
-          routeId === "/workspaces/$workspaceId/ai",
+          routeId === "/workspaces/$workspaceId/ai" ||
+          routeId === "/accounts",
       )?.routeId,
   });
-  const creating = workspaceTool === "/workspaces/new";
+  const creating = toolRoute === "/workspaces/new";
+  const accountSettings = toolRoute === "/accounts";
   const workspaces = useQuery(workspacesQuery);
+  const authenticated = workspaces.isSuccess;
+  const session = useQuery({ ...sessionQuery, enabled: authenticated });
   const workspace = workspaceId
     ? workspaces.data?.find((item) => item.id === workspaceId)
     : workspaces.data?.[0];
@@ -103,20 +107,20 @@ export function WorkspaceShell() {
   }, [navigationPanel, navigationVisible, preferences.sidebarWidth, wide]);
 
   useEffect(() => {
-    if (!selected || documentId || workspaceTool || !firstDocument) return;
+    if (!selected || documentId || toolRoute || !firstDocument) return;
     void navigate({
       to: "/workspaces/$workspaceId/documents/$documentId",
       params: { workspaceId: selected, documentId: firstDocument },
       replace: true,
     });
-  }, [selected, documentId, firstDocument, navigate, workspaceTool]);
+  }, [selected, documentId, firstDocument, navigate, toolRoute]);
 
   useEffect(() => {
     viewport.current?.scrollTo({ top: 0, left: 0 });
-  }, [documentId, workspaceTool]);
+  }, [documentId, toolRoute]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!authenticated) return;
     function shortcut(event: KeyboardEvent) {
       if (
         !event.isComposing &&
@@ -130,7 +134,7 @@ export function WorkspaceShell() {
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, [selected]);
+  }, [authenticated]);
 
   async function saveLayout(patch: Partial<DevicePreferences>) {
     setSettingsError(false);
@@ -174,16 +178,29 @@ export function WorkspaceShell() {
   const commands = [
     ...(documentId ? [{ id: "focus", title: focusLabel, run: focus.toggle }] : []),
     { id: "settings", title: "阅读设置", run: () => setSettings(true) },
+    ...(session.data
+      ? [
+          {
+            id: "account-settings",
+            title: session.data.isAdmin ? "账号管理" : "修改密码",
+            run: () => void navigate({ to: "/accounts" }),
+          },
+        ]
+      : []),
     { id: "logout", title: "退出登录", run: () => void logout() },
-    {
-      id: "workspace-ai",
-      title: "Workspace AI",
-      run: () =>
-        void navigate({
-          to: "/workspaces/$workspaceId/ai",
-          params: { workspaceId: selected },
-        }),
-    },
+    ...(selected
+      ? [
+          {
+            id: "workspace-ai",
+            title: "Workspace AI",
+            run: () =>
+              void navigate({
+                to: "/workspaces/$workspaceId/ai",
+                params: { workspaceId: selected },
+              }),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -212,47 +229,49 @@ export function WorkspaceShell() {
           <div className={styles.breadcrumb} title={active?.path}>
             {active?.path ?? workspace?.name}
           </div>
-          {workspace && (
+          {authenticated && (
             <div className={styles.topActions}>
-              <MenuTrigger>
-                <Button className={styles.button}>布局</Button>
-                <Popover className={styles.popover}>
-                  <Menu
-                    className={styles.layoutMenu}
-                    onAction={(id) => {
-                      if (id === "focus") focus.toggle();
-                      if (id === "settings") setSettings(true);
-                      const preset = presets.find(([key]) => key === id);
-                      if (preset) {
-                        if (focus.active) focus.toggle();
-                        setNavigationOverride(undefined);
-                        void saveLayout({ layout: preset[0], navigation: preset[2] });
-                      }
-                    }}
-                  >
-                    {presets.map(([id, label]) => (
-                      <MenuItem key={id} id={id} className={styles.spaceOption}>
-                        {label}
+              {workspace && (
+                <MenuTrigger>
+                  <Button className={styles.button}>布局</Button>
+                  <Popover className={styles.popover}>
+                    <Menu
+                      className={styles.layoutMenu}
+                      onAction={(id) => {
+                        if (id === "focus") focus.toggle();
+                        if (id === "settings") setSettings(true);
+                        const preset = presets.find(([key]) => key === id);
+                        if (preset) {
+                          if (focus.active) focus.toggle();
+                          setNavigationOverride(undefined);
+                          void saveLayout({ layout: preset[0], navigation: preset[2] });
+                        }
+                      }}
+                    >
+                      {presets.map(([id, label]) => (
+                        <MenuItem key={id} id={id} className={styles.spaceOption}>
+                          {label}
+                        </MenuItem>
+                      ))}
+                      {documentId && (
+                        <MenuItem id="focus" className={styles.spaceOption}>
+                          {focusLabel}
+                        </MenuItem>
+                      )}
+                      <MenuItem id="settings" className={styles.spaceOption}>
+                        阅读设置
                       </MenuItem>
-                    ))}
-                    {documentId && (
-                      <MenuItem id="focus" className={styles.spaceOption}>
-                        {focusLabel}
-                      </MenuItem>
-                    )}
-                    <MenuItem id="settings" className={styles.spaceOption}>
-                      阅读设置
-                    </MenuItem>
-                  </Menu>
-                </Popover>
-              </MenuTrigger>
+                    </Menu>
+                  </Popover>
+                </MenuTrigger>
+              )}
               <Button
-                aria-label="搜索文档"
+                aria-label={workspace ? "搜索文档" : "命令"}
                 aria-keyshortcuts="Control+K Meta+K"
                 className={styles.button}
                 onPress={() => setSearch(true)}
               >
-                搜索
+                {workspace ? "搜索" : "命令"}
               </Button>
             </div>
           )}
@@ -374,7 +393,7 @@ export function WorkspaceShell() {
                 </p>
               ) : workspaces.isPending ? (
                 <output className={styles.state}>正在加载空间…</output>
-              ) : creating ? (
+              ) : creating || accountSettings ? (
                 <Outlet />
               ) : !workspace ? (
                 <div className={styles.state}>
@@ -394,7 +413,7 @@ export function WorkspaceShell() {
                     </>
                   )}
                 </div>
-              ) : documentId || workspaceTool ? (
+              ) : documentId || toolRoute ? (
                 <Outlet />
               ) : resource.isError ? (
                 <p role="alert" className={styles.state}>
@@ -419,7 +438,7 @@ export function WorkspaceShell() {
           </p>
         )}
         {focus.announce && <output className={styles.notice}>专注阅读 · Esc 退出</output>}
-        {search && selected && (
+        {search && authenticated && (
           <Suspense>
             <CommandPalette
               workspace={selected}

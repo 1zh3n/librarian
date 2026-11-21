@@ -10,7 +10,7 @@ fn init_creates_a_first_administrator_and_preserves_existing_accounts() {
         process::{Command, Stdio},
     };
     let root = tempfile::tempdir().unwrap();
-    let init = || {
+    let init = |password: &[u8]| {
         let mut process = Command::new(env!("CARGO_BIN_EXE_librarian"))
             .arg("--data-root")
             .arg(root.path())
@@ -20,15 +20,12 @@ fn init_creates_a_first_administrator_and_preserves_existing_accounts() {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        process
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(b"release-test-password\n")
-            .unwrap();
+        process.stdin.take().unwrap().write_all(password).unwrap();
         process.wait_with_output().unwrap()
     };
-    let first = init();
+    assert!(!init(b"tiny\n").status.success());
+    assert!(!root.path().join("users.json").exists());
+    let first = init(b"release-test-password\n");
     assert!(
         first.status.success(),
         "{}",
@@ -39,7 +36,7 @@ fn init_creates_a_first_administrator_and_preserves_existing_accounts() {
         .unwrap()
         .unwrap();
     assert!(users.is_admin("owner"));
-    let second = init();
+    let second = init(b"release-test-password\n");
     assert!(!second.status.success());
     assert_eq!(
         std::fs::read(root.path().join("users.json")).unwrap(),

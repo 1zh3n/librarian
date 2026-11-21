@@ -81,6 +81,7 @@ struct Targets {
 struct Target {
     id: String,
     label: String,
+    workspace_id: Option<String>,
     repository: String,
     branch: String,
     ssh: Option<Ssh>,
@@ -105,7 +106,7 @@ impl Target {
     }
 }
 
-fn load_targets(metadata: &Metadata) -> Result<Vec<Target>, ApiError> {
+fn load_targets(metadata: &Metadata, workspace: &str) -> Result<Vec<Target>, ApiError> {
     let path = metadata.product_file(CONFIG_NAME);
     match fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_file() && meta.len() <= MAX_CONFIG_BYTES => {}
@@ -124,6 +125,14 @@ fn load_targets(metadata: &Metadata) -> Result<Vec<Target>, ApiError> {
     }
     let Targets { mut targets } = serde_json::from_slice(&bytes)
         .map_err(|_| ApiError::internal("Invalid deployment backup configuration"))?;
+    // Old deployment entries remain readable, but only an explicit Workspace
+    // binding can authorize access to a target.
+    targets.retain(|target| {
+        target
+            .workspace_id
+            .as_deref()
+            .is_some_and(|id| !id.trim().is_empty())
+    });
     let mut ids = HashSet::new();
     let mut endpoints = HashSet::new();
     for target in &targets {
@@ -144,6 +153,7 @@ fn load_targets(metadata: &Metadata) -> Result<Vec<Target>, ApiError> {
             ));
         }
     }
+    targets.retain(|target| target.workspace_id.as_deref() == Some(workspace));
     targets.sort_unstable_by(|a, b| a.label.cmp(&b.label).then_with(|| a.id.cmp(&b.id)));
     Ok(targets)
 }
@@ -325,9 +335,12 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
 
 fn view(metadata: &Metadata, workspace: &str, targets: Vec<Target>) -> Result<Status, ApiError> {
     let settings = Settings::load(metadata, workspace)?;
-    let last_job = match &settings.target_key {
-        Some(key) => Job::latest_for_target(metadata, workspace, key)?.map(|job| job.view),
-        None => None,
+    let (target_id, last_job) = match settings.selected(&targets) {
+        Ok(target) => (
+            Some(target.id.clone()),
+            Job::latest_for_target(metadata, workspace, &target.key()?)?.map(|job| job.view),
+        ),
+        Err(_) => (None, None),
     };
     Ok(Status {
         targets: targets
@@ -337,7 +350,7 @@ fn view(metadata: &Metadata, workspace: &str, targets: Vec<Target>) -> Result<St
                 label: target.label,
             })
             .collect(),
-        target_id: settings.target_id,
+        target_id,
         mode: settings.mode,
         last_job,
     })
@@ -354,7 +367,7 @@ async fn get_status(
         view(
             &service.metadata,
             &workspace,
-            load_targets(&service.metadata)?,
+            load_targets(&service.metadata, &workspace)?,
         )
     })
     .await
@@ -385,7 +398,7 @@ async fn put_settings(
         let db = &service.metadata;
         let _workspace = db.workspace_guard()?;
         workspace::require_manage(&service, &account, &workspace)?;
-        let targets = load_targets(db)?;
+        let targets = load_targets(db, &workspace)?;
         let key = input.target_id.as_ref().map(|id| {
             targets.iter().find(|target| &target.id == id)
                 .ok_or_else(|| ApiError::invalid("Choose a deployment backup target"))?.key()
@@ -491,36 +504,33 @@ fn run_job(
     operation: Uuid,
 ) -> Result<BackupJob, ApiError> {
     let db = &service.metadata;
-    workspace::require_manage(service, account, workspace)?;
     let id = operation.to_string();
-    let _running = match Running::acquire(db.product_file(REPOS_DIRECTORY).join(workspace)) {
-        Ok(active) => active,
-        Err(error) if error.code() == "backup_in_progress" => {
-            return Job::load(db, &id)?
-                .filter(|job| job.view.workspace_id == workspace)
-                .map(|job| job.view)
-                .ok_or(error);
-        }
-        Err(error) => return Err(error),
-    };
-    let (job, target, source_root, backup_repo) = {
+    let (job, target, source_root, backup_repo, _running) = {
         let _workspace = db.workspace_guard()?;
         let (instance, _) = workspace::require_manage(service, account, workspace)?;
         let existing = match Job::load(db, &id)? {
             Some(job) if job.view.workspace_id != workspace => return Err(operation_reused()),
-            Some(job) if job.view.status == "succeeded" => return Ok(job.view),
             job => job,
         };
         let current = Settings::load(db, workspace)?;
-        let targets = load_targets(db)?;
+        let targets = load_targets(db, workspace)?;
         let target = current.selected(&targets)?.clone();
         let key = target.key()?;
+        let existing = match existing {
+            Some(job) if job.target_key != key => return Err(target_changed()),
+            Some(job) if job.view.status == "succeeded" => return Ok(job.view),
+            job => job,
+        };
+        let running = match Running::acquire(db.product_file(REPOS_DIRECTORY).join(workspace)) {
+            Ok(active) => active,
+            Err(error) if error.code() == "backup_in_progress" => {
+                return existing.map(|job| job.view).ok_or(error);
+            }
+            Err(error) => return Err(error),
+        };
         let source = transport::source_repo(state(&instance)?)?;
         let backup_repo = transport::backup_repo(db, workspace, &key)?;
         let job = if let Some(job) = existing {
-            if job.target_key != key {
-                return Err(target_changed());
-            }
             job
         } else {
             let previous = Job::latest_for_target(db, workspace, &key)?;
@@ -559,7 +569,7 @@ fn run_job(
             job.insert(db)?;
             job
         };
-        (job, target, source, backup_repo)
+        (job, target, source, backup_repo, running)
     };
     let transport = match transport::Remote::new(&target, &source_root, &backup_repo) {
         Ok(transport) => transport,
@@ -578,7 +588,7 @@ fn run_job(
     {
         let _workspace = db.workspace_guard()?;
         workspace::require_manage(service, account, workspace)?;
-        let actual = load_targets(db)?;
+        let actual = load_targets(db, workspace)?;
         let selected = Settings::load(db, workspace)?;
         if selected.selected(&actual)?.key()? != job.target_key {
             return Err(target_changed());

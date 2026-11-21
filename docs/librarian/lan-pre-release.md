@@ -45,6 +45,7 @@ systemd-run --user --unit=librarian-lan-app \
   --property=Type=exec --property=Restart=on-failure \
   --property=KillSignal=SIGINT --property=TimeoutStopSec=30s \
   --property=UMask=0077 --setenv=SB_MCP=0 \
+  --setenv=LIBRARIAN_TRUST_LOOPBACK_PROXY=1 \
   "$release_program" --data-root "$lan_data" --listen 127.0.0.1:18080
 
 LIBRARIAN_LAN_IP=192.168.8.166 LIBRARIAN_LAN_CIDR=192.168.8.0/24 \

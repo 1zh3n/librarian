@@ -15,6 +15,7 @@ https://{$LIBRARIAN_LAN_IP}:{$LIBRARIAN_LAN_TLS_PORT:18443} {
 	handle @lan {
 		reverse_proxy 127.0.0.1:{$LIBRARIAN_LAN_BACKEND_PORT:18080} {
 			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
 		}
 	}
 	handle {

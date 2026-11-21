@@ -61,10 +61,14 @@ try {
   for (const file of [
     "LICENSE.md",
     "docs/librarian/deployment.md",
+    "docs/librarian/accounts.md",
+    "docs/librarian/lan-pre-release.md",
+    "docs/librarian/release-evidence.md",
     "docs/librarian/git-backup.md",
     "docs/librarian/zola-publication.md",
     "docs/librarian/delivery.md",
     "docs/librarian/ai-runner.md",
+    "deploy/librarian/lan.Caddyfile",
     "bin/librarian/examples/ai_runner.mjs",
   ]) {
     copy(join(root, file), join(bundle, file));

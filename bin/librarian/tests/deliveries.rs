@@ -117,7 +117,7 @@ impl Fixture {
             &self.user,
             "POST",
             &format!("/workspaces/{}/delivery-tokens", self.workspace),
-            json!({"name":"CI"}),
+            json!({"name":"CI","deliveryId":"project-docs"}),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED, "{result}");
@@ -239,6 +239,15 @@ async fn delivery_scope_cannot_cross_workspace_or_read() {
     let secret = grant["token"].as_str().unwrap();
     let (status, response) = f.deliver(secret, payload("1", FIRST)).await;
     assert_eq!(status, StatusCode::CREATED, "{response}");
+    assert_eq!(grant["deliveryId"], "project-docs");
+    assert!(grant["expiresAt"].is_i64());
+    let mut independent = payload("1", NEXT);
+    independent["manifest"]["deliveryId"] = json!("independent-feed");
+    assert_eq!(
+        f.deliver(secret, independent).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert!(!f.repo().join("deliveries/independent-feed").exists());
     assert_eq!(
         request(&f.router, secret, "GET", "/workspaces", Value::Null)
             .await
@@ -284,6 +293,21 @@ async fn delivery_scope_cannot_cross_workspace_or_read() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(
         f.deliver(secret, payload("2", NEXT)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let expiring = f.token().await;
+    let database = f.root.path().join(".librarian/metadata.sqlite3");
+    rusqlite::Connection::open(database)
+        .unwrap()
+        .execute(
+            "UPDATE delivery_tokens SET expires_at = 1 WHERE id = ?1",
+            [expiring["id"].as_str().unwrap()],
+        )
+        .unwrap();
+    assert_eq!(
+        f.deliver(expiring["token"].as_str().unwrap(), payload("2", NEXT))
+            .await
+            .0,
         StatusCode::UNAUTHORIZED
     );
 }

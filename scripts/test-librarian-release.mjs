@@ -167,7 +167,9 @@ try {
   assert.equal((await api(`/documents/${second.document.id}`)).markdown, second.markdown);
   console.log("Passed clean initialization, revision conflicts, independent runner, two-file commit and undo");
 
-  const delivery = await api(`${base}/delivery-tokens`, "POST", { name: "local-release-smoke" }, 201);
+  const delivery = await api(`${base}/delivery-tokens`, "POST", {
+    name: "local-release-smoke", deliveryId: "release-report",
+  }, 201);
   const input = join(work, "source");
   mkdirSync(input);
   writeFileSync(join(input, "report.md"), ship);
@@ -206,7 +208,7 @@ try {
   git(site, "-c", "user.name=Release", "-c", "user.email=release@example.test", "commit", "-qm", "Initial site");
   git(work, "clone", "-q", "--bare", site, target);
   const writeTargets = (name, targets) => writeFileSync(join(root, ".librarian", name), JSON.stringify({ targets }));
-  writeTargets("backup-targets.json", [{ id: "local", label: "Local", repository: repo, branch: "archive" }]);
+  writeTargets("backup-targets.json", [{ id: "local", label: "Local", workspaceId: id, repository: repo, branch: "archive" }]);
   writeTargets("publication-targets.json", [{
     id: "blog", label: "Local blog", workspaceId: id, repository: target, branch: "main",
     contentPath: "content/articles", template: "article.html", baseUrl: "https://blog.example.test",
@@ -262,6 +264,10 @@ try {
     app = await launch(resolve(process.env.LIBRARIAN_PREVIOUS_BINARY), oldRoot);
     const oldApi = await login(app.origin);
     const oldSpace = (await oldApi("/workspaces"))[0];
+    const oldDeliveryPath = `/workspaces/${oldSpace.id}/delivery-tokens`;
+    const oldGrant = process.env.LIBRARIAN_PREVIOUS_UNSCOPED_TOKENS === "1"
+      ? await oldApi(oldDeliveryPath, "POST", { name: "Unscoped stage 4 credential" }, 201)
+      : undefined;
     const oldDoc = (await oldApi(`/workspaces/${oldSpace.id}/documents`))[0];
     const oldWritten = await oldApi(`/workspaces/${oldSpace.id}/documents`, "POST", {
       path: "Persistent.md", markdown: note, baseRevision: null,
@@ -280,6 +286,22 @@ try {
     assert.equal((await upgraded(`/documents/${oldDoc.id}`)).markdown, note);
     assert.equal((await upgraded(revisionRoute)).revisions[0].commitId, olderCommit);
     assert.equal((await upgraded(`/workspaces/${oldSpace.id}/backup`)).mode, "grouped");
+    if (oldGrant) {
+      const [migrated] = await upgraded(oldDeliveryPath);
+      assert.equal(migrated.id, oldGrant.id);
+      assert.equal(migrated.deliveryId, null);
+      assert.equal(migrated.revoked, true);
+      const rejected = await fetch(`${app.origin}/api/v1/workspaces/${oldSpace.id}/deliveries`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${oldGrant.token}` },
+        body: JSON.stringify({
+          manifest: { deliveryId: "legacy-test", sourceName: "Local upgrade smoke" },
+          files: [{ path: "LegacyContact.md", contentBase64: Buffer.from(note).toString("base64") }],
+        }),
+      });
+      assert.equal(rejected.status, 401);
+      console.log("Passed prior-schema delivery credential retirement");
+    }
     console.log("Passed upgrade from the prior real binary, retaining Workspace and document identity");
   } else {
     console.log("Previous-binary upgrade skipped. Set LIBRARIAN_PREVIOUS_BINARY to include it.");

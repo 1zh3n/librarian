@@ -22,6 +22,11 @@ export const workspacesQuery = queryOptions({
   queryFn: ({ signal }) => api.listWorkspaces(signal),
 });
 
+export const sessionQuery = queryOptions({
+  queryKey: ["session"] as const,
+  queryFn: ({ signal }) => api.getSession(signal),
+});
+
 export function documentsQuery(workspace: string) {
   return queryOptions({
     queryKey: workspaceKeys.documents(workspace),

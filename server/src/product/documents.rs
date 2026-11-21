@@ -525,6 +525,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
             get(super::settings::get_preferences).put(super::settings::save_preferences),
         )
         .merge(super::ai::routes())
+        .merge(super::accounts::routes())
         .merge(super::workspace::routes())
         .merge(super::delivery::routes())
         .merge(super::snapshots::routes())

@@ -4,7 +4,7 @@ Librarian 把 Workspace 的已提交版本备份到部署者指定的专用 Git 
 
 ## 配置目标
 
-在服务数据根的 `.librarian/backup-targets.json` 中声明可用目标。服务账户应独占此文件的写权限。为每个 Workspace 准备一个独立的备份分支，首次备份前让该分支保持不存在。
+在服务数据根的 `.librarian/backup-targets.json` 中声明可用目标。每个目标的 `workspaceId` 来自工作区管理页地址中的 `ws_...`，或授权后的 `GET /api/v1/workspaces` 返回值。服务账户应独占此文件的写权限。为每个 Workspace 准备一个独立的备份分支，首次备份前让该分支保持不存在。
 
 ```json
 {
@@ -12,12 +12,14 @@ Librarian 把 Workspace 的已提交版本备份到部署者指定的专用 Git 
     {
       "id": "manual-local",
       "label": "手记本地备份",
+      "workspaceId": "ws_00000000000000000000000000000001",
       "repository": "/srv/backups/manual.git",
       "branch": "workspace-backup"
     },
     {
       "id": "reference-github",
       "label": "资料库 GitHub 备份",
+      "workspaceId": "ws_00000000000000000000000000000002",
       "repository": "ssh://git@github.com/example/librarian-reference.git",
       "branch": "workspace-backup",
       "ssh": {
@@ -31,7 +33,11 @@ Librarian 把 Workspace 的已提交版本备份到部署者指定的专用 Git 
 
 本地目标使用独立的裸 Git 仓库，可通过 `git init --bare /srv/backups/manual.git` 创建。SSH 目标使用完整的 `ssh://` 地址、目标仓库的专用写入密钥和预先通过可信渠道核对的主机公钥。私钥及 `known_hosts` 使用绝对路径和普通文件，私钥权限设为 `0600`。服务以批处理模式连接，并校验固定的主机公钥。
 
-部署者管理备份仓库和凭证。Reader 只接收目标 ID 与名称。服务从 Workspace 的本地受管仓库提取固定版本，投递来源元数据和来源仓库配置均不会参与选择目标。
+部署者管理备份仓库和凭证。管理页只显示绑定到当前 Workspace 的目标 ID 与名称，并提供粒度、运行和回执。GitHub 仓库和 SSH 写入密钥由部署者配置。服务从 Workspace 的本地受管仓库提取固定版本，投递来源元数据和来源仓库配置均不会参与选择目标。
+
+### 从旧配置升级
+
+缺少 `workspaceId` 的旧目标会停用。部署者应核对实际授权的 Workspace 和目标分支已有的备份来源，再补写稳定的 `workspaceId`。绑定到同一 Workspace、仓库、分支和密钥时，原选择和任务历史继续有效。为不同的 Workspace 配置独立分支。每次运行与重试都会重新检查绑定。
 
 ## 备份与重试
 

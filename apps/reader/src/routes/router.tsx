@@ -17,6 +17,11 @@ function RootRoute() {
 
 const root = createRootRoute({ component: RootRoute });
 const home = createRoute({ getParentRoute: () => root, path: "/" });
+const accounts = createRoute({
+  getParentRoute: () => root,
+  path: "/accounts",
+  component: lazyRouteComponent(() => import("./AccountsRoute"), "AccountsRoute"),
+});
 const workspace = createRoute({ getParentRoute: () => root, path: "/workspaces/$workspaceId" });
 const document = createRoute({
   getParentRoute: () => root,
@@ -58,6 +63,7 @@ const snapshot = createRoute({
 export const router = createRouter({
   routeTree: root.addChildren([
     home,
+    accounts,
     workspace,
     document,
     workspaceAi,

@@ -41,7 +41,7 @@ export function CommandPalette({
 
   const results = useQuery({
     ...searchQuery(workspace, debounced),
-    enabled: Boolean(debounced),
+    enabled: Boolean(workspace && debounced),
   });
   const options = new Map<string, SearchHit>();
   if (debounced === query) {
@@ -57,7 +57,7 @@ export function CommandPalette({
       options.set(document.id, { document, excerpt: "" });
     }
   }
-  const searching = query && (query !== debounced || results.isFetching);
+  const searching = workspace && query && (query !== debounced || results.isFetching);
   const visibleCommands = commands.filter((command) => command.title.includes(query));
   const items = [
     ...visibleCommands.map(({ id, title }) => ({ id, title, detail: "" })),
@@ -71,7 +71,10 @@ export function CommandPalette({
     ? "正在搜索…"
     : results.isError
       ? "全文搜索暂不可用"
-      : "未找到文档";
+      : workspace
+        ? "未找到文档"
+        : "未找到命令";
+  const inputLabel = workspace ? "搜索文档" : "查找命令";
 
   return (
     <ModalOverlay
@@ -81,10 +84,15 @@ export function CommandPalette({
       className={styles.overlay}
     >
       <Modal className={styles.modal}>
-        <Dialog aria-label="快速打开与全文搜索" className={styles.dialog}>
+        <Dialog aria-label={workspace ? "快速打开与全文搜索" : "命令"} className={styles.dialog}>
           <Autocomplete inputValue={text} onInputChange={setText} disableAutoFocusFirst>
-            <SearchField aria-label="搜索文档">
-              <Input ref={input} placeholder="搜索文档" className={styles.input} maxLength={256} />
+            <SearchField aria-label={inputLabel}>
+              <Input
+                ref={input}
+                placeholder={inputLabel}
+                className={styles.input}
+                maxLength={256}
+              />
             </SearchField>
             <ListBox
               aria-label="搜索结果"

@@ -40,6 +40,7 @@ use super::{
 const MAX_ARCHIVE_BYTES: usize = 18 * 1024 * 1024;
 const MAX_JSON_BYTES: usize = 33 * 1024 * 1024;
 const TOKEN_PREFIX: &str = "ldv_";
+const TOKEN_LIFETIME_SECONDS: i64 = 90 * 86_400;
 
 pub(super) fn migrate(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
     transaction.execute_batch(
@@ -64,6 +65,14 @@ pub(super) fn migrate(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
            creator TEXT NOT NULL,
            revoked INTEGER NOT NULL DEFAULT 0
          );",
+    )
+}
+
+pub(super) fn migrate_scoped_tokens(transaction: &Transaction<'_>) -> rusqlite::Result<()> {
+    transaction.execute_batch(
+        "ALTER TABLE delivery_tokens ADD COLUMN delivery_id TEXT;
+         ALTER TABLE delivery_tokens ADD COLUMN expires_at INTEGER;
+         UPDATE delivery_tokens SET revoked = 1;",
     )
 }
 
@@ -142,13 +151,24 @@ async fn deliver(
     let lookup = service.clone();
     let target = workspace.clone();
     let initial_headers = headers.clone();
-    run(move || delivery_principal(&lookup, &target, &initial_headers).map(drop)).await?;
-    let result = if archive {
+    let archive_manifest = if archive {
         let Query(manifest) =
             Query::<DeliveryManifest>::try_from_uri(request.uri()).map_err(|_| {
                 ApiError::invalid("A ZIP delivery requires its manifest query parameters")
             })?;
         validate_manifest(&manifest)?;
+        Some(manifest)
+    } else {
+        None
+    };
+    let initial_feed = archive_manifest
+        .as_ref()
+        .map(|manifest| manifest.delivery_id.clone());
+    run(move || {
+        delivery_principal(&lookup, &target, &initial_headers, initial_feed.as_deref()).map(drop)
+    })
+    .await?;
+    let result = if let Some(manifest) = archive_manifest {
         let mut spool = spool_archive(request.into_body()).await?;
         run(move || {
             let mut payload = Payload::default();
@@ -176,7 +196,8 @@ fn import_from_headers(
     files: Files,
 ) -> Result<DeliveryReceipt, ApiError> {
     let _workspace_guard = service.metadata.workspace_guard()?;
-    let (instance, actor) = delivery_principal(service, workspace, headers)?;
+    let (instance, actor) =
+        delivery_principal(service, workspace, headers, Some(&manifest.delivery_id))?;
     import(service, workspace, &instance, &actor, manifest, files)
 }
 
@@ -212,6 +233,7 @@ fn delivery_principal(
     service: &DocumentService,
     workspace: &str,
     headers: &HeaderMap,
+    delivery_id: Option<&str>,
 ) -> Result<(Arc<SpaceInstance>, Actor), ApiError> {
     let credential = headers
         .get(header::AUTHORIZATION)
@@ -227,24 +249,32 @@ fn delivery_principal(
             true,
         );
     };
-    let grant: Option<(String, String, String)> = service
+    let grant: Option<(String, String, String, String)> = service
         .metadata
         .connection()?
         .query_row(
-            "SELECT id, workspace_id, name FROM delivery_tokens WHERE digest = ?1 AND revoked = 0",
-            [sha256_hex(token.as_bytes())],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            "SELECT id, workspace_id, name, delivery_id FROM delivery_tokens
+             WHERE digest = ?1 AND revoked = 0 AND expires_at > ?2 AND delivery_id IS NOT NULL",
+            params![sha256_hex(token.as_bytes()), chrono::Utc::now().timestamp()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let (id, permitted, name) = grant.ok_or_else(|| {
+    let (id, permitted, name, feed) = grant.ok_or_else(|| {
         ApiError::new(
             StatusCode::UNAUTHORIZED,
             "invalid_delivery_token",
-            "Delivery credential is invalid or revoked",
+            "Delivery credential is invalid, expired, or revoked",
         )
     })?;
     if permitted != workspace {
         return Err(ApiError::not_found());
+    }
+    if delivery_id.is_some_and(|requested| requested != feed) {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "delivery_scope_mismatch",
+            "Delivery credential is assigned to a different delivery ID",
+        ));
     }
     let space_id = service.metadata.space_id(workspace)?;
     let instance = service
@@ -577,12 +607,7 @@ fn decode(request: DeliveryRequest) -> Result<(DeliveryManifest, Files), ApiErro
 }
 
 fn validate_manifest(manifest: &DeliveryManifest) -> Result<(), ApiError> {
-    if manifest.delivery_id.is_empty()
-        || manifest.delivery_id.len() > 64
-        || !manifest
-            .delivery_id
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    if !valid_delivery_id(&manifest.delivery_id)
         || !bounded_label(&manifest.source_name, 128)
         || manifest
             .version
@@ -596,6 +621,14 @@ fn validate_manifest(manifest: &DeliveryManifest) -> Result<(), ApiError> {
         return Err(ApiError::invalid("Invalid delivery manifest"));
     }
     Ok(())
+}
+
+fn valid_delivery_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 #[derive(Default)]
@@ -743,9 +776,10 @@ async fn list(
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NewToken {
     name: String,
+    delivery_id: String,
 }
 
 #[derive(Serialize)]
@@ -754,6 +788,8 @@ struct TokenSummary {
     id: String,
     name: String,
     revoked: bool,
+    delivery_id: Option<String>,
+    expires_at: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -778,15 +814,23 @@ async fn issue_token(
         if !bounded_label(name, 64) {
             return Err(ApiError::invalid("A short token name is required"));
         }
+        if !valid_delivery_id(&request.delivery_id) {
+            return Err(ApiError::invalid("Provide the delivery ID this credential will use"));
+        }
         let id = Uuid::new_v4().to_string();
+        let expires_at = chrono::Utc::now().timestamp() + TOKEN_LIFETIME_SECONDS;
         let token = format!("{TOKEN_PREFIX}{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
         let digest = sha256_hex(token.as_bytes());
         service.metadata.connection()?.execute(
-            "INSERT INTO delivery_tokens (id, workspace_id, name, digest, creator) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, workspace, name, digest, account.username()],
+            "INSERT INTO delivery_tokens (id, workspace_id, name, digest, creator, delivery_id, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, workspace, name, digest, account.username(), request.delivery_id, expires_at],
         )?;
         Ok((StatusCode::CREATED, Json(IssuedToken {
-            summary: TokenSummary { id, name: name.to_owned(), revoked: false }, token,
+            summary: TokenSummary {
+                id, name: name.to_owned(), revoked: false,
+                delivery_id: Some(request.delivery_id), expires_at: Some(expires_at),
+            }, token,
         })))
     }).await
 }
@@ -802,13 +846,23 @@ async fn list_tokens(
         super::workspace::require_manage(&service, &account, &workspace)?;
         let connection = service.metadata.connection()?;
         let mut query = connection.prepare(
-            "SELECT id, name, revoked FROM delivery_tokens WHERE workspace_id = ?1 ORDER BY rowid DESC LIMIT 100",
+            "SELECT id, name, revoked, delivery_id, expires_at FROM delivery_tokens
+             WHERE workspace_id = ?1 ORDER BY rowid DESC LIMIT 100",
         )?;
-        let rows = query.query_map([workspace], |row| Ok(TokenSummary {
-            id: row.get(0)?, name: row.get(1)?, revoked: row.get(2)?,
-        }))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = query
+            .query_map([workspace], |row| {
+                Ok(TokenSummary {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    revoked: row.get(2)?,
+                    delivery_id: row.get(3)?,
+                    expires_at: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(Json(rows))
-    }).await
+    })
+    .await
 }
 
 async fn revoke_token(

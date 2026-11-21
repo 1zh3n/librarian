@@ -14,6 +14,9 @@ use crate::runtime::RuntimeAvailability;
 use crate::search::{search_root, SpaceSearch};
 
 pub fn initialize_data_root(root: &Path, username: &str, password: &str) -> Result<(), String> {
+    if !super::password_limits::valid_password(password) {
+        return Err(super::password_limits::PASSWORD_REQUIREMENTS.into());
+    }
     let mut builder = fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -44,6 +47,7 @@ pub struct NativeSpaces {
     pub users: Arc<UserStore>,
     pub authenticator: Arc<Authenticator>,
     pub session: SessionPolicy,
+    pub password_limits: Arc<super::password_limits::PasswordLimits>,
     _data_lock: super::db::DataRootLock,
 }
 
@@ -68,6 +72,10 @@ impl NativeSpaces {
             )),
         );
         let session = SessionPolicy::from_env();
+        let password_limits = super::password_limits::PasswordLimits::new(
+            session.lockout_time_secs,
+            session.lockout_limit,
+        );
         let empty = || Box::new(EmptySpacePrimitives) as Box<dyn SpacePrimitives>;
         let deps = InstanceDeps {
             root: Some(root.to_owned()),
@@ -100,6 +108,7 @@ impl NativeSpaces {
             users,
             authenticator,
             session,
+            password_limits,
         })
     }
 }

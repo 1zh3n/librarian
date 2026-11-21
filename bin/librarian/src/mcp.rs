@@ -1,7 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{net::SocketAddr, path::Path, sync::Arc};
 
 use axum::{
-    extract::{DefaultBodyLimit, Form, Query, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Extension, Form, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
@@ -21,8 +21,11 @@ use silverbullet_server::{
         LoginManager,
     },
     handlers::mcp_oauth::{self, SessionConsent},
-    multi::access::AnyUserAuth,
-    product::mcp_bridge::McpBridge,
+    multi::{access::AnyUserAuth, users::UserStore},
+    product::{
+        mcp_bridge::McpBridge,
+        password_limits::{client_address, PasswordLimits},
+    },
 };
 use silverbullet_server_common::space::EmbeddedSpace;
 
@@ -49,6 +52,8 @@ const LOGIN_PAGE: &str = r#"<!doctype html>
 
 pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router), String> {
     let spaces = bridge.spaces();
+    let session = spaces.session;
+    let password_limits = spaces.password_limits.clone();
     let clients = Arc::new(ClientRegistry::load(root).map_err(|err| err.to_string())?);
     let grants = Arc::new(GrantStore::load(root).map_err(|err| err.to_string())?);
     let host = Arc::new(
@@ -58,18 +63,21 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
             .with_login_path(LOGIN_PATH),
     );
     let users = spaces.users.clone();
+    let credential_users = users.clone();
     let login = Arc::new(
         LoginManager::new(
             spaces.authenticator.clone(),
             Arc::new(AnyUserAuth {
                 store: spaces.users.clone(),
             }),
-            spaces.session.session_idle_secs,
-            spaces.session.lockout(),
+            session.session_idle_secs,
+            session.lockout(),
             String::new(),
         )
         .with_credential_version(Arc::new(move |username| {
-            users.credential_version(username).unwrap_or_default()
+            credential_users
+                .credential_version(username)
+                .unwrap_or_default()
         })),
     );
 
@@ -102,6 +110,10 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
         .with_state(LoginState {
             manager: login,
             mcp_enabled: enabled.clone(),
+            users,
+            password_limits,
+            trust_loopback_proxy: std::env::var("LIBRARIAN_TRUST_LOOPBACK_PROXY").as_deref()
+                == Ok("1"),
         });
     let router = mcp_router_gated(tools, host.clone(), enabled.clone())
         .merge(mcp_oauth::router(oauth, enabled))
@@ -277,6 +289,9 @@ struct LoginQuery {
 struct LoginState {
     manager: Arc<LoginManager>,
     mcp_enabled: McpEnabled,
+    users: Arc<UserStore>,
+    password_limits: Arc<PasswordLimits>,
+    trust_loopback_proxy: bool,
 }
 
 impl LoginQuery {
@@ -297,7 +312,7 @@ impl LoginQuery {
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         };
         let known_route = match segments.as_slice() {
-            ["", ""] => true,
+            ["", ""] | ["", "accounts"] => true,
             ["", "workspaces", workspace] => id(workspace),
             ["", "workspaces", workspace, "ai"] => id(workspace),
             ["", "workspaces", workspace, "manage"] => id(workspace),
@@ -336,6 +351,7 @@ struct Credentials {
 async fn login_submit(
     State(login): State<LoginState>,
     Query(query): Query<LoginQuery>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     Form(credentials): Form<Credentials>,
 ) -> Response {
@@ -351,18 +367,37 @@ async fn login_submit(
         return StatusCode::FORBIDDEN.into_response();
     }
 
+    let source = client_address(
+        peer.map(|Extension(ConnectInfo(peer))| peer.ip()),
+        login.trust_loopback_proxy,
+        headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok()),
+    );
+    let Some(attempt) = login
+        .password_limits
+        .reserve_login(&credentials.username, source)
+        .await
+    else {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    };
+
     let verifier = login.manager.clone();
+    let users = login.users.clone();
     let token = tokio::task::spawn_blocking(move || {
-        if verifier.is_locked() {
-            return Err(StatusCode::TOO_MANY_REQUESTS);
-        }
-        if !verifier.authorize(&credentials.username, &credentials.password) {
-            verifier.record_failure();
+        let version = users.credential_version(&credentials.username);
+        if !verifier.authorize(&credentials.username, &credentials.password) || version.is_none() {
             return Err(StatusCode::UNAUTHORIZED);
         }
-        verifier
+        let jwt = verifier
             .issue_session(&credentials.username, false)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if users.credential_version(&credentials.username) != version {
+            let _ = verifier.revoke_browser_session(&jwt);
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        attempt.succeeded();
+        Ok(jwt)
     })
     .await;
     let token = match token {

@@ -46,6 +46,14 @@ type SaveDocument = operations["saveDocument"]["requestBody"]["content"]["applic
 type SaveOutline = operations["saveOutline"]["requestBody"]["content"]["application/json"];
 type RestoreRevision = operations["restoreDocument"]["requestBody"]["content"]["application/json"];
 type ErrorBody = components["schemas"]["ApiError"];
+type BrowserSession = components["schemas"]["BrowserSession"];
+export type AccountSummary = components["schemas"]["AccountSummary"];
+type CreateAccount = components["schemas"]["CreateAccount"];
+type UpdateAccount = components["schemas"]["UpdateAccount"];
+type ReplaceAccountPassword = components["schemas"]["ReplaceAccountPassword"];
+type ChangeOwnPassword = components["schemas"]["ChangeOwnPassword"];
+export type WorkspaceMember = components["schemas"]["WorkspaceMember"];
+type SetWorkspaceMember = components["schemas"]["SetWorkspaceMember"];
 
 export class ApiError extends Error {
   readonly status: number;
@@ -82,6 +90,11 @@ async function request<T>(
       | CreateSnapshot
       | SaveBackupSettings
       | CreatePublication
+      | CreateAccount
+      | UpdateAccount
+      | ReplaceAccountPassword
+      | ChangeOwnPassword
+      | SetWorkspaceMember
       | { operationId: string };
   },
 ): Promise<T> {
@@ -116,8 +129,48 @@ const snapshotPath = (id: string) => `/snapshots/${encodeURIComponent(id)}`;
 const documentPath = (document: string) => `/documents/${encodeURIComponent(document)}`;
 
 const operationPath = (id: string) => `/ai/operations/${encodeURIComponent(id)}`;
+const accountPath = (username: string) => `/accounts/${encodeURIComponent(username)}`;
+const membersPath = (workspace: string) => `${workspacePath(workspace)}/members`;
 
 export const api = {
+  getSession(signal?: AbortSignal) {
+    return request<BrowserSession>("/session", signal);
+  },
+  listAccounts(signal?: AbortSignal) {
+    return request<AccountSummary[]>("/accounts", signal);
+  },
+  createAccount(body: CreateAccount) {
+    return request<AccountSummary>("/accounts", undefined, { method: "POST", body });
+  },
+  updateAccount(username: string, body: UpdateAccount) {
+    return request<AccountSummary>(accountPath(username), undefined, { method: "PATCH", body });
+  },
+  replaceAccountPassword(username: string, body: ReplaceAccountPassword) {
+    return request<void>(`${accountPath(username)}/password`, undefined, { method: "PUT", body });
+  },
+  revokeAccountSessions(username: string) {
+    return request<void>(`${accountPath(username)}/sessions/revoke`, undefined, { method: "POST" });
+  },
+  changeOwnPassword(body: ChangeOwnPassword) {
+    return request<void>("/session/password", undefined, { method: "PUT", body });
+  },
+  listWorkspaceMembers(workspace: string, signal?: AbortSignal) {
+    return request<WorkspaceMember[]>(membersPath(workspace), signal);
+  },
+  setWorkspaceMember(workspace: string, username: string, body: SetWorkspaceMember) {
+    return request<WorkspaceMember[]>(
+      `${membersPath(workspace)}/${encodeURIComponent(username)}`,
+      undefined,
+      { method: "PUT", body },
+    );
+  },
+  removeWorkspaceMember(workspace: string, username: string) {
+    return request<WorkspaceMember[]>(
+      `${membersPath(workspace)}/${encodeURIComponent(username)}`,
+      undefined,
+      { method: "DELETE" },
+    );
+  },
   listWorkspaces(signal?: AbortSignal) {
     return request<Workspace[]>("/workspaces", signal);
   },
