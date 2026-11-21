@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync, copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync,
-  rmSync, writeFileSync,
+  rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -74,6 +74,34 @@ try {
     copy(join(root, file), join(bundle, file));
   }
 
+  const nodeVersion = process.versions.node.split(".").map(Number);
+  if (nodeVersion[0] !== 24 || nodeVersion[1] < 9) {
+    throw new Error("Build the managed runner with the Node 24 distribution (24.9 or newer)");
+  }
+  const nodeLicense = join(dirname(dirname(process.execPath)), "LICENSE");
+  if (!existsSync(nodeLicense)) throw new Error("The Node 24 installation must include its distribution LICENSE");
+  copy(process.execPath, join(bundle, "bin/node"));
+  copy(nodeLicense, join(bundle, "licenses/node/LICENSE"));
+  copy(join(root, "deploy/librarian/install-managed-runner"), join(bundle, "install-managed-runner"));
+  copy(join(root, "deploy/librarian/install-managed-runner.mjs"), join(bundle, "deploy/librarian/install-managed-runner.mjs"));
+  const runnerPath = "bin/librarian/runner";
+  const runnerDir = join(bundle, runnerPath);
+  const sourceDir = join(root, runnerPath);
+  for (const file of readdirSync(sourceDir)) {
+    if (file === "package.json" || file === "package-lock.json" ||
+        (file.endsWith(".mjs") && !file.endsWith(".test.mjs") && file !== "fixtures.mjs")) {
+      copy(join(sourceDir, file), join(runnerDir, file));
+    }
+  }
+  execFileSync("npm", ["ci", "--ignore-scripts", "--omit=dev", "--workspaces=false", "--no-audit", "--no-fund"], {
+    cwd: runnerDir, stdio: "inherit",
+  });
+  const runnerDependencies = JSON.parse(execFileSync("npm", ["ls", "--all", "--omit=dev", "--long", "--json"], {
+    cwd: runnerDir, encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
+  }));
+  walkNpm(runnerDependencies);
+  inventory.push(`runtime  node@${process.versions.node}  [licenses/node/LICENSE]`);
+
   for (const pkg of cargo.packages) {
     if (!pkg.source || !includedCrates.has(`${pkg.name} v${pkg.version}`)) continue;
     includeLicense("rust", pkg.name, pkg.version, pkg.license, dirname(pkg.manifest_path), pkg.license_file);
@@ -83,10 +111,10 @@ try {
     walkNpm({ path: join(root, "node_modules", tool) });
   }
   writeFileSync(join(bundle, "THIRD-PARTY-NOTICES.txt"), [
-    "Installed Rust and Reader package licenses and notices",
+    "Installed Rust, Reader, Node and managed runner package licenses and notices",
     "The inventory includes build dependencies and records packages with license metadata alone.",
     "",
-    ...inventory.sort(),
+    ...[...new Set(inventory)].sort(),
     "",
   ].join("\n"));
   writeFileSync(join(bundle, "BUILD-INFO.txt"), [
@@ -95,6 +123,8 @@ try {
     `Target ${host}`,
     run("rustc", ["--version"]),
     `Node ${process.version}`,
+    `bin/node SHA-256 ${createHash("sha256").update(readFileSync(process.execPath)).digest("hex")}`,
+    `Runner lock SHA-256 ${createHash("sha256").update(readFileSync(join(runnerDir, "package-lock.json"))).digest("hex")}`,
     ...["librarian", "docs"].map((binary) => {
       const sha256 = createHash("sha256").update(readFileSync(join(binaries, binary))).digest("hex");
       return `${binary} SHA-256 ${sha256}`;
@@ -132,8 +162,11 @@ function normalizeModes(directory) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
       normalizeModes(path);
-    } else if (path !== join(bundle, "librarian") && path !== join(bundle, "bin/docs")) {
-      chmodSync(path, 0o644);
+    } else if (entry.isFile()) {
+      const executable = ["librarian", "bin/docs", "bin/node", "install-managed-runner"]
+        .some((name) => path === join(bundle, name)) ||
+        (path.startsWith(join(bundle, "bin/librarian/runner/node_modules/")) && (statSync(path).mode & 0o111));
+      chmodSync(path, executable ? 0o755 : 0o644);
     }
   }
 }

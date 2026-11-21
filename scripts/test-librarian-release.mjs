@@ -157,6 +157,136 @@ async function heartbeat(origin, file) {
   assert.equal((await api("/ai/settings")).runnerOnline, true);
 }
 
+async function disconnectRunner(origin, file) {
+  let connected = true;
+  let successes = 0;
+  let dropped = 0;
+  const bridge = createServer(async (req, res) => {
+    if (!connected) { dropped++; req.socket.destroy(); return; }
+    if (req.url !== "/api/v1/ai/runner/v2/heartbeat" && req.url !== "/api/v1/ai/runner/v2/claims") {
+      res.writeHead(404).end();
+      return;
+    }
+    try {
+      const body = [];
+      for await (const chunk of req) body.push(chunk);
+      const response = await fetch(origin + req.url, {
+        method: req.method, redirect: "error", signal: AbortSignal.timeout(4000),
+        headers: { "content-type": "application/json", authorization: req.headers.authorization,
+          "x-librarian-runner-id": req.headers["x-librarian-runner-id"] },
+        body: Buffer.concat(body),
+      });
+      const bytes = Buffer.from(await response.arrayBuffer());
+      res.writeHead(response.status, { "content-type": "application/json" }).end(bytes);
+      if (response.ok && req.url.endsWith("/heartbeat")) successes++;
+    } catch { res.destroy(); }
+  }).listen(0, "127.0.0.1");
+  await once(bridge, "listening");
+  const runnerProcess = spawn(join(distribution, "bin/node"), [join(distribution, "bin/librarian/runner/runner.mjs")], {
+    cwd: work, stdio: "ignore",
+    env: { LIBRARIAN_URL: "http://127.0.0.1:" + bridge.address().port, LIBRARIAN_RUNNER_IDENTITY_FILE: file },
+  });
+  const exited = once(runnerProcess, "exit");
+  async function until(predicate) {
+    const deadline = Date.now() + 30_000;
+    while (!predicate()) {
+      assert.equal(runnerProcess.exitCode, null, "Managed runner exited during a recoverable disconnect");
+      assert(Date.now() < deadline, "Timed out waiting for managed runner connectivity");
+      await wait(100);
+    }
+  }
+  try {
+    await until(() => successes > 0);
+    connected = false;
+    await until(() => dropped > 0);
+    const before = successes;
+    connected = true;
+    await until(() => successes > before);
+    console.log("Passed managed runner heartbeat, connection loss, reauthentication and clean shutdown");
+  } finally {
+    runnerProcess.kill("SIGTERM");
+    const deadline = setTimeout(() => runnerProcess.kill("SIGKILL"), 8000);
+    try { assert.deepEqual(await exited, [0, null]); }
+    finally {
+      clearTimeout(deadline);
+      bridge.closeAllConnections();
+      await new Promise((done) => bridge.close(done));
+    }
+  }
+}
+
+async function testKeyRecovery(debugBinary) {
+  const fixtureRoot = join(work, "key-fixture");
+  const restored = join(work, "keys-restored");
+  const missing = join(work, "keys-missing");
+  initialize(fixtureRoot);
+  let key = randomUUID();
+  let requests = 0;
+  const catalog = createServer((req, res) => {
+    if (req.method !== "GET" || req.url !== "/models" || req.headers.authorization !== "Bearer " + key) {
+      res.writeHead(403).end();
+      return;
+    }
+    requests++;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "recovery-model" }] }));
+  }).listen(0, "127.0.0.1");
+  await once(catalog, "listening");
+  const host = `127.0.0.1:${catalog.address().port}`;
+  let instance;
+  async function withServer(binary, rootPath, check) {
+    instance = await launch(binary, rootPath);
+    try { await check(await login(instance.origin)); }
+    finally { await instance.stop(); instance = undefined; }
+  }
+  const template = { provider: "deepseek", baseUrl: "http://" + host };
+  const path = "/ai/settings/connections";
+  let id;
+  try {
+    // The debug server accepts this single synthetic HTTP provider. The extracted
+    // release opens the resulting backup with its ordinary production policy.
+    writeFileSync(join(fixtureRoot, ".librarian/ai-test-loopback"), host);
+    await withServer(debugBinary, fixtureRoot, async (api) => {
+      const ticket = await api("/ai/settings/discover", "POST", { ...template, apiKey: key });
+      const conn = await api(path, "POST", { ...template, label: "local recovery fixture",
+        discoveryId: ticket.discoveryId, keyChange: { kind: "replace", apiKey: key } }, 201);
+      id = conn.id;
+    });
+    const backup = join(work, "keys-backup.tar.gz");
+    command("tar", ["-czf", backup, "-C", fixtureRoot, "."]);
+    for (const copy of [restored, missing]) {
+      mkdirSync(copy);
+      command("tar", ["-xzf", backup, "-C", copy]);
+    }
+    assert(!readFileSync(join(restored, ".librarian/metadata.sqlite3")).includes(Buffer.from(key)));
+    async function inspect(copy, available) {
+      await withServer(librarian, copy, async (api) => {
+        const settings = await api("/ai/settings");
+        assert.equal(settings.dispatchMode, "legacy");
+        const connection = settings.connections.find((item) => item.id === id);
+        assert.equal(connection.credentialAvailable, available);
+        assert(!JSON.stringify(settings).includes(key));
+      });
+    }
+    await inspect(restored, true);
+    rmSync(join(missing, ".librarian/ai-install.key"));
+    await inspect(missing, false);
+    key = randomUUID();
+    await withServer(debugBinary, missing, async (api) => {
+      const connection = (await api("/ai/settings")).connections.find((item) => item.id === id);
+      const ticket = await api("/ai/settings/discover", "POST", { ...template, apiKey: key });
+      await api(path + "/" + id, "PATCH", { expectedVersion: connection.version,
+        discoveryId: ticket.discoveryId, keyChange: { kind: "replace", apiKey: key } }, 204);
+    });
+    await inspect(missing, true);
+    assert.equal(requests, 2);
+    console.log("Passed full credential restore, missing installation key and re-entry with a local synthetic provider");
+  } finally {
+    if (instance) await instance.stop();
+    await new Promise((done) => catalog.close(done));
+  }
+}
+
 try {
   checkManagedBundle(distribution);
   initialize(root);
@@ -167,6 +297,7 @@ try {
   assert.equal((await fetch(`${app.origin}/sw.js`)).status, 200);
   assert.equal((await fetch(`${app.origin}/accounts`, { redirect: "manual" })).status, 200);
   await heartbeat(app.origin, identity);
+  await disconnectRunner(app.origin, identity);
   const api = await login(app.origin);
   assert.equal((await api("/session")).username, "owner");
   assert.deepEqual(await api("/accounts"), [{ username: "owner", isAdmin: true, disabled: false }]);
@@ -348,6 +479,11 @@ try {
     console.log(`Previous binary SHA-256 ${createHash("sha256").update(readFileSync(previous)).digest("hex")}`);
   } else {
     console.log("Previous-binary upgrade skipped. Set LIBRARIAN_PREVIOUS_BINARY to include it.");
+  }
+  if (process.env.LIBRARIAN_DISCOVERY_FIXTURE_BINARY) {
+    await testKeyRecovery(resolve(process.env.LIBRARIAN_DISCOVERY_FIXTURE_BINARY));
+  } else {
+    console.log("Credential backup exercise skipped. Set LIBRARIAN_DISCOVERY_FIXTURE_BINARY to include it.");
   }
   console.log("Release journey passed");
 } finally {

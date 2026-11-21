@@ -1,6 +1,6 @@
 # 本地安装与恢复
 
-发行归档包含 Linux x86_64 的 `librarian`、`bin/docs`、许可证、可独立运行的 AI 示例和本页。检查 SHA-256 后解包。Librarian 二进制已嵌入 Web 界面，安装时需要 Git，启用 Zola 发布时还需要安装 Zola 0.23.6。启用 AI 示例时使用 Node.js 24。 [Zola 0.23.6](https://github.com/getzola/zola/releases/tag/v0.23.6)
+发行归档包含 Linux x86_64 的 `librarian`、`bin/docs`、许可证、受管执行器及其 Node 24 运行时、旧协议 AI 示例和本页。检查 SHA-256 后解包。Librarian 二进制已嵌入 Web 界面，安装时需要 Git，启用 Zola 发布时还需要安装 Zola 0.23.6。旧协议示例也可使用包内的 `bin/node` 运行。 [Zola 0.23.6](https://github.com/getzola/zola/releases/tag/v0.23.6)
 
 本次本机发行需要 glibc 2.39 或更新版本。
 
@@ -50,6 +50,8 @@ tar -C "$restore_root" -xzf librarian-data.tar.gz
 ./librarian --data-root "$restore_root" --listen 127.0.0.1:8081
 ```
 
+AI 工作区的停机备份同时包含 `.librarian/metadata.sqlite3`、模型密钥加密所用的 `.librarian/ai-install.key`（首次保存密钥时生成）和 `.librarian/managed-runner.json`。备份前停止受管执行器和旧协议执行器，再停止 Librarian。记录应用和执行器的安装目录、监听地址及 systemd 服务名。归档按凭证保管。恢复到隔离主机时，先核对连接配置和任务队列，再启动执行器。缺少安装密钥时，管理员可在网页重新录入模型密钥。
+
 恢复演练需要先核对已配置的 Workspace 目录和 Git 目标路径，再用隔离端口登录，核对文档、固定快照及版本。升级时先备份，停止旧进程并以新二进制打开原数据根。新二进制会迁移数据库。回滚时使用升级前备份与对应旧二进制。
 
 ## 从源代码构建发行包
@@ -60,3 +62,17 @@ tar -C "$restore_root" -xzf librarian-data.tar.gz
 npm ci
 node scripts/package-librarian.mjs /tmp/librarian-release
 ```
+
+## 从实际旧版本复验升级和回退
+
+准备两个版本的归档、相邻的 `.sha256` 文件和 Zola 0.23.6。在构建检出执行以下命令。脚本在临时目录创建账户、文件和 Git 历史。它先备份旧版数据，再用新版打开同一数据根，并以旧版程序在另一目录打开升级前的备份。正常的上线回退也使用这对旧版二进制和升级前备份，保留升级后的数据供复核。
+
+```bash
+cargo build --locked -p librarian
+LIBRARIAN_ZOLA=/path/to/zola node scripts/verify-librarian-upgrade.mjs \
+  /path/to/previous/librarian-0.1.0-linux-x86_64.tar.gz \
+  /path/to/candidate/librarian-0.1.0-linux-x86_64.tar.gz \
+  "${CARGO_TARGET_DIR:-$PWD/target}/debug/librarian"
+```
+
+本地目录替身只在调试二进制上接收一次性合成密钥。解包的发行二进制负责启动检查、加密凭证可用性检查、执行器认证、升级和还原。历史读写、投递、Git 备份和发布继续使用同一组正常产品接口。
