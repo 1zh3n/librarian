@@ -494,6 +494,12 @@
   font-size: var(--ui-size);
   line-height: 1.5;
 }
+
+@media (max-width: 40rem) {
+  .panel[data-standalone] .modeHint {
+    display: none;
+  }
+}
 @container chat-composer (max-width: 15em) {
   button:has([data-icon="paperclip"]) {
     min-inline-size: 44px;
