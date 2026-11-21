@@ -148,7 +148,7 @@ export interface EditorSession {
   isComposing(): boolean;
   acknowledge(markdown: string, revision: string | null): void;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
-  appendBlankLine(): void;
+  moveToFinalBlankLine(): void;
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
   trackAnchor(anchor: ScrollAnchor | undefined): void;
@@ -304,14 +304,19 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       confirmedSource = markdown;
       revision = savedRevision;
     },
-    appendBlankLine() {
+    moveToFinalBlankLine() {
       if (state.readOnly || state.field(composing)) return;
+      const end = state.doc.length;
+      if (state.doc.lineAt(end).text.trim() === "") {
+        dispatch(state.update({ selection: { anchor: end }, scrollIntoView: true }));
+        return;
+      }
       const current = state.field(sourceField).value;
       const ending = /(\r\n|[\r\n])[^\r\n]*$/u.exec(current)?.[1] ?? "\n";
       dispatch(
         state.update({
-          changes: { from: state.doc.length, insert: "\n" },
-          selection: { anchor: state.doc.length + 1 },
+          changes: { from: end, insert: "\n" },
+          selection: { anchor: end + 1 },
           effects: replaceSource.of(readSource(current + ending)),
           annotations: isolateHistory.of("full"),
           scrollIntoView: true,

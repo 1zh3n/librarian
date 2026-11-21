@@ -605,17 +605,17 @@ function DocumentWorkspace({
     );
   }
 
-  const appendOnMount = useRef(false);
+  const blankLineOnMount = useRef(false);
   const enterEditor = useCallback(
-    (next: "preview" | "source", position?: number | "append") => {
+    (next: "preview" | "source", position?: number | "blankLine") => {
       if (!writable || restoringVersion || body.editor.isComposing()) return;
       if (mode === "read") {
         savedSelection.current = undefined;
         savedEditorSelection.current = undefined;
         const viewport = canvas.current?.closest("main");
-        appendOnMount.current = position === "append";
+        blankLineOnMount.current = position === "blankLine";
         const anchor =
-          viewport && position !== "append"
+          viewport && position !== "blankLine"
             ? captureReaderAnchor(viewport, analysis.blocks)
             : undefined;
         body.editor.trackAnchor(anchor);
@@ -716,9 +716,9 @@ function DocumentWorkspace({
     (parent: HTMLDivElement | null) => {
       if (!parent) return;
       const unmount = body.editor.mount(parent);
-      if (appendOnMount.current) {
-        appendOnMount.current = false;
-        body.editor.appendBlankLine();
+      if (blankLineOnMount.current) {
+        blankLineOnMount.current = false;
+        body.editor.moveToFinalBlankLine();
       }
       return unmount;
     },
@@ -877,10 +877,10 @@ function DocumentWorkspace({
       if (article) {
         const position = caret
           ? readerCaretOffset(article, caret, reading.source, analysis)
-          : "append";
+          : "blankLine";
         enterEditor("preview", position);
       } else if (!caret && !body.editor.isComposing()) {
-        body.editor.appendBlankLine();
+        body.editor.moveToFinalBlankLine();
         body.editor.focus();
       }
     };
