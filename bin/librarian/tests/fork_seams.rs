@@ -618,36 +618,47 @@ async fn mcp_lists_only_product_tools_and_their_input_contracts() {
     let response = server.rpc(&session.access, "tools/list", json!({})).await;
     let tools: Value = response.json().await.unwrap();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    let expected: [(&str, bool, &[&str]); 18] = [
+    let expected: [(&str, bool, bool, &[&str]); 18] = [
         (
             "workspace_upload_files",
             false,
+            true,
             &["workspaceId", "targetDirectory", "operationId", "files"],
         ),
         (
             "workspace_apply_edits",
             false,
+            true,
             &["workspaceId", "operationId", "edits"],
         ),
         (
             "workspace_request_reorganization",
+            false,
             false,
             &["workspaceId", "operationId", "request"],
         ),
         (
             "workspace_get_operation",
             true,
+            false,
             &["workspaceId", "operationId"],
         ),
         (
             "workspace_undo_operation",
             false,
+            true,
             &["workspaceId", "operationId"],
         ),
-        ("workspace_list", true, &[]),
-        ("workspace_publish", false, &["workspaceId", "delivery"]),
+        ("workspace_list", true, false, &[]),
+        (
+            "workspace_publish",
+            false,
+            true,
+            &["workspaceId", "delivery"],
+        ),
         (
             "publication_request",
+            false,
             false,
             &[
                 "workspaceId",
@@ -657,37 +668,49 @@ async fn mcp_lists_only_product_tools_and_their_input_contracts() {
                 "operationId",
             ],
         ),
-        ("document_list", true, &["workspaceId"]),
-        ("document_read", true, &["documentId"]),
-        ("document_search", true, &["workspaceId", "query"]),
+        ("document_list", true, false, &["workspaceId"]),
+        ("document_read", true, false, &["documentId"]),
+        ("document_search", true, false, &["workspaceId", "query"]),
         (
             "document_create",
+            false,
             false,
             &["workspaceId", "operationId", "path", "markdown"],
         ),
         (
             "document_update",
             false,
+            true,
             &["documentId", "operationId", "baseRevision", "markdown"],
         ),
-        ("document_outline_read", true, &["documentId"]),
+        ("document_outline_read", true, false, &["documentId"]),
         (
             "document_outline_update",
             false,
+            true,
             &["documentId", "operationId", "baseRevision", "markdown"],
         ),
-        ("revision_list", true, &["documentId"]),
-        ("revision_diff", true, &["documentId", "commitId"]),
+        ("revision_list", true, false, &["documentId"]),
+        ("revision_diff", true, false, &["documentId", "commitId"]),
         (
             "revision_restore",
             false,
+            true,
             &["documentId", "operationId", "baseRevision", "commitId"],
         ),
     ];
     assert_eq!(tools.len(), expected.len());
-    for (name, read_only, required) in expected {
+    for (name, read_only, destructive, required) in expected {
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
         assert_eq!(tool["annotations"]["readOnlyHint"], read_only, "{name}");
+        assert_eq!(
+            tool["annotations"]["destructiveHint"], destructive,
+            "{name}"
+        );
+        assert!(
+            !(read_only && destructive),
+            "{name} cannot be both read-only and destructive"
+        );
         assert_eq!(tool["inputSchema"]["type"], "object", "{name}");
         assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{name}");
         assert_eq!(tool["inputSchema"]["required"], json!(required), "{name}");

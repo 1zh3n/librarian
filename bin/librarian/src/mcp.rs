@@ -136,6 +136,7 @@ fn tool(
     properties: Value,
     required: &[&str],
     read_only: bool,
+    destructive: bool,
 ) -> ToolDef {
     ToolDef {
         name,
@@ -149,7 +150,7 @@ fn tool(
         }),
         annotations: json!({
             "readOnlyHint": read_only,
-            "destructiveHint": false,
+            "destructiveHint": destructive,
             "idempotentHint": true,
             "openWorldHint": false,
         }),
@@ -168,26 +169,26 @@ impl ToolSet for ProductTools {
         vec![
             tool(
                 "workspace_list", "List workspaces", "List the workspaces accessible under the current grant.",
-                json!({}), &[], true,
+                json!({}), &[], true, false,
             ),
             tool("workspace_upload_files","Upload files","Write a file group into a directory. Existing files require an explicit revision.",
                 json!({"workspaceId":workspace,"operationId":operation,"targetDirectory":{"type":"string"},
                  "files":{"type":"array","minItems":1,"maxItems":64,"items":{"type":"object","required":["path","contentBase64"],"additionalProperties":false,"properties":{"path":{"type":"string"},"contentBase64":{"type":"string","contentEncoding":"base64"}}}},
                  "updates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","baseRevision"],"properties":{"path":{"type":"string"},"baseRevision":revision}}}}),
-                &["workspaceId","targetDirectory","operationId","files"],false),
+                &["workspaceId","targetDirectory","operationId","files"],false,true),
             tool("workspace_apply_edits","Apply document edits","Commit a conditional Markdown batch in one version.",
                 json!({"workspaceId":workspace,"operationId":operation,"edits":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"object","additionalProperties":false,
                     "oneOf":[{"required":["path"]},{"required":["documentId"]}],"required":["baseRevision","markdown"],"properties":{"path":{"type":"string"},"documentId":document,"baseRevision":{"type":["string","null"]},"markdown":markdown}}}}),
-                &["workspaceId","operationId","edits"],false),
+                &["workspaceId","operationId","edits"],false,true),
             tool("workspace_request_reorganization","Request move or deletion","Preview the change for confirmation in Reader.",
                 json!({"workspaceId":workspace,"operationId":operation,"request":{"oneOf":[
                     {"type":"object","additionalProperties":false,"required":["kind","from","to"],"properties":{"kind":{"const":"move"},"from":{"type":"string"},"to":{"type":"string"}}},
                     {"type":"object","additionalProperties":false,"required":["kind","documentIds"],"properties":{"kind":{"const":"delete"},"documentIds":{"type":"array","items":document}}}]}}),
-                &["workspaceId","operationId","request"],false),
+                &["workspaceId","operationId","request"],false,false),
             tool("workspace_get_operation","Get operation","Read a receipt under the original grant.",
-                json!({"workspaceId":workspace,"operationId":operation}),&["workspaceId","operationId"],true),
+                json!({"workspaceId":workspace,"operationId":operation}),&["workspaceId","operationId"],true,false),
             tool("workspace_undo_operation","Undo operation","Conditionally reverse the committed operation under its original grant.",
-                json!({"workspaceId":workspace,"operationId":operation}),&["workspaceId","operationId"],false),
+                json!({"workspaceId":workspace,"operationId":operation}),&["workspaceId","operationId"],false,true),
             tool(
                 "workspace_publish", "Deliver documents", "Import documents and attachments into a granted Workspace. Identical content and manifest reuse the same receipt.",
                 json!({"workspaceId": workspace, "delivery": {
@@ -207,61 +208,61 @@ impl ToolSet for ProductTools {
                     },
                     "oneOf": [{"required": ["files"]}, {"required": ["archiveBase64"]}]
                 }}),
-                &["workspaceId", "delivery"], false,
+                &["workspaceId", "delivery"], false, true,
             ),
             tool(
                 "publication_request", "Request Zola publication", "Prepare an explicit publication request for a fixed revision and configured target. A Librarian Workspace manager confirms it separately.",
                 json!({"workspaceId": workspace, "targetId": {"type": "string", "description": "Configured Zola target ID."}, "commitId": commit,
                     "documentIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": document}, "operationId": operation}),
-                &["workspaceId", "targetId", "commitId", "documentIds", "operationId"], false,
+                &["workspaceId", "targetId", "commitId", "documentIds", "operationId"], false, false,
             ),
             tool(
                 "document_list", "List documents", "List documents in a granted workspace in path order.",
                 json!({"workspaceId": workspace, "after": {"type": "string", "description": "List paths strictly after this document path."}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
-                &["workspaceId"], true,
+                &["workspaceId"], true, false,
             ),
             tool(
                 "document_read", "Read document", "Read the current original Markdown and its content revision.",
-                json!({"documentId": document}), &["documentId"], true,
+                json!({"documentId": document}), &["documentId"], true, false,
             ),
             tool(
                 "document_search", "Search documents", "Search current documents in the specified granted workspace.",
                 json!({"workspaceId": workspace, "query": {"type": "string", "minLength": 1, "maxLength": 256}}),
-                &["workspaceId", "query"], true,
+                &["workspaceId", "query"], true, false,
             ),
             tool(
                 "document_create", "Create document", "Create a new Markdown document with an immediate Git revision. The path must be unused.",
                 json!({"workspaceId": workspace, "operationId": operation, "path": {"type": "string", "description": "Relative document path ending in .md."}, "markdown": markdown}),
-                &["workspaceId", "operationId", "path", "markdown"], false,
+                &["workspaceId", "operationId", "path", "markdown"], false, false,
             ),
             tool(
                 "document_update", "Update document", "Replace a document conditionally on its current content revision and create a Git revision.",
                 json!({"documentId": document, "operationId": operation, "baseRevision": revision, "markdown": markdown}),
-                &["documentId", "operationId", "baseRevision", "markdown"], false,
+                &["documentId", "operationId", "baseRevision", "markdown"], false, true,
             ),
             tool(
                 "document_outline_read", "Read document outline", "Read the independent outline Markdown and its content revision. The revision is null when the outline is absent.",
-                json!({"documentId": document}), &["documentId"], true,
+                json!({"documentId": document}), &["documentId"], true, false,
             ),
             tool(
                 "document_outline_update", "Update document outline", "Write the independent outline conditionally and create a Git revision.",
                 json!({"documentId": document, "operationId": operation,
                     "baseRevision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "Content revision from document_outline_read, or null to create the outline."}, "markdown": markdown}),
-                &["documentId", "operationId", "baseRevision", "markdown"], false,
+                &["documentId", "operationId", "baseRevision", "markdown"], false, true,
             ),
             tool(
                 "revision_list", "List document revisions", "List the Git revisions that changed this document.",
                 json!({"documentId": document, "before": commit, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}}),
-                &["documentId"], true,
+                &["documentId"], true, false,
             ),
             tool(
                 "revision_diff", "Read document revision diff", "Read what a Git revision changed in this document and the original Markdown at that revision.",
-                json!({"documentId": document, "commitId": commit}), &["documentId", "commitId"], true,
+                json!({"documentId": document, "commitId": commit}), &["documentId", "commitId"], true, false,
             ),
             tool(
                 "revision_restore", "Restore document revision", "Restore historical Markdown if the current content revision matches. This creates a new Git revision.",
                 json!({"documentId": document, "operationId": operation, "baseRevision": revision, "commitId": commit}),
-                &["documentId", "operationId", "baseRevision", "commitId"], false,
+                &["documentId", "operationId", "baseRevision", "commitId"], false, true,
             ),
         ]
     }
