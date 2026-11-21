@@ -337,10 +337,10 @@ async fn login_page(State(login): State<LoginState>, Query(query): Query<LoginQu
     if query.target(&*login.mcp_enabled).is_none() {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    sign_in_page(StatusCode::OK)
+    sign_in_page(StatusCode::OK, "")
 }
 
-fn sign_in_page(status: StatusCode) -> Response {
+fn sign_in_page(status: StatusCode, username: &str) -> Response {
     let Some(page) = reader_asset("login.html") else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
@@ -353,6 +353,18 @@ fn sign_in_page(status: StatusCode) -> Response {
         StatusCode::TOO_MANY_REQUESTS => "limited",
         _ => "unavailable",
     };
+    let username = username
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let document = document
+        .replacen("librarian-login-ready", state, 1)
+        .replacen(
+            r#"data-username="""#,
+            &format!(r#"data-username="{username}""#),
+            1,
+        );
     (
         status,
         [
@@ -363,7 +375,7 @@ fn sign_in_page(status: StatusCode) -> Response {
                 "default-src 'none'; script-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             ),
         ],
-        Html(document.replacen("librarian-login-ready", state, 1)),
+        Html(document),
     )
         .into_response()
 }
@@ -405,9 +417,10 @@ async fn login_submit(
         .reserve_login(&credentials.username, source)
         .await
     else {
-        return sign_in_page(StatusCode::TOO_MANY_REQUESTS);
+        return sign_in_page(StatusCode::TOO_MANY_REQUESTS, &credentials.username);
     };
 
+    let submitted_username = credentials.username.clone();
     let verifier = login.manager.clone();
     let users = login.users.clone();
     let token = tokio::task::spawn_blocking(move || {
@@ -428,8 +441,8 @@ async fn login_submit(
     .await;
     let token = match token {
         Ok(Ok(token)) => token,
-        Ok(Err(status)) => return sign_in_page(status),
-        Err(_) => return sign_in_page(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(Err(status)) => return sign_in_page(status, &submitted_username),
+        Err(_) => return sign_in_page(StatusCode::INTERNAL_SERVER_ERROR, &submitted_username),
     };
 
     let options = CookieOptions {

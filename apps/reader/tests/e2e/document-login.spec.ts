@@ -15,7 +15,7 @@ test("keeps the login fields usable at 320 px with 200 percent text", async ({ p
 });
 
 test("signs in on a narrow screen after showing and correcting a password", async ({ page }) => {
-  await page.goto("/.auth/librarian/login?next=%2Faccounts");
+  await page.goto("/.auth/librarian/login?next=%2Faccounts%3Ffrom%3Dreader");
   await expect(page.getByRole("heading", { name: "登录 Librarian" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 
@@ -37,13 +37,64 @@ test("signs in on a narrow screen after showing and correcting a password", asyn
       response.request().method() === "POST" && response.url().includes("/.auth/librarian/login"),
   );
   await page.getByRole("button", { name: "登录", exact: true }).click();
-  expect((await failed).status()).toBe(401);
+  const failure = await failed;
+  expect(failure.status()).toBe(401);
+  expect(failure.headers()["cache-control"]).toBe("no-store");
+  expect(await failure.text()).not.toContain("incorrect-fixture-password");
+  expect(await page.context().cookies()).toHaveLength(0);
+  expect((await page.request.get("/api/v1/workspaces")).status()).toBe(401);
   await expect(page.getByRole("alert")).toHaveText("用户名或密码不正确，请重试。");
   await expect(password).toHaveValue("");
 
-  await username.fill("fixture-admin");
-  await password.fill("fixture-admin-test-password");
-  await password.press("Enter");
-  await expect(page).toHaveURL(/\/accounts$/u);
+  await expect(username).toHaveValue("fixture-admin");
+  await expect(password).toBeFocused();
+  await expect(password).toHaveAccessibleDescription("用户名或密码不正确，请重试。");
+  await page.keyboard.press("Shift+Tab");
+  await expect(username).toBeFocused();
+  await expect(username).toHaveAccessibleDescription("用户名或密码不正确，请重试。");
+  await page.keyboard.press("Tab");
+  await expect(password).toBeFocused();
+  await page.keyboard.type("fixture-admin-test-password");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/accounts\?from=reader$/u);
   await expect(page.getByRole("heading", { name: "账号管理" })).toBeVisible();
+});
+
+test("keeps a mistyped username as literal text only on the failed submission", async ({
+  page,
+}) => {
+  const login = "/.auth/librarian/login";
+  const name = '林 & "溪" <reader>';
+  const username = page.getByLabel("用户名", { exact: true });
+  const password = page.getByLabel("密码", { exact: true });
+  await page.goto(login);
+  await username.fill(name);
+  await password.fill("mistyped-password");
+  await password.press("Enter");
+  await expect(page.getByRole("alert")).toHaveText("用户名或密码不正确，请重试。");
+  await expect(username).toHaveValue(name);
+  await expect(password).toHaveValue("");
+  await expect(page).toHaveURL(login);
+  await page.goto(login);
+  await expect(username).toHaveValue("");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("rejects foreign login origins and external return addresses", async ({
+  request,
+  baseURL,
+}) => {
+  const login = "/.auth/librarian/login";
+  const form = { username: "fixture-admin", password: "fixture-admin-test-password" };
+  const foreign = "https://example.test";
+  const externalReturn = login + "?next=" + encodeURIComponent(foreign);
+  expect((await request.get(externalReturn)).status()).toBe(400);
+  for (const [url, origin, status] of [
+    [externalReturn, baseURL!, 400],
+    [login, foreign, 403],
+  ] as const) {
+    const denied = await request.post(url, { form, headers: { origin }, maxRedirects: 0 });
+    expect(denied.status()).toBe(status);
+    expect(denied.headers()["set-cookie"]).toBeUndefined();
+  }
 });

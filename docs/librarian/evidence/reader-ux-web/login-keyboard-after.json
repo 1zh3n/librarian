@@ -1,0 +1,41 @@
+{
+  "phase": "after",
+  "browser": "Chromium 145.0.7632.6",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "entry": "/.auth/librarian/login?next=%2Faccounts",
+  "keys": [
+    "Tab",
+    "type username",
+    "Tab",
+    "type incorrect password",
+    "Enter"
+  ],
+  "status": 401,
+  "username": "fixture-admin",
+  "passwordEmpty": true,
+  "passwordType": "password",
+  "focus": {
+    "tag": "INPUT",
+    "name": "password",
+    "role": null
+  },
+  "error": "用户名或密码不正确，请重试。",
+  "description": [
+    "用户名或密码不正确，请重试。"
+  ],
+  "previousFocus": {
+    "tag": "INPUT",
+    "name": "username",
+    "role": null
+  },
+  "correctionKeys": [
+    "Shift+Tab",
+    "Tab",
+    "type corrected password",
+    "Enter"
+  ],
+  "returnPath": "/accounts"
+}

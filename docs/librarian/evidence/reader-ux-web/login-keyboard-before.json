@@ -1,0 +1,27 @@
+{
+  "phase": "before",
+  "browser": "Chromium 145.0.7632.6",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "entry": "/.auth/librarian/login?next=%2Faccounts",
+  "keys": [
+    "Tab",
+    "type username",
+    "Tab",
+    "type incorrect password",
+    "Enter"
+  ],
+  "status": 401,
+  "username": "",
+  "passwordEmpty": true,
+  "passwordType": "password",
+  "focus": {
+    "tag": "P",
+    "name": null,
+    "role": "alert"
+  },
+  "error": "用户名或密码不正确，请重试。",
+  "description": []
+}
