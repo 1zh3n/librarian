@@ -15,17 +15,41 @@ const visits = new Map<string, AiTranscriptVisit>();
 export function WorkspaceAiRoute() {
   const { workspaceId } = route.useParams();
   const { operationId } = route.useSearch();
+  return <ChatPage workspaceId={workspaceId} operationId={operationId} />;
+}
+
+export function AssistantRoute() {
+  return <ChatPage />;
+}
+
+function ChatPage({
+  workspaceId,
+  operationId,
+}: {
+  workspaceId?: string;
+  operationId?: string | undefined;
+}) {
   const { data: session } = useQuery(sessionQuery);
   const entry = useLocation({ select: (location) => location.state.__TSR_key });
   const visitKey = session && entry && JSON.stringify([session.username, workspaceId, entry]);
   const visit = useMemo(() => (visitKey ? visits.get(visitKey) : undefined), [visitKey]);
   const { data: workspaces } = useQuery(workspacesQuery);
-  const { data: documents } = useQuery(documentsQuery(workspaceId));
-  const writable = workspaces?.some((item) => item.id === workspaceId && item.canWrite) ?? false;
+  const { data: documents } = useQuery({
+    ...documentsQuery(workspaceId ?? ""),
+    enabled: Boolean(workspaceId),
+  });
+  // A signed-in member can create their first workspace from the global assistant.
+  const writable = workspaceId
+    ? Boolean(workspaces?.some((item) => item.id === workspaceId && item.canWrite))
+    : Boolean(session);
   return (
     <div className={styles.workspace}>
-      <h1>{workspaces?.find((item) => item.id === workspaceId)?.name} · 工作区 AI</h1>
-      {operationId ? (
+      <h1>
+        {workspaceId
+          ? `${workspaces?.find((item) => item.id === workspaceId)?.name ?? ""} · 工作区 AI`
+          : "AI 助手"}
+      </h1>
+      {operationId && workspaceId ? (
         session && (
           <LinkedAiOperation
             key={operationId}
@@ -38,7 +62,9 @@ export function WorkspaceAiRoute() {
       ) : (
         <AiPanel
           key={workspaceId}
-          workspace={workspaceId}
+          workspace={workspaceId ?? ""}
+          standalone
+          global={!workspaceId}
           writable={writable}
           returnVisit={visit}
           onSourceVisit={(next) => {

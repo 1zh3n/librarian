@@ -78,6 +78,7 @@ export function WorkspaceShell() {
           routeId === "/workspaces/new" ||
           routeId === "/workspaces/$workspaceId/manage" ||
           routeId === "/workspaces/$workspaceId/ai" ||
+          routeId === "/ai" ||
           routeId === "/accounts",
       )?.routeId,
   });
@@ -86,11 +87,14 @@ export function WorkspaceShell() {
     select: ({ location }) => location.state.workspaceCreationSource,
   });
   const accountSettings = toolRoute === "/accounts";
+  const assistant = toolRoute === "/ai";
   const workspaces = useQuery(workspacesQuery);
   const authenticated = workspaces.isSuccess;
   const session = useQuery({ ...sessionQuery, enabled: authenticated });
   const contextWorkspaceId = creating ? creationSource : (workspaceId ?? workspaces.data?.[0]?.id);
-  const workspace = workspaces.data?.find((item) => item.id === contextWorkspaceId);
+  const workspace = assistant
+    ? undefined
+    : workspaces.data?.find((item) => item.id === contextWorkspaceId);
   const selected = workspace?.id ?? "";
   const resource = useQuery({ ...documentsQuery(selected), enabled: Boolean(workspace) });
   const folderList = useQuery({ ...foldersQuery(selected), enabled: Boolean(workspace) });
@@ -496,6 +500,13 @@ export function WorkspaceShell() {
               </Button>
               <Button
                 className={styles.button}
+                aria-current={assistant ? "page" : undefined}
+                onPress={() => void navigate({ to: "/ai" })}
+              >
+                AI
+              </Button>
+              <Button
+                className={styles.button}
                 aria-haspopup="dialog"
                 onPress={(event) => {
                   dialogOrigin.current = event.target;
@@ -624,7 +635,7 @@ export function WorkspaceShell() {
               </p>
             ) : workspaces.isPending ? (
               <output className={styles.state}>正在加载空间…</output>
-            ) : creating || accountSettings || documentId ? (
+            ) : creating || accountSettings || assistant || documentId ? (
               <Outlet />
             ) : !workspace ? (
               <div className={styles.state}>

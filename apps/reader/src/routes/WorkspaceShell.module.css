@@ -63,6 +63,11 @@
   background: var(--surface-hover);
 }
 
+.topActions .button[aria-current="page"] {
+  color: var(--accent);
+  background: var(--surface-selected);
+}
+
 .topActions {
   display: flex;
   align-items: center;

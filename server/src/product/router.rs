@@ -88,6 +88,7 @@ fn build(state: Arc<ProductState>, routes: Router) -> Router {
 
     Router::new()
         .route("/", get(index))
+        .route("/ai", get(index))
         .route("/accounts", get(index))
         .route("/workspaces/{workspace}", get(index))
         .route("/workspaces/{workspace}/ai", get(index))
