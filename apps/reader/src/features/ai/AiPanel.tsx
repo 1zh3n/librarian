@@ -123,7 +123,7 @@ export function AiPanel({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
-  const refreshedCommits = useRef(new Set<string>());
+  const refreshedReceipts = useRef(new Set<string>());
   const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -209,17 +209,21 @@ export function AiPanel({
     return () => observer.disconnect();
   }, [hasTurns]);
 
-  const refresh = useCallback(
-    (...commitIds: (string | null)[]) => {
-      const unseen = commitIds.filter((commitId): commitId is string =>
-        Boolean(commitId && !refreshedCommits.current.has(commitId)),
-      );
-      if (unseen.length === 0) return;
-      for (const commitId of unseen) refreshedCommits.current.add(commitId);
+  // Turn history can deliver a completed write before its event stream opens.
+  useEffect(() => {
+    let changed = false;
+    for (const { operation } of turns) {
+      const revision = operation.undoCommitId ?? operation.commitId;
+      if (!revision) continue;
+      const receipt = operation.id + ":" + revision;
+      if (refreshedReceipts.current.has(receipt)) continue;
+      refreshedReceipts.current.add(receipt);
+      changed = true;
+    }
+    if (changed) {
       void client.invalidateQueries({ queryKey: workspaceKeys.workspace(workspace) });
-    },
-    [client, workspace],
-  );
+    }
+  }, [client, turns, workspace]);
 
   const updateOperation = chat.updateOperation;
   const update = useCallback(
@@ -234,9 +238,8 @@ export function AiPanel({
           : [...previous, { operation, prompt: "", ...(chat.id && { conversationId: chat.id }) }],
       );
       updateOperation(operation);
-      refresh(operation.commitId, operation.undoCommitId);
     },
-    [chat.id, documentId, refresh, updateOperation, workspace],
+    [chat.id, documentId, updateOperation, workspace],
   );
 
   async function submit(mode: AiTask["mode"], retry?: Turn) {

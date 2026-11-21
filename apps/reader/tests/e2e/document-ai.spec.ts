@@ -715,6 +715,18 @@ test("an AI commit refreshes the clean reader, and undo is available after reloa
 }) => {
   const { document } = await createNote(page, "AiClean.md", "# 礁石\n\n确认之前的记载。\n");
   await openDocumentTool(page, "AI");
+  // A quick runner can finish before the first turn fetch or event subscription.
+  let release = () => {};
+  const completed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/ai/conversations/*/turns*", async (route) => {
+    if (route.request().method() === "GET") await completed;
+    await route.continue();
+  });
+  await page.route("**/ai/operations/*/events", (route) =>
+    route.fulfill({ status: 200, contentType: "text/event-stream", body: "" }),
+  );
   const task = await send(page, "更新这份记录", "修改");
   const original = await readSource(page, task, document.document.id);
   await complete(page, task, {
@@ -728,6 +740,8 @@ test("an AI commit refreshes the clean reader, and undo is available after reloa
       },
     ],
   });
+  release();
+  await expect(page.getByText("记录已更新", { exact: true })).toBeVisible();
   const article = page.getByRole("article");
   await expect(article).toContainText("确认之后的记载。");
   await page.reload();
