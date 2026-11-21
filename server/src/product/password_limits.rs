@@ -103,8 +103,8 @@ struct LoginAttempts {
     start: Instant,
     window: Duration,
     limit: u32,
-    accounts: HashMap<String, u32>,
-    sources: HashMap<IpAddr, u32>,
+    accounts: AttemptCounts<String>,
+    sources: AttemptCounts<IpAddr>,
 }
 
 impl LoginAttempts {
@@ -113,8 +113,8 @@ impl LoginAttempts {
             start,
             window,
             limit,
-            accounts: HashMap::new(),
-            sources: HashMap::new(),
+            accounts: AttemptCounts::new(),
+            sources: AttemptCounts::new(),
         }
     }
 
@@ -129,21 +129,14 @@ impl LoginAttempts {
         }
         let key = sha256_hex(username.as_bytes());
         let source_limit = self.limit.saturating_mul(SOURCE_MULTIPLIER);
-        if self
-            .accounts
-            .get(&key)
-            .is_some_and(|count| *count >= self.limit)
-            || source.is_some_and(|ip| {
-                self.sources
-                    .get(&ip)
-                    .is_some_and(|count| *count >= source_limit)
-            })
+        if self.accounts.count(&key) >= self.limit
+            || source.is_some_and(|ip| self.sources.count(&ip) >= source_limit)
         {
             return false;
         }
-        record(&mut self.accounts, key);
+        self.accounts.record(key);
         if let Some(ip) = source {
-            record(&mut self.sources, ip);
+            self.sources.record(ip);
         }
         true
     }
@@ -153,20 +146,48 @@ impl LoginAttempts {
             return;
         }
         let key = sha256_hex(username.as_bytes());
-        if let Some(count) = self.accounts.get_mut(&key) {
-            *count = count.saturating_sub(1);
-        }
-        if let Some(count) = source.and_then(|ip| self.sources.get_mut(&ip)) {
-            *count = count.saturating_sub(1);
+        self.accounts.refund(&key);
+        if let Some(ip) = source {
+            self.sources.refund(&ip);
         }
     }
 }
 
-fn record<K: Eq + Hash>(counters: &mut HashMap<K, u32>, key: K) {
-    if let Some(count) = counters.get_mut(&key) {
+struct AttemptCounts<K> {
+    tracked: HashMap<K, u32>,
+    overflow: u32,
+}
+
+impl<K: Eq + Hash> AttemptCounts<K> {
+    fn new() -> Self {
+        Self {
+            tracked: HashMap::new(),
+            overflow: 0,
+        }
+    }
+
+    fn clear(&mut self) {
+        self.tracked.clear();
+        self.overflow = 0;
+    }
+
+    fn count(&self, key: &K) -> u32 {
+        self.tracked.get(key).copied().unwrap_or(self.overflow)
+    }
+
+    fn record(&mut self, key: K) {
+        let count = if self.tracked.len() < MAX_TRACKED_KEYS {
+            self.tracked.entry(key).or_default()
+        } else {
+            self.tracked.get_mut(&key).unwrap_or(&mut self.overflow)
+        };
         *count = count.saturating_add(1);
-    } else if counters.len() < MAX_TRACKED_KEYS {
-        counters.insert(key, 1);
+    }
+
+    fn refund(&mut self, key: &K) {
+        // Keep slots for the full window so each refund uses its original counter.
+        let count = self.tracked.get_mut(key).unwrap_or(&mut self.overflow);
+        *count = count.saturating_sub(1);
     }
 }
 
@@ -176,14 +197,10 @@ pub fn client_address(
     forwarded: Option<&str>,
 ) -> Option<IpAddr> {
     let peer = peer?.to_canonical();
-    if peer.is_loopback() {
-        if trust_loopback_proxy {
-            return forwarded?
-                .parse::<IpAddr>()
-                .ok()
-                .map(|ip| ip.to_canonical());
+    if peer.is_loopback() && trust_loopback_proxy {
+        if let Some(ip) = forwarded.and_then(|value| value.parse::<IpAddr>().ok()) {
+            return Some(ip.to_canonical());
         }
-        return None;
     }
     Some(peer)
 }
@@ -195,7 +212,7 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use super::{client_address, LoginAttempts, PasswordLimits};
+    use super::{client_address, LoginAttempts, PasswordLimits, MAX_TRACKED_KEYS};
 
     #[test]
     fn password_processors_share_a_bounded_number_of_workers() {
@@ -264,6 +281,50 @@ mod tests {
     }
 
     #[test]
+    fn bounded_account_counters_enforce_an_overflow_quota() {
+        let instant = Instant::now();
+        let window = Duration::from_secs(1);
+        let mut attempts = LoginAttempts::new(instant, window, 1);
+        for index in 0..MAX_TRACKED_KEYS {
+            let name = format!("member-{index}");
+            assert!(attempts.admit(instant, &name, None));
+            attempts.succeeded(instant, &name, None);
+        }
+        assert!(attempts.admit(instant, "new-member", None));
+        attempts.succeeded(instant, "new-member", None);
+        assert!(attempts.admit(instant, "next-member", None));
+        assert!(!attempts.admit(instant, "remaining-member", None));
+        assert!(attempts.admit(instant, "member-0", None));
+        assert!(attempts.admit(instant + window, "remaining-member", None));
+    }
+
+    #[test]
+    fn bounded_source_counters_enforce_an_overflow_quota() {
+        use std::net::Ipv4Addr;
+
+        let instant = Instant::now();
+        let window = Duration::from_secs(1);
+        let mut attempts = LoginAttempts::new(instant, window, 1);
+        let source =
+            |index: usize| Some(IpAddr::V4(Ipv4Addr::from_bits(0x0a00_0000 + index as u32)));
+
+        for index in 0..MAX_TRACKED_KEYS {
+            assert!(attempts.admit(instant, "member", source(index)));
+            attempts.succeeded(instant, "member", source(index));
+        }
+        for index in 0..5 {
+            assert!(attempts.admit(
+                instant,
+                &format!("new-member-{index}"),
+                source(MAX_TRACKED_KEYS + index),
+            ));
+        }
+        assert!(!attempts.admit(instant, "member", source(MAX_TRACKED_KEYS + 5)));
+        assert!(attempts.admit(instant, "member", source(0)));
+        assert!(attempts.admit(instant + window, "member", source(MAX_TRACKED_KEYS + 5)));
+    }
+
+    #[test]
     fn trusted_proxy_source_requires_explicit_loopback_peer() {
         let external: IpAddr = "192.0.2.1".parse().unwrap();
         let forwarded: IpAddr = "192.0.2.2".parse().unwrap();
@@ -278,7 +339,12 @@ mod tests {
         );
         assert_eq!(
             client_address(Some(loopback), false, Some("192.0.2.2")),
-            None
+            Some(loopback)
+        );
+        assert_eq!(client_address(Some(loopback), true, None), Some(loopback));
+        assert_eq!(
+            client_address(Some(loopback), true, Some("192.0.2.1, 192.0.2.2")),
+            Some(loopback)
         );
         assert_eq!(client_address(None, true, Some("192.0.2.2")), None);
     }

@@ -430,7 +430,7 @@ async fn start_job(
         .ok()
         .filter(|id| id.to_string() == input.operation_id)
         .ok_or_else(|| ApiError::invalid("Expected a canonical operation UUID"))?;
-    run(move || run_job(&service, &account, &workspace, operation))
+    run(move || run_job(&service, &account, &headers, &workspace, operation))
         .await
         .map(|job| (StatusCode::ACCEPTED, Json(job)))
 }
@@ -500,6 +500,7 @@ impl Drop for Running {
 fn run_job(
     service: &DocumentService,
     account: &Account,
+    headers: &HeaderMap,
     workspace: &str,
     operation: Uuid,
 ) -> Result<BackupJob, ApiError> {
@@ -575,7 +576,18 @@ fn run_job(
         Ok(transport) => transport,
         Err(error) => return job.finish(db, Err(error)),
     };
-    let latest = match transport.head() {
+    let remote_head = transport.head();
+    {
+        let _workspace = db.workspace_guard()?;
+        let active = Account::authenticate(&service.spaces, headers, true)?;
+        workspace::require_manage(service, &active, workspace)?;
+        let actual = load_targets(db, workspace)?;
+        let selected = Settings::load(db, workspace)?;
+        if selected.selected(&actual)?.key()? != job.target_key {
+            return Err(target_changed());
+        }
+    }
+    let latest = match remote_head {
         Ok(head) => head,
         Err(error) => return job.finish(db, Err(error)),
     };
@@ -584,15 +596,6 @@ fn run_job(
     }
     if latest != job.prior_commit {
         return job.finish(db, Err("The destination backup branch changed"));
-    }
-    {
-        let _workspace = db.workspace_guard()?;
-        workspace::require_manage(service, account, workspace)?;
-        let actual = load_targets(db, workspace)?;
-        let selected = Settings::load(db, workspace)?;
-        if selected.selected(&actual)?.key()? != job.target_key {
-            return Err(target_changed());
-        }
     }
     let result = transport.push(&job.planned_commit, job.prior_commit.as_deref());
     job.finish(db, result)

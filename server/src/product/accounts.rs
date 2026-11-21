@@ -264,9 +264,7 @@ async fn change_password(
         let version = users
             .credential_version(name)
             .ok_or_else(ApiError::not_found)?;
-        if input.current_password.len() > 4096
-            || !users.verify_password(name, &input.current_password)
-        {
+        if !users.verify_password(name, &input.current_password) {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
                 "incorrect_password",

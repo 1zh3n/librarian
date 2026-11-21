@@ -152,8 +152,10 @@ try {
   writeFileSync(join(root, ".librarian/runner-token.sha256"), createHash("sha256").update(runnerToken).digest("hex"));
   app = await launch(librarian, root);
   assert.equal((await fetch(`${app.origin}/sw.js`)).status, 200);
+  assert.equal((await fetch(`${app.origin}/accounts`, { redirect: "manual" })).status, 200);
   const api = await login(app.origin);
   assert.equal((await api("/session")).username, "owner");
+  assert.deepEqual(await api("/accounts"), [{ username: "owner", isAdmin: true, disabled: false }]);
   const { id } = await api("/workspaces", "POST", { name: "本地发行验收" }, 201);
   const base = `/workspaces/${id}`;
   const create = (path, markdown) => api(`${base}/documents`, "POST", { path, markdown, baseRevision: null }, 201);
@@ -174,12 +176,12 @@ try {
   mkdirSync(input);
   writeFileSync(join(input, "report.md"), ship);
   writeFileSync(join(input, "asset.bin"), asset);
-  const push = () => JSON.parse(command(docs, [
-    "push", input, "--workspace", id, "--delivery-id", "release-report",
+  const push = (workspace, deliveryId, token) => JSON.parse(command(docs, [
+    "push", input, "--workspace", workspace, "--delivery-id", deliveryId,
     "--source-name", "Release smoke test", "--url", app.origin,
-  ], { env: { ...process.env, LIBRARIAN_DELIVERY_TOKEN: delivery.token } }));
-  const receipt = push();
-  assert.deepEqual(push(), receipt);
+  ], { env: { ...process.env, LIBRARIAN_DELIVERY_TOKEN: token } }));
+  const receipt = push(id, "release-report", delivery.token);
+  assert.deepEqual(push(id, "release-report", delivery.token), receipt);
   assert.match(receipt.commitId, complete);
   const selected = (await api(`${base}/documents`)).find(({ path }) => path.endsWith("/report.md"));
   const snapshot = await api(`${base}/snapshots`, "POST", {
@@ -269,6 +271,8 @@ try {
       ? await oldApi(oldDeliveryPath, "POST", { name: "Unscoped stage 4 credential" }, 201)
       : undefined;
     const oldDoc = (await oldApi(`/workspaces/${oldSpace.id}/documents`))[0];
+    const legacyDeliveryId = "retained-legacy-delivery";
+    const oldReceipt = oldGrant ? push(oldSpace.id, legacyDeliveryId, oldGrant.token) : undefined;
     const oldWritten = await oldApi(`/workspaces/${oldSpace.id}/documents`, "POST", {
       path: "Persistent.md", markdown: note, baseRevision: null,
     }, 201);
@@ -300,7 +304,11 @@ try {
         }),
       });
       assert.equal(rejected.status, 401);
-      console.log("Passed prior-schema delivery credential retirement");
+      const replacement = await upgraded(oldDeliveryPath, "POST", {
+        name: "Scoped replacement credential", deliveryId: legacyDeliveryId,
+      }, 201);
+      assert.deepEqual(push(oldSpace.id, legacyDeliveryId, replacement.token), oldReceipt);
+      console.log("Passed prior-schema delivery credential retirement and receipt preservation");
     }
     console.log("Passed upgrade from the prior real binary, retaining Workspace and document identity");
   } else {

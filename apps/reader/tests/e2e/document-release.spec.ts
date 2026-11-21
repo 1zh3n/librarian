@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type {
+  BackupJob,
   DeliveryReceipt,
   DocumentSummary,
   Publication,
@@ -62,12 +63,45 @@ test("configures a Workspace backup and reloads its confirmed Git receipt", asyn
   await page.getByRole("option", { name: "逐操作" }).click();
   await panel.getByRole("button", { name: "保存备份设置" }).click();
   await expect(panel.getByText("备份设置已保存")).toBeVisible();
+  const completed = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith("/backup/jobs"),
+  );
   await panel.getByRole("button", { name: "立即备份" }).click();
+  const receipt = (await (await completed).json()) as BackupJob;
   await expect(panel.getByText("备份已完成")).toBeVisible();
   await expect(panel).toContainText(commitId);
   await page.reload();
   await expect(panel.getByText("备份已完成")).toBeVisible();
   await expect(panel.getByRole("button", { name: /逐操作.*备份粒度/ })).toBeVisible();
+
+  // Supply persisted failed and interrupted states while keeping retries on the real product API.
+  for (const { status, label } of [
+    { status: "failed", label: "重试备份" },
+    { status: "queued", label: "继续备份" },
+  ] as const) {
+    const prior = { ...receipt, status, commitId: null };
+    const configPath = `**/api/v1/workspaces/${workspace.id}/backup`;
+    const receiptPath = `${configPath}/jobs/${receipt.id}`;
+    await page.route(configPath, async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      await route.fulfill({ response, json: { ...config, lastJob: prior } });
+    });
+    await page.route(receiptPath, (route) => route.fulfill({ json: prior }));
+    await page.reload();
+
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (entry) => entry.request().method() === "POST" && entry.url().endsWith("/backup/jobs"),
+      ),
+      panel.getByRole("button", { name: label }).click(),
+    ]);
+    expect(response.request().postDataJSON()).toEqual({ operationId: receipt.id });
+    expect(await response.json()).toEqual(receipt);
+    await expect(panel.getByText("备份已完成")).toBeVisible();
+    await page.unroute(configPath);
+    await page.unroute(receiptPath);
+  }
 });
 
 test("publishes the explicitly selected Git version and documents to the configured target", async ({

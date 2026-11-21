@@ -22,11 +22,19 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_member_password(ORIGINAL)
+    }
+
+    fn with_member_password(member_password: &str) -> Self {
         let root = tempfile::tempdir().unwrap();
         let users = UserStore::create_empty(root.path()).unwrap();
-        for (name, admin) in [("admin", true), ("owner", false), ("member", false)] {
+        for (name, password, admin) in [
+            ("admin", ORIGINAL, true),
+            ("owner", ORIGINAL, false),
+            ("member", member_password, false),
+        ] {
             users
-                .create_user(name, ORIGINAL, admin, Profile::default())
+                .create_user(name, password, admin, Profile::default())
                 .unwrap();
         }
         let admin_token = users.create_token("admin", "account-fixture").unwrap();
@@ -123,6 +131,25 @@ impl Fixture {
         .await
         .0
     }
+}
+
+#[tokio::test]
+async fn member_can_replace_a_legacy_password_above_the_new_password_limit() {
+    let legacy_password = "p".repeat(4100);
+    let f = Fixture::with_member_password(&legacy_password);
+    let member = f.login("member", &legacy_password).await;
+    assert_eq!(
+        f.request(
+            "PUT",
+            "/session/password",
+            &member,
+            json!({ "currentPassword": legacy_password, "password": REPLACEMENT }),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    f.login("member", REPLACEMENT).await;
 }
 
 #[tokio::test]

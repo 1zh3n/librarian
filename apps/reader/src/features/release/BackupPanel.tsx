@@ -40,7 +40,7 @@ export function BackupPanel({ workspace }: { workspace: string }) {
     },
   });
   const start = useMutation({
-    mutationFn: () => api.startBackup(workspace, (operation.current ??= operationId())),
+    mutationFn: (id: string) => api.startBackup(workspace, id),
     onSuccess: (job) => {
       if (job.status === "succeeded") operation.current = undefined;
       void client.invalidateQueries({ queryKey: key, exact: true });
@@ -54,12 +54,13 @@ export function BackupPanel({ workspace }: { workspace: string }) {
     refetchInterval: (query) =>
       query.state.status !== "error" && running(query.state.data ?? recent) ? 650 : false,
   });
-  const latest = job.data ?? recent;
+  const latest = running(recent) ? (job.data ?? recent) : recent;
+  const retryId = latest?.status === "succeeded" ? undefined : latest?.id;
   const choices = [
     { value: "", label: "停用备份" },
     ...(saved?.targets.map(({ id, label }) => ({ value: id, label })) ?? []),
   ];
-  const startReady = Boolean(targetId && !dirty && !settings.isPending && !running(latest));
+  const startReady = Boolean(targetId && !dirty && !settings.isPending);
 
   return (
     <section aria-label="工作区备份" className={styles.section}>
@@ -117,14 +118,15 @@ export function BackupPanel({ workspace }: { workspace: string }) {
             <Button
               className={styles.primary}
               isDisabled={!startReady || start.isPending}
-              onPress={() => start.mutate()}
+              onPress={() => start.mutate(retryId ?? (operation.current ??= operationId()))}
             >
-              立即备份
+              {latest?.status === "failed" ? "重试备份" : retryId ? "继续备份" : "立即备份"}
             </Button>
           </div>
         </Form>
       )}
-      {(start.isPending || running(latest)) && <output className={styles.status}>正在备份…</output>}
+      {start.isPending && <output className={styles.status}>正在备份…</output>}
+      {!start.isPending && running(latest) && <output className={styles.status}>备份待完成</output>}
       {latest?.status === "succeeded" && (
         <div className={styles.result}>
           <output>备份已完成</output>
