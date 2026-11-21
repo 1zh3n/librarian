@@ -9,9 +9,10 @@ import type {
 } from "../../api/client";
 import { operationId } from "../../api/operationId";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form } from "../../ui/primitives";
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Field, Form, Select } from "../../ui/Forms";
 import { DocumentChecklist } from "../workspace/DocumentChecklist";
-import { Choice, Field } from "../workspace/ManagementFields";
 import styles from "../workspace/Management.module.css";
 
 export function PublicationPanel({
@@ -87,11 +88,11 @@ export function PublicationPanel({
   return (
     <section aria-label="Zola 发布" className={styles.section}>
       <h3>Zola 发布</h3>
-      {targets.isPending && <output className={styles.status}>正在读取发布目标…</output>}
+      {targets.isPending && <Feedback className={styles.status}>正在读取发布目标…</Feedback>}
       {targets.isError && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法读取发布目标。
-        </p>
+        </Feedback>
       )}
       {targets.data && choices.length === 0 && (
         <p className={styles.empty}>此空间尚未配置发布目标。</p>
@@ -108,33 +109,52 @@ export function PublicationPanel({
             if (ready && !busy) publish.mutate();
           }}
         >
-          <Choice label="发布目标" value={targetId} entries={choices} onChange={setTargetId} />
+          <Select
+            className={styles.field}
+            label="发布目标"
+            value={targetId}
+            entries={choices}
+            onChange={setTargetId}
+          />
           <DocumentChecklist documents={documents} selected={selected} onChange={setSelected} />
           <div className={styles.fields}>
             {revisionChoices.length > 0 && (
-              <Choice
+              <Select
+                className={styles.field}
                 label="文档版本"
                 value={commit}
                 entries={revisionChoices}
                 onChange={setCommit}
               />
             )}
-            <Field label="Git 提交 ID" value={commit} onChange={setCommit} required />
+            <Field
+              className={styles.field}
+              inputClassName={styles.input}
+              label="Git 提交 ID"
+              value={commit}
+              onChange={setCommit}
+              required
+            />
           </div>
           {publish.isError && (
-            <p role="alert" className={styles.status}>
+            <Feedback tone="error" className={styles.status}>
               无法提交发布，请检查目标、版本与文档。
-            </p>
+            </Feedback>
           )}
-          <Button className={styles.primary} type="submit" isDisabled={!ready || busy}>
+          <Button
+            variant="primary"
+            className={styles.primary}
+            type="submit"
+            isDisabled={!ready || busy}
+          >
             {publish.isPending ? "正在发布…" : "确认并发布"}
           </Button>
         </Form>
       )}
       {list.isError && !list.data && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法读取发布记录。
-        </p>
+        </Feedback>
       )}
       {list.data?.publications.length === 0 && <p className={styles.empty}>暂无发布记录。</p>}
       {Boolean(list.data?.publications.length) && (
@@ -157,9 +177,10 @@ export function PublicationPanel({
                     ))}
                   </ul>
                   {confirm.isError && confirm.variables === result.id && (
-                    <p role="alert">无法确认该发布。</p>
+                    <Feedback tone="error">无法确认该发布。</Feedback>
                   )}
                   <Button
+                    variant="outline"
                     className={styles.secondary}
                     isDisabled={busy}
                     onPress={() => confirm.mutate(result.id)}
@@ -172,8 +193,10 @@ export function PublicationPanel({
                   </Button>
                 </>
               )}
-              {result.status === "published" && <output>发布已完成</output>}
-              {result.status === "failed" && <p role="alert">{result.message || "发布失败。"}</p>}
+              {result.status === "published" && <Feedback tone="success">发布已完成</Feedback>}
+              {result.status === "failed" && (
+                <Feedback tone="error">{result.message || "发布失败。"}</Feedback>
+              )}
               {result.publishedCommitId && (
                 <div>
                   发布版本 <code>{result.publishedCommitId}</code>

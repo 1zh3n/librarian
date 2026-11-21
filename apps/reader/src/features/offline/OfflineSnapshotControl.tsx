@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button } from "../../ui/primitives";
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
 import { offlineAvailable, offlineRequest } from "./readerOffline";
 import styles from "../../routes/SnapshotRoute.module.css";
 
@@ -52,8 +53,12 @@ export function OfflineSnapshotControl({ id, offline }: { id: string; offline: b
       >
         {pending ? "正在更新离线副本…" : saved ? "移除离线副本" : "保存离线副本"}
       </Button>
-      {offline ? <output>正在读取离线副本</output> : saved ? <output>已保存离线副本</output> : null}
-      {error && <p role="alert">无法更新离线副本，请检查网络或设备存储。</p>}
+      {offline ? (
+        <Feedback>正在读取离线副本</Feedback>
+      ) : saved ? (
+        <Feedback tone="success">已保存离线副本</Feedback>
+      ) : null}
+      {error && <Feedback tone="error">无法更新离线副本，请检查网络或设备存储。</Feedback>}
     </div>
   );
 }

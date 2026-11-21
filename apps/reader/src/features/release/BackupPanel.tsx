@@ -4,8 +4,9 @@ import { ApiError, api } from "../../api/client";
 import type { BackupJob, BackupSettings, SaveBackupSettings } from "../../api/client";
 import { operationId } from "../../api/operationId";
 import { workspaceKeys } from "../../api/queries";
-import { Button, Form } from "../../ui/primitives";
-import { Choice } from "../workspace/ManagementFields";
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Form, Select } from "../../ui/Forms";
 import styles from "../workspace/Management.module.css";
 
 const modes = [
@@ -85,11 +86,11 @@ export function BackupPanel({ workspace }: { workspace: string }) {
   return (
     <section aria-label={heading} className={styles.section}>
       <h3>{heading}</h3>
-      {config.isPending && <output className={styles.status}>正在读取备份设置…</output>}
+      {config.isPending && <Feedback className={styles.status}>正在读取备份设置…</Feedback>}
       {config.isError && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法读取备份设置。
-        </p>
+        </Feedback>
       )}
       {saved && !hasTargets && (
         <p className={styles.empty}>
@@ -98,9 +99,9 @@ export function BackupPanel({ workspace }: { workspace: string }) {
         </p>
       )}
       {saved && (saved.targetNeedsSelection || targetChanged) && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           已选备份目标发生变更，请重新选择并保存。
-        </p>
+        </Feedback>
       )}
       {saved && hasTargets && (
         <Form
@@ -115,13 +116,15 @@ export function BackupPanel({ workspace }: { workspace: string }) {
           }}
         >
           <div className={styles.fields}>
-            <Choice
+            <Select
+              className={styles.field}
               label="备份目标"
               value={targetId ?? ""}
               entries={choices}
               onChange={(next) => setEdited({ targetId: next || null, mode })}
             />
-            <Choice
+            <Select
+              className={styles.field}
               label="备份粒度"
               value={mode}
               entries={modes}
@@ -144,15 +147,18 @@ export function BackupPanel({ workspace }: { workspace: string }) {
             </div>
           )}
           {settings.isSuccess && !dirty && (
-            <output className={styles.status}>备份设置已保存</output>
+            <Feedback tone="success" className={styles.status}>
+              备份设置已保存
+            </Feedback>
           )}
           {settings.isError && (
-            <p role="alert" className={styles.status}>
+            <Feedback tone="error" className={styles.status}>
               无法保存备份设置。
-            </p>
+            </Feedback>
           )}
           <div className={styles.actions}>
             <Button
+              variant="outline"
               className={styles.secondary}
               type="submit"
               isDisabled={settings.isPending || start.isPending}
@@ -160,6 +166,7 @@ export function BackupPanel({ workspace }: { workspace: string }) {
               {settings.isPending ? "正在保存…" : "保存备份设置"}
             </Button>
             <Button
+              variant="primary"
               className={styles.primary}
               isDisabled={!startReady || start.isPending || targetChanged}
               onPress={() => {
@@ -177,13 +184,13 @@ export function BackupPanel({ workspace }: { workspace: string }) {
       {saved?.targetId && !dirty && !latest && !start.isPending && !start.isError && (
         <p className={styles.empty}>已选择目标，尚未备份。</p>
       )}
-      {start.isPending && <output className={styles.status}>正在备份…</output>}
+      {start.isPending && <Feedback className={styles.status}>正在备份…</Feedback>}
       {!start.isPending && unfinished(latest) && (
-        <output className={styles.status}>备份待续</output>
+        <Feedback className={styles.status}>备份待续</Feedback>
       )}
       {!start.isPending && latest?.status === "succeeded" && (
         <div className={styles.result}>
-          <output>备份已完成</output>
+          <Feedback tone="success">备份已完成</Feedback>
           {latest.sourceCommitId && (
             <div>
               来源版本 <code>{latest.sourceCommitId}</code>
@@ -197,19 +204,19 @@ export function BackupPanel({ workspace }: { workspace: string }) {
         </div>
       )}
       {!start.isPending && latest?.status === "failed" && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           备份失败，请重试。{latest.message && ` ${latest.message}`}
-        </p>
+        </Feedback>
       )}
       {start.isError && !targetChanged && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法开始备份，请重试。
-        </p>
+        </Feedback>
       )}
       {job.isError && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法读取备份状态。
-        </p>
+        </Feedback>
       )}
     </section>
   );

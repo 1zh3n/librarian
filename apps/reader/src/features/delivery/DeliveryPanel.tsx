@@ -6,8 +6,10 @@ import type { DeliveryManifest, DeliveryReceipt, DocumentSummary } from "../../a
 import { operationId } from "../../api/operationId";
 import { documentsQuery, sessionQuery, workspaceKeys } from "../../api/queries";
 import { Disclosure } from "../../ui/Disclosure";
-import { Button, FilePicker, Form } from "../../ui/primitives";
-import { Field } from "../workspace/ManagementFields";
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { FilePicker } from "../../ui/FilePicker";
+import { Field, Form } from "../../ui/Forms";
 import styles from "../workspace/Management.module.css";
 import { deliveryHistory } from "./deliveryHistory";
 
@@ -266,9 +268,24 @@ function WorkspaceDelivery({
                 。请选择该来源的完整文件，未包含的原有文件会移除。
               </p>
               <div className={styles.fields}>
-                <Field label="来源名称" value={sourceName} onChange={setSourceName} required />
-                <Field label="版本（可选）" value={version} onChange={setVersion} />
                 <Field
+                  className={styles.field}
+                  inputClassName={styles.input}
+                  label="来源名称"
+                  value={sourceName}
+                  onChange={setSourceName}
+                  required
+                />
+                <Field
+                  className={styles.field}
+                  inputClassName={styles.input}
+                  label="版本（可选）"
+                  value={version}
+                  onChange={setVersion}
+                />
+                <Field
+                  className={styles.field}
+                  inputClassName={styles.input}
                   label="生成时间（可选）"
                   type="datetime-local"
                   value={generatedAt}
@@ -278,7 +295,7 @@ function WorkspaceDelivery({
             </>
           )}
           {resumed && !upload.isPending && (
-            <output className={styles.status}>
+            <Feedback className={styles.status}>
               {!lookingUpReceipt
                 ? "无法从记录确认此次更新。请重新选择同一批文件，或取消此次导入。"
                 : history.isPending
@@ -286,7 +303,7 @@ function WorkspaceDelivery({
                   : history.isError
                     ? "无法核对此次导入，请重新打开导入记录。"
                     : "未查到此次导入回执。请重新选择同一批文件，或取消此次导入。"}
-            </output>
+            </Feedback>
           )}
           {!source && !resumed && (
             <p className={styles.status}>选择 Markdown 文件，或选择包含文档和附件的 ZIP。</p>
@@ -308,20 +325,23 @@ function WorkspaceDelivery({
             </ul>
           )}
           {invalid && (
-            <p className={styles.status} role="alert">
+            <Feedback tone="error" className={styles.status}>
               {invalid}
-            </p>
+            </Feedback>
           )}
           {completed && (
-            <output className={styles.status}>导入已完成 · {receiptSummary(completed)}</output>
+            <Feedback tone="success" className={styles.status}>
+              导入已完成 · {receiptSummary(completed)}
+            </Feedback>
           )}
           {upload.isError && !recovered && (
-            <p role="alert" className={styles.status}>
+            <Feedback tone="error" className={styles.status}>
               {uploadError(upload.error)}
-            </p>
+            </Feedback>
           )}
           <div className={styles.actions}>
             <Button
+              variant="primary"
               className={styles.primary}
               type="submit"
               isDisabled={!ready || upload.isPending || Boolean(recovered)}
@@ -329,7 +349,12 @@ function WorkspaceDelivery({
               {upload.isPending ? "正在导入…" : upload.isError || resumed ? "重试导入" : "确认导入"}
             </Button>
             {(source || resumed || upload.isError) && (
-              <Button className={styles.secondary} onPress={cancel} isDisabled={upload.isPending}>
+              <Button
+                variant="outline"
+                className={styles.secondary}
+                onPress={cancel}
+                isDisabled={upload.isPending}
+              >
                 取消本次导入
               </Button>
             )}
@@ -338,8 +363,8 @@ function WorkspaceDelivery({
       )}
       <section aria-label="导入记录" className={styles.section}>
         <h4>导入记录</h4>
-        {history.isPending && <output className={styles.status}>正在读取导入记录…</output>}
-        {history.isError && !history.data && <p role="alert">无法读取导入记录。</p>}
+        {history.isPending && <Feedback className={styles.status}>正在读取导入记录…</Feedback>}
+        {history.isError && !history.data && <Feedback tone="error">无法读取导入记录。</Feedback>}
         {history.data?.length === 0 && <p className={styles.empty}>暂无导入记录。</p>}
         {recent.length > 0 && (
           <ul className={styles.records} aria-label="导入回执">
@@ -351,26 +376,17 @@ function WorkspaceDelivery({
                 </div>
                 <div>{receiptSummary(record)}</div>
                 {receiptChanges(workspace, record, byPath)}
-                <Disclosure>
-                  <Disclosure.Heading>
-                    <Disclosure.Trigger>
-                      回执详情
-                      <Disclosure.Indicator />
-                    </Disclosure.Trigger>
-                  </Disclosure.Heading>
-                  <Disclosure.Content>
-                    <Disclosure.Body>
-                      <div>
-                        来源 ID <code>{record.deliveryId}</code>
-                      </div>
-                      <div>
-                        版本记录 <code>{record.commitId}</code>
-                      </div>
-                    </Disclosure.Body>
-                  </Disclosure.Content>
+                <Disclosure title="回执详情">
+                  <div>
+                    来源 ID <code>{record.deliveryId}</code>
+                  </div>
+                  <div>
+                    版本记录 <code>{record.commitId}</code>
+                  </div>
                 </Disclosure>
                 {writable && latest.get(record.deliveryId) === record.operationId && (
                   <Button
+                    variant="outline"
                     className={styles.secondary}
                     isDisabled={upload.isPending}
                     onPress={() => editSource(record)}

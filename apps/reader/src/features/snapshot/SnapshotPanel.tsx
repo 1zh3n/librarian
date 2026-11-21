@@ -3,9 +3,10 @@ import { useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { CreateSnapshot, DocumentSummary, SnapshotLink } from "../../api/client";
 import { Disclosure } from "../../ui/Disclosure";
-import { Button, Form, Label, TextArea, TextField } from "../../ui/primitives";
+import { Button } from "../../ui/Button";
+import { Feedback } from "../../ui/Feedback";
+import { Field, Form, Select, TextAreaField } from "../../ui/Forms";
 import { DocumentChecklist } from "../workspace/DocumentChecklist";
-import { Choice, Field } from "../workspace/ManagementFields";
 import styles from "../workspace/Management.module.css";
 
 const kinds = [
@@ -81,57 +82,73 @@ export function SnapshotPanel({
           }}
         >
           <div className={styles.fields}>
-            <Choice label="地址类型" value={kind} entries={kinds} onChange={setKind} />
-            <Choice label="访问范围" value={audience} entries={audiences} onChange={setAudience} />
+            <Select
+              className={styles.field}
+              label="地址类型"
+              value={kind}
+              entries={kinds}
+              onChange={setKind}
+            />
+            <Select
+              className={styles.field}
+              label="访问范围"
+              value={audience}
+              entries={audiences}
+              onChange={setAudience}
+            />
           </div>
           <DocumentChecklist documents={documents} selected={selected} onChange={setSelected} />
-          <Disclosure isExpanded={expanded} onExpandedChange={setExpanded}>
-            <Disclosure.Heading>
-              <Disclosure.Trigger>
-                {kind === "release" ? "版本、有效期与附件" : "有效期与附件"}
-                <Disclosure.Indicator />
-              </Disclosure.Trigger>
-            </Disclosure.Heading>
-            <Disclosure.Content>
-              <Disclosure.Body className={styles.form}>
-                <div className={styles.fields}>
-                  <Field
-                    label="地址到期时间（可选）"
-                    type="datetime-local"
-                    value={expiry}
-                    onChange={(value) => {
-                      setExpiry(value);
-                      setExpiryError(false);
-                    }}
-                  />
-                  {kind === "release" && (
-                    <Field label="提交 ID（可选）" value={commit} onChange={setCommit} />
-                  )}
-                </div>
-                <TextField
+          <Disclosure
+            title={kind === "release" ? "版本、有效期与附件" : "有效期与附件"}
+            expanded={expanded}
+            onChange={setExpanded}
+            bodyClassName={styles.form}
+          >
+            <div className={styles.fields}>
+              <Field
+                className={styles.field}
+                inputClassName={styles.input}
+                label="地址到期时间（可选）"
+                type="datetime-local"
+                value={expiry}
+                onChange={(value) => {
+                  setExpiry(value);
+                  setExpiryError(false);
+                }}
+              />
+              {kind === "release" && (
+                <Field
                   className={styles.field}
-                  value={attachmentInput}
-                  onChange={setAttachmentInput}
-                >
-                  <Label>附件路径（可选，每行一项）</Label>
-                  <TextArea rows={2} className={styles.input} />
-                </TextField>
-                {expiryError && (
-                  <p role="alert" className={styles.status}>
-                    到期时间必须晚于现在。
-                  </p>
-                )}
-              </Disclosure.Body>
-            </Disclosure.Content>
+                  inputClassName={styles.input}
+                  label="提交 ID（可选）"
+                  value={commit}
+                  onChange={setCommit}
+                />
+              )}
+            </div>
+            <TextAreaField
+              label="附件路径（可选，每行一项）"
+              className={styles.field}
+              inputClassName={styles.input}
+              rows={2}
+              value={attachmentInput}
+              onChange={setAttachmentInput}
+            />
+            {expiryError && (
+              <Feedback tone="error" className={styles.status}>
+                到期时间必须晚于现在。
+              </Feedback>
+            )}
           </Disclosure>
           {create.isError && (
-            <p role="alert" className={styles.status}>
+            <Feedback tone="error" className={styles.status}>
               {create.error instanceof ApiError && create.error.status === 409
                 ? "当前内容或所选版本已变化，请检查后重试。"
                 : "无法创建阅读地址，请检查文档、附件和版本。"}
-            </p>
+            </Feedback>
           )}
           <Button
+            variant="primary"
             className={styles.primary}
             type="submit"
             isDisabled={!documentIds.length || create.isPending}
@@ -141,7 +158,9 @@ export function SnapshotPanel({
         </Form>
       )}
       {create.isSuccess && addresses.some(({ id }) => id === create.data.id) && (
-        <output className={styles.status}>已创建阅读地址</output>
+        <Feedback tone="success" className={styles.status}>
+          已创建阅读地址
+        </Feedback>
       )}
       {addresses.length > 0 && (
         <ul className={styles.records} aria-label="已创建的阅读地址">
@@ -154,6 +173,7 @@ export function SnapshotPanel({
                 {new URL(address.url, window.location.origin).href}
               </div>
               <Button
+                variant="outline"
                 className={styles.secondary}
                 isDisabled={revoke.isPending}
                 onPress={() => revoke.mutate(address.id)}
@@ -164,11 +184,15 @@ export function SnapshotPanel({
           ))}
         </ul>
       )}
-      {revoke.isSuccess && <output className={styles.status}>阅读地址已撤销</output>}
+      {revoke.isSuccess && (
+        <Feedback tone="success" className={styles.status}>
+          阅读地址已撤销
+        </Feedback>
+      )}
       {revoke.isError && (
-        <p role="alert" className={styles.status}>
+        <Feedback tone="error" className={styles.status}>
           无法撤销阅读地址。
-        </p>
+        </Feedback>
       )}
     </section>
   );
