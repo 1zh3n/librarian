@@ -7,29 +7,25 @@ import {
   Heading,
   Input,
   Label,
-  ListBox,
-  ListBoxItem,
   Modal,
   ModalOverlay,
-  Popover,
-  Select,
-  SelectValue,
   TextField,
 } from "../../ui/primitives";
+import { SettingsChoice } from "./SettingsChoice";
 import { AiSettings } from "./AiSettings";
 import { Tabs } from "../../ui/Tabs";
 import type { DevicePreferences } from "../../api/client";
 import styles from "./ReadingSettings.module.css";
 
 const themes = [
-  { id: "system", name: "跟随系统" },
-  { id: "light", name: "浅色" },
-  { id: "dark", name: "深色" },
-];
+  { value: "system", label: "跟随系统" },
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+] as const;
 const fonts = [
-  { id: "serif", name: "衬线" },
-  { id: "sans", name: "无衬线" },
-];
+  { value: "serif", label: "衬线" },
+  { value: "sans", label: "无衬线" },
+] as const;
 
 type SettingsActions = {
   save: (changes: Partial<DevicePreferences>) => Promise<DevicePreferences>;
@@ -128,7 +124,7 @@ export function ReadingSettings({
                 (account && isAdmin !== undefined ? (
                   <AiSettings
                     key={account}
-                    account={account}
+                    username={account}
                     isAdmin={isAdmin}
                     active={tab === "ai"}
                     busy={saving}
@@ -206,51 +202,8 @@ function PreferencesForm({
       }}
     >
       <Tabs.Panel id="appearance" shouldForceMount className={styles.panel}>
-        <Select
-          value={theme}
-          onChange={(value) => {
-            const next = themes.find((item) => item.id === value)?.id;
-            if (next === "system" || next === "light" || next === "dark") setTheme(next);
-          }}
-          className={styles.field}
-        >
-          <Label>主题</Label>
-          <Button className={styles.input}>
-            <SelectValue />
-            <span aria-hidden="true">⌄</span>
-          </Button>
-          <Popover className={styles.options}>
-            <ListBox items={themes}>
-              {(item) => (
-                <ListBoxItem className={styles.option} id={item.id}>
-                  {item.name}
-                </ListBoxItem>
-              )}
-            </ListBox>
-          </Popover>
-        </Select>
-        <Select
-          value={font}
-          onChange={(value) => {
-            if (value === "serif" || value === "sans") setFont(value);
-          }}
-          className={styles.field}
-        >
-          <Label>字体</Label>
-          <Button className={styles.input}>
-            <SelectValue />
-            <span aria-hidden="true">⌄</span>
-          </Button>
-          <Popover className={styles.options}>
-            <ListBox items={fonts}>
-              {(item) => (
-                <ListBoxItem className={styles.option} id={item.id}>
-                  {item.name}
-                </ListBoxItem>
-              )}
-            </ListBox>
-          </Popover>
-        </Select>
+        <SettingsChoice label="主题" value={theme} entries={themes} onChange={setTheme} />
+        <SettingsChoice label="字体" value={font} entries={fonts} onChange={setFont} />
         <Checkbox className={styles.checkbox} isSelected={eink} onChange={setEink}>
           <span className={styles.mark} aria-hidden="true" /> 墨水屏
         </Checkbox>

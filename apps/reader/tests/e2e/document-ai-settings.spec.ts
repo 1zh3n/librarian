@@ -324,3 +324,66 @@ test.describe("AI connection form on touch screens", () => {
     });
   }
 });
+
+test("Tab from a completed key keeps a focus target for Escape during automatic discovery", async ({
+  page,
+}) => {
+  await admin(page);
+  const started = gate();
+  const reply = gate();
+  await page.route(endpoint, async (route) => {
+    started.resolve();
+    await reply.promise;
+    await respond(route, catalog);
+  });
+  const dialog = await openAi(page);
+  const key = dialog.getByLabel("API Key", { exact: true });
+  const refresh = dialog.getByRole("button", { name: "刷新模型" });
+  try {
+    await key.fill("fixture-focus");
+    await key.press("Tab");
+    await expect(refresh).toBeFocused();
+    await started.promise;
+    await expect(dialog.getByText("正在获取模型目录…")).toBeVisible();
+    test.info().annotations.push({
+      type: "pending-focus",
+      description: await page.evaluate(() => document.activeElement?.tagName ?? "none"),
+    });
+  } finally {
+    reply.resolve();
+  }
+  await expect(dialog.getByRole("button", { name: /田野推理/ })).toBeVisible();
+  const active = await page.evaluate(() => ({
+    tag: document.activeElement?.tagName,
+    role: document.activeElement?.getAttribute("role"),
+  }));
+  test.info().annotations.push({ type: "catalog-focus", description: JSON.stringify(active) });
+  await expect(refresh, JSON.stringify(active)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog, JSON.stringify(active)).toBeHidden();
+  await expect(trigger(page)).toBeFocused();
+});
+
+test("long provider IDs wrap inside the narrow settings form and model menu", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await admin(page);
+  const id = "reasoning_model_".repeat(12);
+  await page.route(endpoint, (route) => respond(route, [{ id }]));
+  const dialog = await openAi(page);
+  await dialog.getByLabel("API Key", { exact: true }).fill("fixture-layout");
+  const model = dialog.getByRole("button", { name: / 模型$/ });
+  await expect(model).toBeVisible();
+  expect(await dialog.evaluate((node) => node.scrollWidth - node.clientWidth)).toBe(0);
+  await model.click();
+  const option = page.getByRole("option", { name: id });
+  await expect(option).toBeInViewport({ ratio: 1 });
+  await option.press("Enter");
+  await expect(model).toBeFocused();
+  await expect(model).toContainText(id);
+  await expect(model.locator("..")).toHaveCSS("outline-style", "none");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const effort = dialog.getByRole("button", { name: /思考等级/ });
+  const top = async (element: typeof model) =>
+    element.evaluate((node) => node.getBoundingClientRect().top);
+  expect(Math.abs((await top(model)) - (await top(effort)))).toBeLessThan(2);
+});

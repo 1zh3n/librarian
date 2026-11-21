@@ -4,7 +4,7 @@ import type {
   ModelSelection,
   ThinkingSelection,
 } from "../../api/client";
-import { Choice } from "../workspace/ManagementFields";
+import { SettingsChoice } from "./SettingsChoice";
 import styles from "./ReadingSettings.module.css";
 
 export type ModelChoice = Pick<ModelSelection, "modelId" | "thinking">;
@@ -56,13 +56,13 @@ export function ModelChoices({
   return (
     <>
       <div className={styles.catalog}>
-        <Choice
+        <SettingsChoice
           label="模型"
           value={model.id}
           entries={models.map(({ id, name }) => ({ value: id, label: name || id }))}
           onChange={(modelId) => change({ modelId, thinking: defaultThinking })}
         />
-        <Choice
+        <SettingsChoice
           label="思考等级"
           value={thinking.mode === "effort" ? "effort:" + thinking.level : thinking.mode}
           entries={[

@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef, useState } from "react";
 import { ApiError, getAiSettings, setAiGlobalEnabled, setAiPreference } from "../../api/client";
 import type { AiSettingsView, ModelSelection } from "../../api/client";
 import { Button } from "../../ui/primitives";
-import { Choice } from "../workspace/ManagementFields";
+import { SettingsChoice } from "./SettingsChoice";
 import { AiConnectionForm } from "./AiConnectionForm";
 import { ModelChoices, availableChoice, choiceLabel } from "./ModelChoices";
 import styles from "./ReadingSettings.module.css";
@@ -16,6 +16,7 @@ export type SettingsWrite = (
 
 function writeError(error: unknown) {
   if (error instanceof ApiError) {
+    if (error.code === "runner_offline") return "受管执行器离线，请刷新服务状态后重试。";
     if (error.status === 409)
       return "配置版本或发现票据已失效。请刷新模型，或重新读取设置后再提交。";
     if (error.status === 401 || error.status === 403)
@@ -50,7 +51,7 @@ function PreferenceForm({ view, write }: { view: AiSettingsView; write: Settings
       )}
       {choices.length || view.preference ? (
         <>
-          <Choice
+          <SettingsChoice
             label="模型连接"
             value={current?.id ?? "global"}
             entries={[
@@ -89,23 +90,32 @@ function PreferenceForm({ view, write }: { view: AiSettingsView; write: Settings
 
 export function AiSettings({
   isAdmin,
-  account,
+  username,
   active,
   busy,
   setBusy,
 }: {
   isAdmin: boolean;
-  account: string;
+  username: string;
   active: boolean;
   busy: boolean;
   setBusy: (value: boolean) => void;
 }) {
+  const client = useQueryClient();
+  const applySnapshot = useCallback(
+    (view: AiSettingsView) => {
+      client.setQueryData(["ai", "settings", username], view);
+    },
+    [client, username],
+  );
   const query = useQuery({
-    queryKey: ["ai-settings", account],
+    queryKey: ["ai", "settings", username],
+    staleTime: 0,
     queryFn: ({ signal }) => getAiSettings(signal),
     enabled: active,
     refetchOnWindowFocus: false,
   });
+  const [savedSelection, setSavedSelection] = useState<ModelSelection>();
   const [editing, setEditing] = useState<string>();
   const [epoch, setEpoch] = useState(0);
   const [message, setMessage] = useState("");
@@ -166,7 +176,7 @@ export function AiSettings({
         {isAdmin && (
           <section aria-label="管理连接" className={styles.section}>
             {view.connections.length > 0 && (
-              <Choice
+              <SettingsChoice
                 label="管理连接"
                 value={connection?.id ?? "new"}
                 entries={[
@@ -175,21 +185,30 @@ export function AiSettings({
                 ]}
                 onChange={(id) => {
                   setEditing(id);
+                  setSavedSelection(undefined);
                   setError("");
                   setMessage("");
                 }}
               />
             )}
             <AiConnectionForm
-              key={JSON.stringify([connection?.id, connection?.version, epoch])}
+              key={JSON.stringify([connection?.id, epoch])}
               connection={connection}
+              initialChoice={
+                connection && savedSelection?.connectionId === connection.id
+                  ? savedSelection
+                  : undefined
+              }
               settings={view}
               active={active}
-              saved={(id) => {
+              saved={(id, choice) => {
+                setSavedSelection(id && choice ? { connectionId: id, ...choice } : undefined);
                 setEditing(id);
                 setEpoch((n) => n + 1);
               }}
               write={write}
+              refreshSettings={() => query.refetch()}
+              applySnapshot={applySnapshot}
             />
           </section>
         )}
@@ -197,6 +216,14 @@ export function AiSettings({
         {isAdmin ? (
           <section aria-label="全局 AI" className={styles.section}>
             <h3>全局 AI</h3>
+            <p className={styles.detail}>受管执行器{view.runnerOnline ? "在线" : "离线"}</p>
+            <Button
+              className={styles.refresh}
+              isDisabled={query.isFetching}
+              onPress={() => void query.refetch()}
+            >
+              刷新服务状态
+            </Button>
             {view.defaultSelection && (
               <p className={styles.detail}>
                 全局默认 · {choiceLabel(view.connections, view.defaultSelection)}

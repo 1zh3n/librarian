@@ -31,6 +31,11 @@ test("discovery binds create, rotated credentials and the saved connection versi
   await label.fill("田野模型");
   await expect(submit).toBeDisabled();
   await dialog.getByLabel("API Key", { exact: true }).fill("first-secret");
+  const effort = dialog
+    .getByRole("region", { name: "管理连接" })
+    .getByRole("button", { name: /思考等级/ });
+  await effort.click();
+  await page.getByRole("option", { name: "heavy", exact: true }).click();
   await submit.click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toEqual({
@@ -41,6 +46,7 @@ test("discovery binds create, rotated credentials and the saved connection versi
     discoveryId: "ticket-0",
   });
   await expect(dialog.getByText("已配置密钥", { exact: true })).toBeVisible();
+  await expect(effort).toContainText("heavy");
   const key = dialog.getByLabel("API Key", { exact: true });
   await expect(key).toBeEmpty();
   const url = dialog.getByLabel("API 基础地址");
@@ -211,4 +217,81 @@ test("version conflicts preserve the draft and clear, disable, and removal use e
     { expectedVersion: 8, keyChange: { kind: "clear" } },
     ["DELETE", "9"],
   ]);
+});
+
+test("a saved catalog already committed by discovery supplies the next connection version", async ({
+  page,
+}) => {
+  const initial = { ...saved, fetchedAt: saved.fetchedAt - 1000 };
+  const current = { ...saved, version: 8, models: [{ id: "updated" }] };
+  let refreshed = false;
+  await page.route(endpoint, (route) =>
+    route.fulfill({ json: { ...snapshot, connections: [refreshed ? current : initial] } }),
+  );
+  await page.route(endpoint + "/discover", (route) => {
+    refreshed = true;
+    return route.fulfill({
+      json: { discoveryId: "saved-catalog", fetchedAt: current.fetchedAt, models: current.models },
+    });
+  });
+  const writes: unknown[] = [];
+  await page.route(endpoint + "/connections/field", (route) => {
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ status: 204 });
+  });
+  const dialog = await openSettings(page);
+  await expect(dialog.getByRole("button", { name: "updated 模型" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "保存连接" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "停用连接", exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes).toEqual([{ expectedVersion: 8, enabled: false }]);
+});
+
+test("changing the signed-in account hides the previous settings while the new snapshot loads", async ({
+  page,
+}) => {
+  let member = false;
+  let release = () => {};
+  const memberSettings = new Promise<void>((done) => {
+    release = done;
+  });
+  await page.route("**/api/v1/session", (route) =>
+    member
+      ? route.fulfill({ json: { username: "member-after-change", isAdmin: false } })
+      : route.continue(),
+  );
+  await page.route(endpoint, async (route) => {
+    if (member) {
+      await memberSettings;
+      await route.fulfill({
+        json: { ...snapshot, connections: [], preference: null, effectiveSelection: null },
+      });
+    } else {
+      await route.fulfill({
+        json: {
+          ...snapshot,
+          connections: [{ ...saved, label: "管理员的原连接" }],
+          effectiveSelection: selection,
+        },
+      });
+    }
+  });
+  const dialog = await openSettings(page);
+  const mine = dialog.getByRole("region", { name: "我的模型" });
+  await expect(mine).toContainText("管理员的原连接");
+  await page.clock.install();
+  try {
+    member = true;
+    await page.clock.fastForward(25000);
+    const refreshed = page.waitForResponse((response) =>
+      response.url().endsWith("/api/v1/session"),
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+    await refreshed;
+    await expect(dialog.getByLabel("API Key")).toHaveCount(0);
+    await expect(dialog).not.toContainText("管理员的原连接");
+  } finally {
+    release();
+  }
+  await expect(mine).toContainText("尚无已启用");
 });

@@ -1,6 +1,8 @@
+import { replaceEqualDeep } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  getAiSettings,
   discoverAiModels,
   createAiConnection,
   updateAiConnection,
@@ -16,6 +18,7 @@ import type {
   UpdateAiConnection,
 } from "../../api/client";
 import { Button, Form, Input, Label, TextField } from "../../ui/primitives";
+import { AiManagedControls } from "./AiManagedControls";
 import { ModelChoices, availableChoice } from "./ModelChoices";
 import type { ModelChoice } from "./ModelChoices";
 import type { SettingsWrite } from "./AiSettings";
@@ -72,18 +75,26 @@ function discoveryError(error: unknown) {
 type Catalog = Pick<AiDiscovery, "fetchedAt" | "models"> & { discoveryId?: string };
 
 export function AiConnectionForm({
-  connection,
+  connection: initialConnection,
+  initialChoice,
   settings,
   write,
   active,
   saved,
+  refreshSettings,
+  applySnapshot,
 }: {
   connection: AiConnection | undefined;
+  initialChoice: ModelChoice | undefined;
   settings: AiSettingsView;
   write: SettingsWrite;
   active: boolean;
-  saved: (id?: string) => void;
+  saved: (id?: string, choice?: ModelChoice) => void;
+  refreshSettings: () => Promise<unknown>;
+  applySnapshot: (view: AiSettingsView) => void;
 }) {
+  const [connection, setConnection] = useState(initialConnection);
+  const checkedOnOpen = useRef(false);
   const [label, setLabel] = useState(connection?.label ?? "DeepSeek");
   const [draft, setDraft] = useState({
     ...initialDraft,
@@ -96,7 +107,10 @@ export function AiConnectionForm({
   const [confirm, setConfirm] = useState<"remove" | "clear">();
   const [catalog, setCatalog] = useState<Catalog | undefined>(connection);
   const [selected, setSelected] = useState<ModelChoice | null>(
-    settings.defaultSelection?.connectionId === connection?.id ? settings.defaultSelection : null,
+    initialChoice ??
+      (settings.defaultSelection?.connectionId === connection?.id
+        ? settings.defaultSelection
+        : null),
   );
   const request = useRef<AbortController>(null);
   const baseUrl = draft.baseUrl.trim();
@@ -129,6 +143,7 @@ export function AiConnectionForm({
 
   function change(field: "apiKey" | "baseUrl", value: string) {
     request.current?.abort();
+    checkedOnOpen.current = false;
     const next = { ...draft, [field]: value };
     setDraft(next);
     setCatalog(
@@ -142,15 +157,22 @@ export function AiConnectionForm({
   }
 
   useEffect(() => {
+    if (!active) {
+      checkedOnOpen.current = false;
+      return;
+    }
     if (
       !ready ||
-      !active ||
-      (stored && !refresh && fetchedAt !== undefined && Date.now() / 1000 - fetchedAt <= 900)
+      (stored &&
+        !refresh &&
+        (checkedOnOpen.current ||
+          (fetchedAt !== undefined && Date.now() / 1000 - fetchedAt <= 900)))
     )
       return;
     const ctrl = new AbortController();
     request.current = ctrl;
     const fetchCatalog = async () => {
+      if (stored) checkedOnOpen.current = true;
       setPending(true);
       setError("");
       try {
@@ -162,6 +184,23 @@ export function AiConnectionForm({
         if (!result.models.length) {
           setError("供应商返回的模型目录为空，请检查连接后刷新模型。");
           setCatalog(stored ? connection : undefined);
+        } else if (stored && connection) {
+          const view = await getAiSettings(ctrl.signal);
+          if (ctrl.signal.aborted) return;
+          const current = view.connections.find((item) => item.id === connection.id);
+          if (
+            current &&
+            current.baseUrl === connection.baseUrl &&
+            current.fetchedAt === result.fetchedAt &&
+            replaceEqualDeep(current.models, result.models) === current.models
+          ) {
+            setConnection(current);
+            setCatalog(current);
+            setRefresh(0);
+          } else {
+            setCatalog(result);
+          }
+          applySnapshot(view);
         } else setCatalog(result);
       } catch (cause) {
         if (!ctrl.signal.aborted) {
@@ -177,7 +216,7 @@ export function AiConnectionForm({
       window.clearTimeout(timer);
       ctrl.abort();
     };
-  }, [ready, active, stored, refresh, fetchedAt, id, baseUrl, apiKey, connection]);
+  }, [ready, active, stored, refresh, fetchedAt, id, baseUrl, apiKey, connection, applySnapshot]);
 
   function persist() {
     if (!canSave) return;
@@ -210,8 +249,12 @@ export function AiConnectionForm({
         saved(
           connection?.id ??
             createdId ??
-            view.connections.find((item) => item.label === label.trim() && item.baseUrl === baseUrl)
-              ?.id,
+            view.connections.find(
+              (item) =>
+                item.label === label.trim() &&
+                !settings.connections.some((previous) => previous.id === item.id),
+            )?.id,
+          choice,
         ),
     );
   }
@@ -280,8 +323,12 @@ export function AiConnectionForm({
         )}
         <Button
           className={styles.refresh}
-          isDisabled={!ready || pending}
-          onPress={() => setRefresh((n) => n + 1)}
+          isDisabled={!ready}
+          aria-busy={pending}
+          aria-disabled={!ready || pending}
+          onPress={() => {
+            if (!pending) setRefresh((n) => n + 1);
+          }}
         >
           刷新模型
         </Button>
@@ -320,6 +367,7 @@ export function AiConnectionForm({
                       enabled: !connection.enabled,
                     }),
                   "连接状态已更新。",
+                  () => saved(connection.id, choice),
                 )
               }
             >
@@ -346,6 +394,14 @@ export function AiConnectionForm({
               移除连接
             </Button>
           </div>
+          <AiManagedControls
+            key={JSON.stringify(savedSelection)}
+            settings={settings}
+            selection={stored ? savedSelection : undefined}
+            write={write}
+            active={active}
+            refreshSettings={refreshSettings}
+          />
           {confirm && (
             <div className={styles.fields}>
               <p>
