@@ -8,6 +8,7 @@ import {
 } from "@codemirror/commands";
 import {
   Compartment,
+  EditorSelection,
   EditorState,
   StateEffect,
   StateField,
@@ -149,6 +150,7 @@ export interface EditorSession {
   acknowledge(markdown: string, revision: string | null): void;
   applyExternal(change: ExternalPatch): ExternalResult | "deferred";
   moveToFinalBlankLine(): void;
+  placeCaretAtPaperPoint(x: number, y: number): void;
   applyChanges(changes: readonly TextEdit[]): void;
   setSourceMode(enabled: boolean): boolean;
   trackAnchor(anchor: ScrollAnchor | undefined): void;
@@ -283,6 +285,26 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     options.onDeferredExternalResult?.(change.revision, result);
   }
 
+  function moveToFinalBlankLine() {
+    if (state.readOnly || state.field(composing)) return;
+    const end = state.doc.length;
+    if (state.doc.lineAt(end).text.trim() === "") {
+      dispatch(state.update({ selection: { anchor: end }, scrollIntoView: true }));
+      return;
+    }
+    const current = state.field(sourceField).value;
+    const ending = /(\r\n|[\r\n])[^\r\n]*$/u.exec(current)?.[1] ?? "\n";
+    dispatch(
+      state.update({
+        changes: { from: end, insert: "\n" },
+        selection: { anchor: end + 1 },
+        effects: replaceSource.of(readSource(current + ending)),
+        annotations: isolateHistory.of("full"),
+        scrollIntoView: true,
+      }),
+    );
+  }
+
   return {
     source: () => state.field(sourceField).value,
     selection() {
@@ -304,24 +326,29 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       confirmedSource = markdown;
       revision = savedRevision;
     },
-    moveToFinalBlankLine() {
-      if (state.readOnly || state.field(composing)) return;
+    moveToFinalBlankLine,
+    placeCaretAtPaperPoint(x, y) {
+      if (!view || state.readOnly || state.field(composing) || view.compositionStarted) return;
       const end = state.doc.length;
-      if (state.doc.lineAt(end).text.trim() === "") {
-        dispatch(state.update({ selection: { anchor: end }, scrollIntoView: true }));
-        return;
+      if (y >= view.documentTop + view.lineBlockAt(end).bottom) {
+        moveToFinalBlankLine();
+      } else {
+        const { pos, assoc } = view.posAndSideAtCoords({ x, y }, false);
+        const hiddenMetadata =
+          options.hideMetadataInPreview && preview.get(state) === livePreview
+            ? frontMatterRange(state.doc)
+            : undefined;
+        if (hiddenMetadata && hiddenMetadata.to === end) {
+          moveToFinalBlankLine();
+        } else {
+          const firstWritable = hiddenMetadata ? hiddenMetadata.to + 1 : 0;
+          view.dispatch({
+            selection: EditorSelection.cursor(Math.max(firstWritable, pos), assoc),
+            scrollIntoView: true,
+          });
+        }
       }
-      const current = state.field(sourceField).value;
-      const ending = /(\r\n|[\r\n])[^\r\n]*$/u.exec(current)?.[1] ?? "\n";
-      dispatch(
-        state.update({
-          changes: { from: end, insert: "\n" },
-          selection: { anchor: end + 1 },
-          effects: replaceSource.of(readSource(current + ending)),
-          annotations: isolateHistory.of("full"),
-          scrollIntoView: true,
-        }),
-      );
+      view.focus();
     },
     applyChanges(edits) {
       applyEdits(edits, false);

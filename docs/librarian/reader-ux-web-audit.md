@@ -78,7 +78,7 @@
 
 ## 从正文落笔，到目录改名
 
-本轮从 `999a4531` 开始。用户希望写作时只看到光标，能就地预览；点中文字就在那个字符处输入，点纸面空白就移到文末的可写空行，末行已有内容时才另起一行。引用和列表的非空项按 Enter 续写，空项按 Enter 退出当前层。
+本轮从 `999a4531` 开始。用户希望写作时只看到光标，能就地预览；点中文字就在那个字符处输入，点文字附近的留白就地定位，点整篇正文下方则进入文末可写空行。引用和列表的非空项按 Enter 续写，空项按 Enter 退出当前层。
 
 在 Chromium 中，原版点击粗体第一个字的左半边，会把输入加在粗体外；点击粗体后普通文字的第一个字，又会把输入加进粗体。现在分别从文本节点起点映射到它自己的 Markdown 范围，用保存后读回的原文验证。点空白新增的换行可以单独撤销。即时预览参考 Typora 对光标所在语法的呈现，列表的缩进和编号沿用 CodeMirror 命令。 [正文走查](evidence/reader-editing-workflow/writing.png) · [格式边界用例](../../apps/reader/tests/e2e/document-edit-boundary.spec.ts) · [Typora 即时预览](https://support.typora.io/Quick-Start/) · [CodeMirror Markdown 命令](https://github.com/codemirror/lang-markdown/blob/main/src/commands.ts)
 
@@ -93,3 +93,5 @@
 交付构建通过 164 项产品 Playwright、31 项编辑器 Spike Playwright、58 项 Vitest，以及类型、组件边界、lint、格式和 OpenAPI 一致性检查。对局域网 HTTPS 服务回读的资源清单与本地构建逐字节一致。使用普通试用账号从「河岸清晨」打开改名框、取消，再进入编辑和返回阅读，原地址可继续使用。
 
 在 Chromium 上连续点三次文末空白，其中一次先按 Esc 回到阅读。旧版会追加三个换行。修正后第一次只追加一个换行，后两次复用该行，期间只有一次正文保存请求。随后输入「明早继续。」并从 API 回读，文字就在第二行。空文档、已有多行留白和缩进的原文也分别验证了输入与撤销。 [第三次点击后的光标](evidence/reader-editing-workflow/reused-final-line.png) · [浏览器回归](../../apps/reader/tests/e2e/document-edit.spec.ts)
+
+在 1280 × 800 的三段短文中，点第一行句号右方 65 px，输入「岸边已能落脚。」，API 回读显示这句话接在第一段原句末尾，另两段完整。随后点最后一段下方两次，只补入一个换行。浏览器同时覆盖桌面和窄屏折行两侧、段间上下两侧、长文视口下沿、引用列表缩进，以及预览和源码中的已存空行。 [第一行续写画面](evidence/reader-editing-workflow/nearby-line-end.png) · [阅读纸面落点](../../apps/reader/tests/e2e/document-edit.spec.ts) · [编辑器坐标回归](../../apps/reader/tests/e2e/editor-paper-placement.spec.ts)
