@@ -1,6 +1,6 @@
 # Reader 连接设置与已连接应用
 
-2026-11-22，产品提交 `d84ca08c`。设计、狗粮背景和交接仓库证据见交接仓库的 `2026-11-22-librarian-connections-settings-and-dogfood.md`。
+2026-11-22，产品提交 `73f3442e`（连接设置 `d84ca08c` 加设置布局调整）。设计、狗粮背景和交接仓库证据见交接仓库的 `2026-11-22-librarian-connections-settings-and-dogfood.md`。
 
 ## 入口和权限
 
@@ -38,14 +38,15 @@ DELETE /api/v1/mcp/grants/{id}   authenticated, own grant, same origin -> 204
 - `cargo test --locked -p librarian --test fork_seams` — 14/14
 - `cargo test --locked -p silverbullet-server --lib product::mcp_settings` — 2/2
 - `cargo test --locked -p librarian` — 全部通过
-- `npm run test -w @librarian/reader` — 124/124
-- `npm run test:e2e:product -w @librarian/reader -- --workers=2` — 280/280（本机 `/tmp` 放 Zola 0.23.6）
+- `npm run test -w @librarian/reader` — 125/125
+- `npm run test:e2e:product -w @librarian/reader -- --workers=1` — 282/282（本机 `/tmp` 放 Zola 0.23.6）
 - `npm run test:e2e -w @librarian/reader` — 40/40
 - `cargo fmt --check`、`cargo clippy -p librarian --all-targets -D warnings`、TypeScript、Oxlint、Oxfmt、OpenAPI 生成一致性 — 通过
 
 18447：
 
-- 部署 `d84ca08c`，数据根备份 `pre-connections-d84ca08c-20261122-022211`。
+- 部署 `73f3442e`，数据根备份 `pre-settings-ui-73f3442e-20261122-051607`。
+- 设置弹窗在 1440 下固定 736 px：外观、AI、连接切换高度不变，内部滚动；AI 先显示「我的模型」，连接配置和全局执行器可折叠；模型能力显示为「输入 文本、图片 · 输出 文本 · 1M 上下文」，展开后显示精确的 1,048,576 / 393,216 tokens。
 - 管理员 `ai-review`：设置 → 连接显示已启用；停用后 POST `/.mcp` 返回 404，重新启用后返回 401。
 - 成员 `ai-agent`：看不到服务开关；3 个测试 grant 通过新 UI 全部撤销，列表为空。
 - 原有「AI 工作区验收」16 篇文档和「Librarian 项目文档」保持。
