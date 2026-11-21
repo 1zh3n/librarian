@@ -1,4 +1,4 @@
-.PHONY: reader-bundle build build-e2e build-for-docker build-linux-ci docker build-server-releases build-server-releases-macos build-server-releases-freebsd build-cli-releases-rust build-cli-releases-freebsd build-cli-releases-rust-macos clean check check-rust fmt test test-e2e test-browser test-e2e-all test-e2e-release test-e2e-oidc starter-kit-previews bench generate website install uninstall bundle build-rs build-rs-cli run-rs
+.PHONY: reader-bundle build build-e2e build-for-docker build-linux-ci docker build-server-releases build-server-releases-macos build-server-releases-freebsd build-cli-releases-rust build-cli-releases-freebsd build-cli-releases-rust-macos clean check check-rust audit fmt test test-e2e test-browser test-e2e-all test-e2e-release test-e2e-oidc starter-kit-previews bench generate website install uninstall bundle build-rs build-rs-cli run-rs
 
 build:
 	npm run build
@@ -129,6 +129,10 @@ reader-bundle:
 check-rust:
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+audit:
+	@command -v cargo-audit >/dev/null 2>&1 || { echo "cargo-audit is required: cargo install cargo-audit --locked"; exit 1; }
+	cargo audit --file Cargo.lock
 
 check: reader-bundle
 	npm run check
