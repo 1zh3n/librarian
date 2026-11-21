@@ -1,27 +1,102 @@
 import type { Element as HastElement, ElementContent } from "hast";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import type { Position } from "unist";
 import type { MarkdownAnalysis } from "../../markdown/analyze";
 
 export type SourceRange = { from: number; to: number };
 
-type TextSpan = { text: string; position: Position | undefined };
+type TextSpan = { text: string; position: Position | undefined; inlineCode: boolean };
 
-function textSpans(node: ElementContent, parent?: Position): TextSpan[] {
-  if (node.type === "text") return [{ text: node.value, position: node.position ?? parent }];
-  if (node.type === "element") {
-    return node.children.flatMap((child) =>
-      textSpans(child, node.tagName === "code" ? node.position : undefined),
-    );
+function textSpans(node: ElementContent, parent: HastElement): TextSpan[] {
+  if (node.type === "text") {
+    const code = parent.tagName === "code";
+    return [
+      {
+        text: node.value,
+        position: node.position ?? (code ? parent.position : undefined),
+        // Inline code text carries its own position; fenced/indented code only positions the element.
+        inlineCode: code && node.position !== undefined,
+      },
+    ];
   }
+  if (node.type === "element") return node.children.flatMap((child) => textSpans(child, node));
   return [];
 }
 
-function spanOffset(source: string, span: TextSpan, offset: number, start: boolean) {
+type CodePart = SourceRange & { text: string };
+const codeParts = new WeakMap<HastElement, CodePart[]>();
+
+// HAST gives inline code one position for the entire span. Ask the Markdown parser
+// for its literal content and line-ending tokens, which exclude padding, delimiters
+// and continuation prefixes in quotes and lists. Only parse a selected block once.
+function blockCodeParts(source: string, block: HastElement) {
+  const cached = codeParts.get(block);
+  if (cached) return cached;
+  const start = block.position?.start;
+  const end = block.position?.end.offset;
+  if (start?.offset === undefined || end === undefined) return [];
+  const lineStart = start.offset - (start.column - 1);
+  const parts: CodePart[] = [];
+  const parser = unified().use(remarkParse).use(remarkGfm);
+  parser.data("fromMarkdownExtensions", [
+    {
+      enter: {
+        codeTextData(token) {
+          const text = this.sliceSerialize(token);
+          parts.push({
+            from: lineStart + token.start.offset,
+            to: lineStart + token.end.offset,
+            text,
+          });
+          this.enter({ type: "text", value: text }, token);
+        },
+        lineEnding(token) {
+          parts.push({
+            from: lineStart + token.start.offset,
+            to: lineStart + token.end.offset,
+            text: " ",
+          });
+        },
+      },
+      exit: {
+        codeTextData(token) {
+          this.exit(token);
+        },
+      },
+    },
+  ]);
+  parser.parse(source.slice(lineStart, end));
+  codeParts.set(block, parts);
+  return parts;
+}
+
+function spanOffset(
+  source: string,
+  block: HastElement,
+  span: TextSpan,
+  offset: number,
+  start: boolean,
+) {
   const from = span.position?.start.offset;
   const to = span.position?.end.offset;
   if (from === undefined || to === undefined) return;
   const raw = source.slice(from, to);
   if (raw === span.text) return from + offset;
+  if (span.inlineCode && /[\r\n]/u.test(raw)) {
+    const parts = blockCodeParts(source, block).filter(
+      (part) => part.from >= from && part.to <= to,
+    );
+    if (parts.map((part) => part.text).join("") === span.text) {
+      let remaining = offset;
+      for (const part of parts) {
+        if (remaining < part.text.length) return part.from + remaining;
+        if (!start && remaining === part.text.length) return part.to;
+        remaining -= part.text.length;
+      }
+    }
+  }
   const visible = span.text.replace(/\n$/u, "");
   const exact = raw.indexOf(visible);
   if (exact !== -1 && exact === raw.lastIndexOf(visible)) {
@@ -75,13 +150,11 @@ function boundary(
   before.selectNodeContents(block);
   before.setEnd(container, offset);
   let remaining = before.toString().length;
-  const spans = ast.children.flatMap((child) =>
-    textSpans(child, ast.tagName === "code" ? ast.position : undefined),
-  );
+  const spans = ast.children.flatMap((child) => textSpans(child, ast));
   if (spans.map(({ text }) => text).join("") !== block.textContent) return;
   for (const span of spans) {
     if (remaining < span.text.length || (!start && remaining === span.text.length)) {
-      return spanOffset(source, span, remaining, start);
+      return spanOffset(source, ast, span, remaining, start);
     }
     remaining -= span.text.length;
   }
