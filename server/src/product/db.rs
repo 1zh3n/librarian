@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
@@ -287,6 +288,49 @@ impl Metadata {
             )
             .optional()?
             .ok_or_else(ApiError::not_found)
+    }
+
+    pub(super) fn document_ids(
+        &self,
+        workspace: &str,
+        paths: &[String],
+    ) -> Result<BTreeMap<String, String>, ApiError> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+        let mut ids = BTreeMap::new();
+        {
+            let mut statement =
+                transaction.prepare("SELECT path, id FROM documents WHERE workspace_id = ?1")?;
+            let rows = statement.query_map([workspace], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (path, id) = row?;
+                ids.insert(path, id);
+            }
+        }
+        {
+            let mut insert = transaction.prepare(
+                "INSERT INTO documents (id, workspace_id, path) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(workspace_id, path) DO UPDATE SET path = excluded.path RETURNING id",
+            )?;
+            for path in paths {
+                if ids.contains_key(path) {
+                    continue;
+                }
+                let id = insert.query_row(
+                    [
+                        format!("doc_{}", Uuid::new_v4().simple()),
+                        workspace.to_owned(),
+                        path.clone(),
+                    ],
+                    |row| row.get(0),
+                )?;
+                ids.insert(path.clone(), id);
+            }
+        }
+        transaction.commit()?;
+        Ok(ids)
     }
 
     pub(crate) fn document_id(&self, workspace: &str, path: &str) -> Result<String, ApiError> {

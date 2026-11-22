@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     io,
     path::{Path, PathBuf},
     sync::{Arc, RwLockReadGuard, RwLockWriteGuard},
@@ -133,36 +134,48 @@ impl DocumentService {
         super::workspace::ensure_active(&self.metadata, workspace)?;
         let mut files = state.space.fetch_file_list()?;
         files.sort_unstable_by(|a, b| a.name.cmp(&b.name));
-
-        files
+        let file_names = files
+            .iter()
+            .map(|file| file.name.clone())
+            .collect::<BTreeSet<_>>();
+        let files = files
             .into_iter()
             .filter(|file| is_document_path(&file.name))
             .filter(|file| query.after.as_ref().is_none_or(|after| file.name > *after))
             .filter(|file| check_file_path(state, &file.name).is_ok())
             .take(query.limit.unwrap_or(100))
-            .map(|file| self.summary_from_meta(state, workspace, file.name, file.size))
+            .collect::<Vec<_>>();
+        let paths = files
+            .iter()
+            .map(|file| file.name.clone())
+            .collect::<Vec<_>>();
+        let ids = self.metadata.document_ids(workspace, &paths)?;
+        files
+            .into_iter()
+            .map(|file| {
+                let size = usize::try_from(file.size).unwrap_or(0).min(METADATA_LIMIT);
+                let title = if size == 0 {
+                    None
+                } else {
+                    state
+                        .space
+                        .read_file_range(&file.name, 0, size)
+                        .ok()
+                        .and_then(|(prefix, _)| title_from_markdown(&prefix))
+                };
+                let id = ids
+                    .get(&file.name)
+                    .cloned()
+                    .ok_or_else(|| ApiError::internal("missing document id"))?;
+                Ok(summary_with_outline(
+                    workspace,
+                    id,
+                    file.name.clone(),
+                    title,
+                    file_names.contains(&outline_path(&file.name)),
+                ))
+            })
             .collect()
-    }
-
-    fn summary_from_meta(
-        &self,
-        state: &ServerState,
-        workspace: &str,
-        path: String,
-        bytes: i64,
-    ) -> Result<DocumentSummary, ApiError> {
-        let size = usize::try_from(bytes).unwrap_or(0).min(METADATA_LIMIT);
-        let title = if size == 0 {
-            None
-        } else {
-            state
-                .space
-                .read_file_range(&path, 0, size)
-                .ok()
-                .and_then(|(prefix, _)| title_from_markdown(&prefix))
-        };
-        let id = self.metadata.document_id(workspace, &path)?;
-        Ok(summary(state, workspace, id, path, title))
     }
 
     pub(super) fn summary_from_markdown(
@@ -492,12 +505,23 @@ fn summary(
     path: String,
     title: Option<String>,
 ) -> DocumentSummary {
-    let stem = path.strip_suffix(".md").unwrap_or(&path);
     let sidecar = outline_path(&path);
+    let outline_enabled =
+        check_file_path(state, &sidecar).is_ok() && state.space.get_file_meta(&sidecar).is_ok();
+    summary_with_outline(workspace, id, path, title, outline_enabled)
+}
+
+fn summary_with_outline(
+    workspace: &str,
+    id: String,
+    path: String,
+    title: Option<String>,
+    outline_enabled: bool,
+) -> DocumentSummary {
+    let stem = path.strip_suffix(".md").unwrap_or(&path);
     DocumentSummary {
         title: title.unwrap_or_else(|| stem.rsplit('/').next().unwrap_or(stem).to_owned()),
-        outline_enabled: check_file_path(state, &sidecar).is_ok()
-            && state.space.get_file_meta(&sidecar).is_ok(),
+        outline_enabled,
         id,
         workspace_id: workspace.to_owned(),
         path,

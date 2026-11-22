@@ -102,12 +102,14 @@ function EntryRow({
   openMenu,
   markedPath,
   revealRow,
+  toggle,
 }: {
   revealRow: RevealRow | undefined;
   markedPath: string | undefined;
   entry: Entry;
   open: (id: string) => void;
   openMenu: OpenDirectoryMenu | undefined;
+  toggle: (id: string) => void;
 }) {
   const path = [entry.folder, entry.filename].filter(Boolean).join("/");
   return (
@@ -116,6 +118,11 @@ function EntryRow({
       textValue={entry.name}
       className={styles.row}
       {...(!entry.children && { onAction: () => open(entry.id) })}
+      onClick={(event) => {
+        if (!entry.children) return;
+        if (event.target instanceof Element && event.target.closest("button, a")) return;
+        toggle(entry.id);
+      }}
       data-context-folder={entry.folder}
       data-context-path={path}
       data-command-target={path === markedPath || undefined}
@@ -157,7 +164,10 @@ function EntryRow({
         )}
       </TreeItemContent>
       {entry.children && (
-        <Collection items={entry.children} dependencies={[open, openMenu, markedPath, revealRow]}>
+        <Collection
+          items={entry.children}
+          dependencies={[open, openMenu, markedPath, revealRow, toggle]}
+        >
           {(child) => (
             <EntryRow
               entry={child}
@@ -165,6 +175,7 @@ function EntryRow({
               openMenu={openMenu}
               markedPath={markedPath}
               revealRow={revealRow}
+              toggle={toggle}
             />
           )}
         </Collection>
@@ -218,6 +229,15 @@ export function DirectoryTree({
       keys: new Set([...expanded.keys, ...activeFolders, ...revealFolders]),
     });
   }
+  function toggle(id: string) {
+    setExpanded((current) => {
+      const keys = new Set(current.keys);
+      if (keys.has(id)) keys.delete(id);
+      else keys.add(id);
+      return { ...current, keys };
+    });
+  }
+
   const lastReveal = useRef<typeof reveal>(undefined);
   const revealRow = useMemo<RevealRow | undefined>(
     () =>
@@ -255,7 +275,7 @@ export function DirectoryTree({
         aria-label="空间目录"
         className={styles.tree}
         items={tree}
-        dependencies={[open, openMenu, markedPath, revealRow]}
+        dependencies={[open, openMenu, markedPath, revealRow, toggle]}
         expandedKeys={expanded.keys}
         onExpandedChange={(keys) =>
           setExpanded({ activePath, reveal, keys: new Set(Array.from(keys, String)) })
@@ -275,6 +295,7 @@ export function DirectoryTree({
             openMenu={openMenu}
             markedPath={markedPath}
             revealRow={revealRow}
+            toggle={toggle}
           />
         )}
       </Tree>
