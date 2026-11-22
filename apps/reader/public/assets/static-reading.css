@@ -41,6 +41,12 @@ html.theme-dark {
   --surface-muted: #292a2d;
 }
 
+html.text-200 {
+  --reading-size: 2.25rem;
+  --reading-title-size: clamp(2.6rem, 5vw, 4rem);
+  --reading-line-height: 1.6;
+}
+
 html.eink {
   color-scheme: light;
   --paper: #fff;

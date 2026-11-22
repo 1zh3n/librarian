@@ -56,6 +56,7 @@ struct ReadingQuery {
     document_id: Option<String>,
     eink: Option<String>,
     theme: Option<String>,
+    text: Option<String>,
 }
 
 impl ReadingQuery {
@@ -71,6 +72,10 @@ impl ReadingQuery {
             Some("dark") => "dark",
             _ => "auto",
         }
+    }
+
+    fn large_text(&self) -> bool {
+        self.text.as_deref() == Some("200")
     }
 }
 
@@ -158,14 +163,16 @@ pub(super) struct StaticPage {
     pub links: StaticLinks,
     pub eink: bool,
     pub theme: &'static str,
+    pub large_text: bool,
 }
 
 pub(super) fn snapshot_static_page(
     view: &SnapshotView,
     eink: bool,
     theme: &'static str,
+    large_text: bool,
 ) -> StaticPage {
-    let query = query_suffix(eink, theme);
+    let query = query_suffix(eink, theme, large_text);
     let documents = view
         .documents
         .iter()
@@ -211,6 +218,7 @@ pub(super) fn snapshot_static_page(
         },
         eink,
         theme,
+        large_text,
     }
 }
 
@@ -224,6 +232,7 @@ pub(super) struct DocumentPageInput {
     pub(super) assets: BTreeSet<String>,
     pub(super) eink: bool,
     pub(super) theme: &'static str,
+    pub(super) large_text: bool,
 }
 
 pub(super) fn document_static_page(input: DocumentPageInput) -> StaticPage {
@@ -245,10 +254,11 @@ pub(super) fn document_static_page(input: DocumentPageInput) -> StaticPage {
                 "/api/v1/workspaces/{}/assets/",
                 encode_component(&input.workspace)
             ),
-            query: query_suffix(input.eink, input.theme),
+            query: query_suffix(input.eink, input.theme, input.large_text),
         },
         eink: input.eink,
         theme: input.theme,
+        large_text: input.large_text,
     }
 }
 
@@ -279,18 +289,22 @@ pub(super) fn render(page: StaticPage) -> Result<String, ApiError> {
             nav => nav,
             eink => page.eink,
             theme => page.theme,
+            large_text => page.large_text,
         },
     )
     .map_err(ApiError::internal)
 }
 
-fn query_suffix(eink: bool, theme: &'static str) -> String {
+fn query_suffix(eink: bool, theme: &'static str, large_text: bool) -> String {
     let mut values = Vec::new();
     if eink {
         values.push("eink=1".to_owned());
     }
     if theme != "auto" {
         values.push(format!("theme={theme}"));
+    }
+    if large_text {
+        values.push("text=200".to_owned());
     }
     if values.is_empty() {
         String::new()
@@ -758,6 +772,7 @@ async fn snapshot_reading(
     let next = format!("/r/{snapshot}/read");
     let eink = query.eink();
     let theme = query.theme();
+    let large_text = query.large_text();
     let result = documents::run(move || {
         let view = super::snapshots::snapshot_view(
             &service,
@@ -765,7 +780,7 @@ async fn snapshot_reading(
             query.document_id.as_deref(),
             &headers,
         )?;
-        render(snapshot_static_page(&view, eink, theme))
+        render(snapshot_static_page(&view, eink, theme, large_text))
     })
     .await;
     reading_response(result, &next)
@@ -780,6 +795,7 @@ async fn document_reading(
     let next = format!("/workspaces/{workspace}/documents/{document}/read");
     let eink = query.eink();
     let theme = query.theme();
+    let large_text = query.large_text();
     let result = documents::run(move || {
         let account = Account::authenticate(&service.spaces, &headers, false)?;
         let (instance, _, actual_workspace, path) =
@@ -836,6 +852,7 @@ async fn document_reading(
             assets,
             eink,
             theme,
+            large_text,
         }))
     })
     .await;
@@ -935,6 +952,7 @@ mod tests {
             assets: BTreeSet::new(),
             eink: true,
             theme: "auto",
+            large_text: false,
         })
     }
 

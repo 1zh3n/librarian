@@ -62,10 +62,11 @@ test("serves private documents and share snapshots without JavaScript", async ({
     await expect(noJs.locator("body")).toContainText("下一篇");
     await noJs.screenshot({ path: "test-results/static-private-1440.png" });
 
-    const einkUrl = `${privateUrl}?eink=1&theme=light`;
+    const einkUrl = `${privateUrl}?eink=1&theme=light&text=200`;
     await noJs.goto(einkUrl);
     await expect(noJs.locator("html")).toHaveClass(/eink/);
     await expect(noJs.locator("html")).toHaveClass(/theme-light/);
+    await expect(noJs.locator("html")).toHaveClass(/text-200/);
     await noJs.setViewportSize({ width: 390, height: 844 });
     await noJs.screenshot({ path: "test-results/static-private-390-eink.png" });
 
