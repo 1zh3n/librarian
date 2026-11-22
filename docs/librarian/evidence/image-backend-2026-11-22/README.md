@@ -44,6 +44,7 @@
 - 编辑器内支持选择文件、拖放和粘贴图片；插入进入正常撤销栈。
 - 编辑态图片预览；点击预览显示原 Markdown。
 - 阅读态图片限制在正文列宽，懒加载、异步解码；断图显示 alt；本地 SVG 不内联。
+- 18447 真实 UI 上传：`dogfood/ui-upload-large.md` 通过菜单上传 `screen-01.png`（1,440×901），最终 Markdown 为 `![screen-01](assets/screen-01.png)`。
 
 ## 4. 画面与测量
 
@@ -57,6 +58,7 @@
 | 1440 文档菜单 | [image-menu-1440.png](image-menu-1440.png) | 唯一「插入图片…」入口 |
 | 1440 插入弹窗 | [image-insert-dialog-1440.png](image-insert-dialog-1440.png) | 目标目录、格式与大小说明、选择/插入/取消 |
 | 390 触屏插入 | [image-insert-dialog-390-touch.png](image-insert-dialog-390-touch.png) | 底部面板 390×270；不遮挡标题与正文起点 |
+| 1440 真实 UI 上传 | [reader-ui-upload-large-1440.png](reader-ui-upload-large-1440.png) | 菜单上传 1,440×901 PNG，图片宽 756 px，正文自动保存 |
 
 原始测量见 `ui-measurements.json`。
 
