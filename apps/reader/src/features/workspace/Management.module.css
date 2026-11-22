@@ -6,36 +6,71 @@
   overflow-wrap: anywhere;
 }
 
+.heading {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin-block-end: 0.5rem;
+}
+
 .page h1 {
-  margin: 0 0 1.25rem;
+  min-inline-size: 0;
+  margin: 0;
   color: var(--ink);
   font-family: var(--reading-font);
-  font-size: clamp(1.875rem, 4vw, 3rem);
+  font-size: clamp(1.625rem, 3vw, 2.25rem);
   font-weight: 650;
   line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+
+.role {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.lead {
+  margin: 0 0 1.25rem;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  line-height: 1.5;
 }
 
 .tabList {
+  display: inline-flex;
+  width: fit-content;
   max-width: 100%;
   flex-wrap: wrap;
-  gap: 0.125rem;
-  padding: 0;
-  border-block-end: 1px solid var(--border);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
 }
 
 .tab {
   width: auto;
-  min-height: 44px;
+  min-height: var(--control-height);
   flex: none;
-  margin-block-end: -1px;
-  padding-inline: clamp(0.4rem, 2vw, 0.875rem);
-  border-block-end: 2px solid transparent;
-  border-radius: 0;
+  margin: 0;
+  padding-inline: 0.75rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--ink-secondary);
 }
 
 .tab[data-selected] {
-  border-block-end-color: var(--accent);
+  background: var(--surface);
   color: var(--accent);
+  box-shadow: 0 0 0 1px var(--border);
+  font-weight: 600;
 }
 
 .group {
@@ -105,7 +140,7 @@
 }
 
 .formAction {
-  justify-self: start;
+  justify-self: end;
 }
 
 .checklist {
@@ -179,8 +214,26 @@
 
 @media (pointer: coarse) {
   .input,
-  .checkbox {
-    min-height: 44px;
+  .checkbox,
+  .tab {
+    min-height: var(--control-height-touch);
+  }
+}
+
+@media (max-width: 44rem) {
+  .formAction {
+    inline-size: 100%;
+    justify-self: stretch;
+  }
+
+  .tabList {
+    gap: 1px;
+    padding: 1px;
+  }
+
+  .tab {
+    padding-inline: 0.5rem;
+    font-size: 0.8125rem;
   }
 }
 

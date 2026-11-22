@@ -1,5 +1,8 @@
 declare const styles: {
   readonly page: string;
+  readonly heading: string;
+  readonly role: string;
+  readonly lead: string;
   readonly group: string;
   readonly section: string;
   readonly form: string;

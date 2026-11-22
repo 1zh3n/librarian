@@ -106,9 +106,19 @@ export function WorkspaceManagementRoute() {
   };
   const selected =
     tabs.find(({ id }) => id === requested)?.id ?? (workspace.canManage ? general.id : delivery.id);
+  const role = workspace.canManage ? "管理员" : workspace.canWrite ? "可编辑" : "只读";
+  const lead = workspace.canManage
+    ? "管理空间名称、成员、外部导入、备份与发布。"
+    : workspace.canWrite
+      ? "编辑文档、导入文件，并创建和撤销阅读地址。"
+      : "阅读文档并打开外部导入记录；写入能力由管理员授予。";
   return (
     <div className={styles.page}>
-      <h1>{workspace.name}</h1>
+      <header className={styles.heading}>
+        <h1>{workspace.name}</h1>
+        <span className={styles.role}>{role}</span>
+      </header>
+      <p className={styles.lead}>{lead}</p>
       <Tabs
         key={workspaceId}
         value={selected}
