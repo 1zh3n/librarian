@@ -1,11 +1,11 @@
 # 低 JS 静态阅读部署验收
 
 日期：2026-11-22
-部署：`ca8a3428`
+部署：`84ea157a`
 内网：<https://192.168.8.166:18447>
-回滚备份：`backups/pre-static-reading-ca8a3428-20261122-203336`
+回滚备份：`backups/pre-static-reading-84ea157a-20261122-204246`
 
-`ca8a3428` 只把静态阅读错误页的 `Content-Type` 修正为 `text/html`；运行时阅读器、路由和样式与 `9a417d90` 相同。后续 `62d360b1` 只增加过期/只读成员测试，不改运行时代码。
+`84ea157a` 的静态阅读运行时与 `ca8a3428` 相同，只把文档「更多」里的「低 JS 阅读」对只读成员也开放；静态页面、权限、样式和本页测量不变。后续 `4baea774` 只增加只读入口测试。
 
 ## 交付
 
@@ -65,11 +65,11 @@ Vary: Cookie
 | --- | --- |
 | `cargo test -p silverbullet-server --lib product::reading` | 5/5 通过：GFM、表格、中文标题、frontmatter、链接/图片重写、外部图片、XSS、标题去重、空文档 |
 | `cargo test -p librarian --test fork_seams static_reading_pages` | 通过：私有登录/未登录/只读成员、缺失文档、成员快照、分享快照、多文档、撤销、过期、404 Content-Type、CSS 缓存 |
-| `document-static-reading.spec.ts` | 通过：SPA 文档菜单/快照页头入口、禁用 JavaScript 的私有/分享、noscript 入口、1440/390/320、200%、表格、代码、图片、目录、打印、撤销 |
+| `document-static-reading.spec.ts` | 2/2 通过：SPA 文档菜单/快照页头入口、只读成员菜单、禁用 JavaScript 的私有/分享、noscript 入口、1440/390/320、200%、表格、代码、图片、目录、打印、撤销 |
 | Reader Vitest | 140/140 通过 |
 | Reader TypeScript / Oxlint / Oxfmt | 通过 |
 | `make check-rust` | 通过（`cargo fmt --check` + workspace clippy `-D warnings`） |
-| 完整产品 Playwright | 303/304 通过；唯一失败是 `document-release.spec.ts` 的备份设置重试用例，单文件复跑 6/6 通过；属于并行共享 fixture 的抖动，与本切片无关 |
+| 完整产品 Playwright | 304/305 通过；唯一失败是 `document-settings-layout.spec.ts` 的模型能力收起用例，单文件复跑 2/2 通过；属于并行共享 fixture 的抖动，与本切片无关 |
 
 完整日志见 `product-playwright.log`。
 
