@@ -178,6 +178,8 @@ async fn moving_a_document_rejects_missing_or_html_image_references() {
     for (path, markdown) in [
         ("field/Missing.md", "![missing](media/missing.png)\n"),
         ("field/Html.md", "<img src=\"media/bird.png\">\n"),
+        ("field/Nul.md", "![bad](media/%00.png)\n"),
+        ("field/Hidden.md", "![hidden](.hidden/bird.png)\n"),
     ] {
         let created = f
             .request(
@@ -189,7 +191,12 @@ async fn moving_a_document_rejects_missing_or_html_image_references() {
             .await;
         assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
     }
-    for path in ["field/Missing.md", "field/Html.md"] {
+    for path in [
+        "field/Missing.md",
+        "field/Html.md",
+        "field/Nul.md",
+        "field/Hidden.md",
+    ] {
         let (status, error) = f
             .request(
                 &f.admin,

@@ -274,6 +274,17 @@ fn add_referenced_images(
                 ));
             }
             pulldown_cmark::Event::Start(pulldown_cmark::Tag::Image { dest_url, .. }) => {
+                let dest_url = dest_url
+                    .split(['?', '#'])
+                    .next()
+                    .unwrap_or(dest_url.as_ref());
+                if dest_url.is_empty() {
+                    return Err(ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "unsupported_image_reference",
+                        "Image reference is empty",
+                    ));
+                }
                 if dest_url.starts_with("http://")
                     || dest_url.starts_with("https://")
                     || dest_url.starts_with("data:")
@@ -283,14 +294,14 @@ fn add_referenced_images(
                 {
                     continue;
                 }
-                let Some(source_path) = resolve_relative(source_dir, &dest_url) else {
+                let Some(source_path) = resolve_relative(source_dir, dest_url) else {
                     return Err(ApiError::new(
                         StatusCode::UNPROCESSABLE_ENTITY,
                         "unsupported_image_reference",
                         "Image reference escapes the workspace",
                     ));
                 };
-                let Some(destination) = resolve_relative(target_dir, &dest_url) else {
+                let Some(destination) = resolve_relative(target_dir, dest_url) else {
                     return Err(ApiError::new(
                         StatusCode::UNPROCESSABLE_ENTITY,
                         "unsupported_image_reference",
@@ -352,7 +363,9 @@ fn resolve_relative(base: &str, path: &str) -> Option<String> {
             part => parts.push(part.to_owned()),
         }
     }
-    (!parts.is_empty()).then(|| parts.join("/"))
+    let path = parts.join("/");
+    (mutations::valid_file_path(&path) && path.split('/').all(|part| !part.starts_with('.')))
+        .then_some(path)
 }
 
 fn source_tree(
