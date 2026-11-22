@@ -45,13 +45,10 @@
 | Reader Vitest | 29 文件 / 140 项通过 |
 | `make check-rust` | 通过 |
 | 设置/控件/图片重点 E2E | 10/10 通过 |
-| 完整产品 Playwright（单 worker） | 296 项中 292 通过 |
-| 完整产品 Playwright（默认并发） | 290 通过；单独复跑后 5 个失败均通过 |
+| 完整产品 Playwright（修复后） | 296/298 通过；2 个失败单独复跑均通过 |
+| 只读导入记录 | 已修复：目录行按文档标题「已授权文档」匹配，不再误用文件名「共享回执」 |
 
-完整套件剩余问题：
-
-- 只读导入记录用例仍失败：API 已返回 `deliveries/...` 文档且正文可读；隔离脚本用 API 创建等价 Workspace 时目录树正常。失败只出现在测试的 `createWorkspace` UI 流程并立即打开空间设置的路径。
-- 其他失败（managed runner、MCP 设置、离线副本）在单独复跑时通过，属于共享 fixture/进程启动的测试干扰；干净 worktree 需要同步本地未跟踪的 `bin/librarian/runner/node_modules`，该依赖不属于提交。
+完整套件失败项（`document-citation-navigation`、`document-global-comparison`）单独复跑均通过，属于共享 AI fixture 并发抖动；干净 worktree 需要同步本地未跟踪的 `bin/librarian/runner/node_modules`，该依赖不属于提交。
 
 ## 未证明
 

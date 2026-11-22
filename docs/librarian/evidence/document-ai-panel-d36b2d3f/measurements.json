@@ -1,0 +1,40 @@
+{
+  "toolTabs": [
+    "\n\n  \n  \n  \n\n版本",
+    "\n\n  \n  \n\n引用"
+  ],
+  "desktopBox": {
+    "x": 1089,
+    "y": 163.1875,
+    "width": 334,
+    "height": 719.8125
+  },
+  "articleBox": {
+    "x": 454.5,
+    "y": 155,
+    "width": 756,
+    "height": 3039.15625
+  },
+  "desktopMetrics": {
+    "width": 334,
+    "height": 719.8125,
+    "scrollWidth": 1440
+  },
+  "focusReturned": true,
+  "phoneBox": {
+    "x": 0,
+    "y": 56.1875,
+    "width": 390,
+    "height": 787.8125
+  },
+  "phoneMetrics": {
+    "width": 390,
+    "height": 787.8125,
+    "scrollWidth": 390
+  },
+  "narrowMetrics": {
+    "width": 320,
+    "height": 608.625,
+    "scrollWidth": 320
+  }
+}
