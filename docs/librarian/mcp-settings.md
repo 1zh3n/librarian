@@ -55,6 +55,7 @@ DELETE /api/v1/mcp/grants/{id}   authenticated, own grant, same origin -> 204
 
 - OpenCode/Codex/Claude Code/ChatGPT 的真实 OAuth 连接。
 - 按工具/账户的审计、速率限制和存储配额。
+- 正文敏感信息扫描/脱敏；MCP 权限不等于内容 DLP。候选方案见交接仓库 `docs/superpowers/specs/2026-11-22-librarian-sensitive-data-boundary.md`。
 - 空间「外部访问」子页。
 - 实体手机中文输入、读屏和墨水屏。
 
