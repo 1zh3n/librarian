@@ -44,7 +44,7 @@ test("directory and toolbar icons follow their controls without changing documen
   await expect(folder).toHaveAttribute("aria-expanded", "false");
   await expectIcon(folder, "chevron-right");
   await folder.press("ArrowRight");
-  await expectIcon(page.getByRole("row", { name: "符号", exact: true }), "file-text");
+  await expectIcon(page.getByRole("row", { name: "符号.md", exact: true }), "file-text");
   await expectIcon(page.getByRole("button", { name: "文档更多" }), "ellipsis");
   await openDocumentTool(page, "AI");
   await expectIcon(page.getByRole("button", { name: "收起文档 AI" }), "x");

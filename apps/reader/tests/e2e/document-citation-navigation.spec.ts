@@ -68,7 +68,7 @@ async function enterSourceEditor(page: Page) {
 }
 
 async function directoryRoundTrip(page: Page, originPath: string) {
-  await page.getByRole("row", { name: "林间回声", exact: true }).click();
+  await page.getByRole("row", { name: "02.md", exact: true }).click();
   await expect(page.getByRole("article")).toContainText("清晨听见鸟鸣。");
   await page.goBack();
   await expect(page).toHaveURL(originPath);

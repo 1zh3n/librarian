@@ -31,7 +31,7 @@ test("keeps the submitted name and folder until creation finishes, and reopens t
   page,
 }) => {
   const { document } = await createNote(page, "观测/新建回执.md", "从目录继续写。");
-  const row = page.getByRole("row", { name: "新建回执", exact: true });
+  const row = page.getByRole("row", { name: "新建回执.md", exact: true });
   await row.press("Shift+F10");
   await page.getByRole("menuitem", { name: "新建文档…" }).press("Enter");
   const dialog = page.getByRole("dialog", { name: "新建文档" });

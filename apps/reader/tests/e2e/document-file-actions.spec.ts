@@ -268,7 +268,7 @@ test("can change the destination after a collision and create a folder in place"
   await page.reload();
   const row = page
     .getByRole("row")
-    .filter({ has: page.getByText("访谈", { exact: true }) })
+    .filter({ has: page.getByText("访谈.md", { exact: true }) })
     .first();
   const original = page.locator(`[data-context-document="${note.document.id}"]`);
   await expect(row).toBeVisible();

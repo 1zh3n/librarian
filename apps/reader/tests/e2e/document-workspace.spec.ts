@@ -60,7 +60,7 @@ test("returns to the first note in one click from space settings", async ({ page
   const target = `/workspaces/${workspace.id}/documents/${first.document.id}`;
   await page.goto(target);
   await expect(page.getByRole("article")).toContainText("第一篇正文");
-  const firstNote = page.getByRole("row", { name: "01第一篇", exact: true });
+  const firstNote = page.getByRole("row", { name: "01第一篇.md", exact: true });
   await page.getByRole("button", { name: "空间设置", exact: true }).click();
   await expect(page).toHaveURL(`/workspaces/${workspace.id}/manage`);
   await expect(page.getByRole("tablist", { name: "空间设置" })).toBeVisible();
@@ -131,7 +131,6 @@ test("opens directory actions at sidebar controls and inside the panel edges", a
       await page.mouse.click(hit.x, hit.y, { button: "right" });
       const create = menu.getByRole("menuitem", { name: "新建文档…" });
       await expect(create).toBeVisible({ timeout: 1800 });
-      await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toBeVisible();
       const bounds = await box(menu.locator(".."));
       measurements.push({ ...hit, bounds, viewport: page.viewportSize() });
       const gapX = Math.min(Math.abs(bounds.x - hit.x), Math.abs(bounds.x + bounds.width - hit.x));
@@ -175,7 +174,7 @@ test("keeps both paper margins, the divider and the toolbar outside directory ac
   const main = page.getByRole("main");
   const editor = page.getByRole("textbox", { name: "Markdown 正文" });
   const menu = page.getByRole("menu");
-  const row = page.getByRole("row", { name: "在读", exact: true });
+  const row = page.getByRole("row", { name: "在读.md", exact: true });
   const column = await box(main.locator("[data-reading-measure]"));
   const area = await box(main);
   const y = Math.round(area.y + area.height / 2);
@@ -219,7 +218,7 @@ test("a second right click moves the menu directly to the next target", async ({
   const row = page.getByRole("row", { name: "观测", exact: true });
   const rect = await box(row);
   const menu = page.getByRole("menu");
-  await page.getByRole("row", { name: "记录", exact: true }).click({ button: "right" });
+  await page.getByRole("row", { name: "记录.md", exact: true }).click({ button: "right" });
   await expect(menu).toBeVisible();
   const y = Math.floor(rect.y + rect.height / 2);
   for (const fraction of [0.75, 0.2]) {
@@ -383,7 +382,7 @@ test("keeps the reading document while creating from a different row or the root
 }) => {
   await openTreeSample(page, "目录命令归属验收");
   const original = page.url();
-  const note = page.getByRole("row", { name: "记录", exact: true });
+  const note = page.getByRole("row", { name: "记录.md", exact: true });
   const row = page.getByRole("row", { name: "观测", exact: true });
   const menu = page.getByRole("menu", { name: "目录操作" });
   const dialog = page.getByRole("dialog", { name: "新建文档" });
@@ -399,7 +398,7 @@ test("keeps the reading document while creating from a different row or the root
     expect(Math.abs(rowRect.x - menuRect.x)).toBeLessThanOrEqual(4);
     expect(menuRect.y - rowRect.y - rowRect.height).toBeCloseTo(2);
     await page.keyboard.press("ArrowDown");
-    await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toBeFocused();
+    await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
     await expect(folder).toHaveValue("研究/观测");
@@ -493,7 +492,7 @@ test("creates a note directly in a nested directory from the tree menu", async (
     await page.request.get(`/api/v1/workspaces/${workspace.id}/documents`)
   ).json()) as DocumentSummary[];
   expect(documents.some(({ path }) => path === "研究/观测/样本/新观察.md")).toBe(true);
-  const note = page.getByRole("row", { name: "新观察", exact: true });
+  const note = page.getByRole("row", { name: "新观察.md", exact: true });
   await expect(note).toBeVisible();
   await note.press("Shift+F10");
   await expect(menu.getByRole("menuitem", { name: "新建文档…" })).toBeFocused();
@@ -767,7 +766,7 @@ test("creates a note from an empty Workspace and starts writing", async ({ page 
   await dialog.getByRole("button", { name: "创建文档" }).click();
   await expect(page.getByRole("textbox", { name: "Markdown 正文" })).toBeFocused();
   await expect(page).toHaveURL(/\/documents\/doc_/u);
-  await expect(page.getByRole("row", { name: "我的第一份笔记" })).toHaveAttribute(
+  await expect(page.getByRole("row", { name: "我的第一份笔记.md" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -800,7 +799,7 @@ test("keeps an unsaved draft when the reader declines to open the new note", asy
   await expect(page.getByRole("article")).toContainText("保留的本地草稿");
   await page.keyboard.press("Alt+e");
   await expect(editor).toContainText("保留的本地草稿");
-  const created = page.getByRole("row", { name: "稍后阅读" });
+  const created = page.getByRole("row", { name: "稍后阅读.md" });
   await expect(created).toBeVisible();
   page.once("dialog", (prompt) => prompt.accept());
   await created.click();
@@ -839,7 +838,7 @@ test("keeps the entered note and directory when write access changes", async ({
     await viewer.goto(
       new URL(`/workspaces/${workspace.id}/documents/${current.document.id}`, page.url()).href,
     );
-    const row = viewer.getByRole("row", { name: "记录", exact: true });
+    const row = viewer.getByRole("row", { name: "记录.md", exact: true });
     await row.press("Shift+F10");
     await viewer.getByRole("menuitem", { name: "新建文档…" }).press("Enter");
     const dialog = viewer.getByRole("dialog", { name: "新建文档" });
@@ -896,11 +895,12 @@ test("a read-only workspace member can open an import receipt without upload or 
     await expect(viewer.getByRole("article")).toContainText("已授权文档");
     const directory = viewer.locator("#workspace-navigation");
     await expect(directory.getByRole("button", { name: /更多/ })).toHaveCount(0);
-    const row = directory.getByRole("row", { name: "已授权文档", exact: true });
+    const row = directory.getByRole("row", { name: "共享回执.md", exact: true });
     await row.click({ button: "right" });
     const menu = viewer.getByRole("menu");
     await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
-    await menu.getByRole("menuitem", { name: /搜索文档/ }).click({ timeout: 1800 });
+    await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toHaveCount(0);
+    await viewer.getByRole("button", { name: "搜索文档" }).click();
     await expect(viewer.getByRole("dialog", { name: "快速打开与全文搜索" })).toBeVisible();
   } finally {
     await viewer.close();
@@ -1184,7 +1184,7 @@ test("creates from a keyboard-targeted document after scrolling the tree and sav
     );
   }
   await page.reload();
-  const target = page.getByRole("row", { name: "样本23", exact: true });
+  const target = page.getByRole("row", { name: "样本23.md", exact: true });
   await target.scrollIntoViewIfNeeded();
   await expect
     .poll(() => page.getByRole("group", { name: "目录内容" }).evaluate((node) => node.scrollTop))
@@ -1213,7 +1213,7 @@ test("creates from a keyboard-targeted document after scrolling the tree and sav
       return [snapshot.document.path, snapshot.markdown];
     })
     .toEqual(["研究/观测/滚动定位后新建.md", "继续观测。"]);
-  const selected = page.getByRole("row", { name: "滚动定位后新建", exact: true });
+  const selected = page.getByRole("row", { name: "滚动定位后新建.md", exact: true });
   await expect(selected).toHaveAttribute("aria-selected", "true");
   const directory = await box(page.getByRole("group", { name: "目录内容" }));
   await expect

@@ -376,7 +376,7 @@ test("distinguishes clickable command labels from editable text with a desktop p
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(await fieldDocument(page));
-  const row = page.getByRole("treegrid").getByText("河岸清晨", { exact: true });
+  const row = page.getByRole("treegrid").getByText("01.md", { exact: true });
   await row.hover();
   await expect.soft(row).toHaveCSS("cursor", "pointer");
   const layout = page.getByRole("button", { name: "布局", exact: true });
