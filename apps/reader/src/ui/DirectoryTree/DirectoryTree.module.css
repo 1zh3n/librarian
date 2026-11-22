@@ -72,7 +72,8 @@
 .leaf {
   flex: none;
   display: grid;
-  width: 24px;
+  width: 36px;
+  min-width: 36px;
   min-height: 32px;
   place-items: center;
   color: var(--ink-secondary);
@@ -127,8 +128,10 @@
   }
 
   .disclosure,
+  .leaf,
   .more {
     width: 44px;
+    min-width: 44px;
   }
 
   .row:not(:hover, :focus-within) .more {
