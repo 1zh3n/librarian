@@ -37,7 +37,7 @@ async function checkTextButton(button: Locator, touch: boolean) {
   expect.soft(style.padding[2]).toBeGreaterThanOrEqual(8);
   expect.soft(style.padding[0]).toBe(style.padding[1]);
   expect.soft(style.padding[2]).toBe(style.padding[3]);
-  expect.soft(style.height).toBeGreaterThanOrEqual(touch ? 44 : 40);
+  expect.soft(style.height).toBeGreaterThanOrEqual(touch ? 44 : 36);
   return style;
 }
 

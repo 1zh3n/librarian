@@ -51,14 +51,12 @@ export function ConnectionsSettings({
   active,
   busy,
   setBusy,
-  close,
 }: {
   account: string | undefined;
   isAdmin: boolean | undefined;
   active: boolean;
   busy: boolean;
   setBusy: (value: boolean) => void;
-  close: () => void;
 }) {
   const client = useQueryClient();
   const settingsKey = ["mcp", "settings", account] as const;
@@ -106,9 +104,6 @@ export function ConnectionsSettings({
         <div className={styles.actions}>
           <Button className={styles.button} onPress={() => void settings.refetch()}>
             重新读取
-          </Button>
-          <Button className={styles.button} onPress={close}>
-            关闭
           </Button>
         </div>
       </div>
@@ -327,11 +322,6 @@ export function ConnectionsSettings({
           {error}
         </Feedback>
       )}
-      <div className={styles.actions}>
-        <Button className={styles.button} isDisabled={busy} onPress={close}>
-          关闭
-        </Button>
-      </div>
 
       {revoking && (
         <Dialog title="撤销外部 AI 连接" busy={busy} onClose={cancelRevoke} classes={styles}>

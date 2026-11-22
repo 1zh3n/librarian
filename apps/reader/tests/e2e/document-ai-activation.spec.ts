@@ -106,7 +106,7 @@ test("the open document chat observes a global pause when settings close", async
     return route.fulfill({ status: 204 });
   });
   const dialog = await openSettings(page);
-  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+  await dialog.getByRole("button", { name: "关闭应用设置", exact: true }).click();
   const spaces = (await (await page.request.get("/api/v1/workspaces")).json()) as {
     id: string;
     name: string;
@@ -119,7 +119,7 @@ test("the open document chat observes a global pause when settings close", async
   await dialog.getByRole("tab", { name: "AI", exact: true }).click();
   await dialog.getByRole("button", { name: "暂停全局 AI" }).click();
   await expect(dialog.getByRole("button", { name: "恢复全局 AI" })).toBeVisible();
-  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+  await dialog.getByRole("button", { name: "关闭应用设置", exact: true }).click();
   await expect(chat).toContainText("管理员已停用 AI");
   await expect(chat.getByRole("textbox", { name: "提示词" })).toHaveValue("保留提问");
 });

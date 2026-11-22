@@ -12,6 +12,7 @@
 @import "@heroui/styles/components/input.css" layer(components);
 @import "@heroui/styles/components/textarea.css" layer(components);
 @import "@heroui/styles/components/textfield.css" layer(components);
+@import "@heroui/styles/components/alert.css" layer(components);
 @import "@heroui/styles/themes/default" layer(theme);
 @import "@heroui/styles/utilities";
 @import "@heroui/styles/variants";
@@ -43,7 +44,7 @@
   font-size: 1rem;
 }
 
-:where(.button--primary, .button--outline) {
+:where(.button--primary, .button--outline, .button--ghost) {
   min-block-size: var(--control-height);
   block-size: auto;
   max-inline-size: 100%;
@@ -52,6 +53,37 @@
   font-size: var(--ui-size);
   line-height: 1.4;
   white-space: normal;
+}
+
+:where(.button--primary, .button--outline, .button--ghost).button--sm {
+  min-block-size: var(--control-height-sm);
+  padding: 0.25rem 0.5rem;
+}
+
+:where(.button--primary, .button--outline, .button--ghost).button--lg {
+  min-block-size: var(--control-height-lg);
+  padding: 0.5rem 1rem;
+}
+
+:where(.button--primary, .button--outline, .button--ghost).button--icon-only {
+  min-inline-size: var(--control-height);
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+:where(.button--primary, .button--outline, .button--ghost).button--icon-only.button--sm {
+  min-inline-size: var(--control-height-sm);
+}
+
+:where(.button--primary, .button--outline, .button--ghost).button--icon-only.button--lg {
+  min-inline-size: var(--control-height-lg);
+}
+
+.button {
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .button--primary {
@@ -64,14 +96,18 @@
   --button-bg: var(--surface);
   --button-bg-hover: var(--surface-hover);
   --button-fg: var(--ink);
-  border: 1px solid var(--border-strong);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 :is(.button--primary, .button--outline)[data-disabled] {
   --button-bg: var(--surface-muted);
   --button-fg: var(--ink-secondary);
-  border-color: var(--border);
   opacity: 1;
+}
+
+.button--outline[data-disabled] {
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 @media (pointer: coarse) {
@@ -201,6 +237,47 @@
 .input[aria-invalid="true"],
 .textarea[aria-invalid="true"] {
   border-color: var(--control-invalid);
+}
+
+[data-feedback] {
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  box-shadow: none;
+  color: var(--ink);
+  font-size: var(--ui-size);
+  line-height: 1.5;
+}
+
+[data-feedback] [data-slot="alert-content"] {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-feedback] [data-slot="alert-indicator"] {
+  padding: 0;
+  color: var(--ink-secondary);
+}
+
+[data-feedback="error"] {
+  border-color: var(--control-invalid);
+  background: color-mix(in srgb, var(--control-invalid) 7%, var(--surface));
+}
+
+[data-feedback="error"] [data-slot="alert-indicator"] {
+  color: var(--control-invalid);
+}
+
+[data-feedback="success"] {
+  border-color: var(--control-success);
+  background: color-mix(in srgb, var(--control-success) 7%, var(--surface));
+}
+
+[data-feedback="success"] [data-slot="alert-indicator"] {
+  color: var(--control-success);
 }
 
 :root:is([data-eink="true"], [data-reduce-motion="true"])

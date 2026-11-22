@@ -67,7 +67,7 @@ test("topbar actions and settings fit a phone with double-size text", async ({ p
   expect(await page.locator("html").evaluate((root) => root.scrollWidth)).toBe(390);
   await settings.click();
   const dialog = page.getByRole("dialog", { name: "应用设置" });
-  for (const name of ["外观", "阅读与布局", "快捷键"]) {
+  for (const name of ["阅读", "快捷键"]) {
     const tab = dialog.getByRole("tab", { name, exact: true });
     await tab.click();
     await expect(tab).toBeInViewport({ ratio: 1 });

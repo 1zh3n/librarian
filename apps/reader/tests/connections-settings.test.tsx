@@ -28,12 +28,10 @@ const grant: McpGrant = {
 function renderConnections({
   isAdmin = true,
   active = true,
-  close = vi.fn(),
   setBusy = vi.fn(),
 }: {
   isAdmin?: boolean;
   active?: boolean;
-  close?: () => void;
   setBusy?: (value: boolean) => void;
 } = {}) {
   const client = new QueryClient({
@@ -47,7 +45,6 @@ function renderConnections({
         active={active}
         busy={false}
         setBusy={setBusy}
-        close={close}
       />
     </QueryClientProvider>,
   );

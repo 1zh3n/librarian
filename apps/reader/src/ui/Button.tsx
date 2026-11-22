@@ -11,6 +11,7 @@ type ButtonProps = {
   "aria-expanded"?: boolean;
   children: ReactNode;
   variant?: "ghost" | "primary" | "outline";
+  size?: "sm" | "md" | "lg";
   className?: string;
   fullWidth?: boolean;
   isIconOnly?: boolean;

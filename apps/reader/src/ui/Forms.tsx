@@ -21,6 +21,7 @@ import type {
 export function Form(props: {
   children: ReactNode;
   className?: string;
+  hidden?: boolean;
   "aria-label"?: string;
   method?: "post" | "get";
   validationBehavior?: "native" | "aria";

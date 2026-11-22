@@ -218,7 +218,7 @@ test("members open settings in a document and Workspace AI without connection co
   await page.getByRole("option", { name: "工作区 AI", exact: true }).click();
   await expect(page.getByRole("heading", { name: "工作区 AI" })).toBeVisible();
   await openAi(page);
-  await dialog.getByRole("button", { name: "关闭" }).click();
+  await dialog.getByRole("button", { name: "关闭应用设置", exact: true }).click();
   await expect(trigger(page)).toBeFocused();
 });
 
@@ -321,7 +321,7 @@ test.describe("AI connection form on touch screens", () => {
       await expect(refresh).toBeInViewport({ ratio: 1 });
       expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       expect(await page.locator("html").evaluate((node) => node.scrollWidth)).toBe(width);
-      await dialog.getByRole("button", { name: "关闭" }).tap();
+      await dialog.getByRole("button", { name: "关闭应用设置", exact: true }).tap();
       await expect(trigger(page)).toBeFocused();
     });
   }

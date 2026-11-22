@@ -7,11 +7,13 @@ export function CopyButton({
   text,
   label = "复制",
   className,
+  size = "sm",
   isDisabled = false,
 }: {
   text: string;
   label?: string;
   className?: string;
+  size?: "sm" | "md" | "lg";
   isDisabled?: boolean;
 }) {
   const [state, setState] = useState<CopyState>("idle");
@@ -26,6 +28,7 @@ export function CopyButton({
   return (
     <Button
       variant="outline"
+      size={size}
       {...(className ? { className } : {})}
       isDisabled={isDisabled || !available}
       onPress={() => {

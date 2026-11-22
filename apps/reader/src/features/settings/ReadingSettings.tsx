@@ -40,21 +40,23 @@ export function ReadingSettings({
   retry: () => void;
 }) {
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState("appearance");
+  const [tab, setTab] = useState("reading");
   const [visitedAi, setVisitedAi] = useState(false);
   const [visitedConnections, setVisitedConnections] = useState(false);
+  const showPreferences = tab === "reading" || tab === "shortcuts";
   return (
     <Dialog
       title="应用设置"
+      showClose
+      closeLabel="关闭应用设置"
       busy={saving}
       onClose={close}
-      classes={
-        tab === "connections"
-          ? { overlay: styles.overlay, modal: styles.modalWide, dialog: styles.dialog }
-          : { overlay: styles.overlay, modal: styles.modal, dialog: styles.dialog }
-      }
+      classes={{ overlay: styles.overlay, modal: styles.modal, dialog: styles.dialog }}
+      headerClassName={styles.dialogHeader}
+      closeClassName={styles.dialogClose}
     >
       <Tabs
+        className={styles.settings}
         value={tab}
         disabled={saving}
         onChange={(id) => {
@@ -66,53 +68,39 @@ export function ReadingSettings({
         listClassName={styles.tabList}
         tabClassName={styles.tab}
         items={[
-          { id: "appearance", label: "外观" },
-          { id: "reading", label: "阅读与布局" },
+          { id: "reading", label: "阅读" },
           { id: "shortcuts", label: "快捷键" },
           { id: "ai", label: "AI" },
           { id: "connections", label: "连接" },
         ]}
       >
         {preferences ? (
-          <fieldset
-            className={styles.device}
-            hidden={tab === "ai" || tab === "connections"}
-            disabled={saving}
-            aria-label="设备偏好"
-          >
-            <PreferencesForm
-              preferences={preferences}
-              saving={saving}
-              setSaving={setSaving}
-              setTab={setTab}
-              save={save}
-              close={close}
-            />
-          </fieldset>
-        ) : (
-          tab !== "ai" && (
-            <TabPanel id={tab} className={styles.fields}>
-              {loading ? (
-                <Feedback>正在读取设备设置…</Feedback>
-              ) : (
-                <Feedback tone="error" className={styles.error}>
-                  无法读取设备设置。
-                </Feedback>
-              )}
+          <PreferencesForm
+            preferences={preferences}
+            saving={saving}
+            hidden={!showPreferences}
+            setSaving={setSaving}
+            setTab={setTab}
+            save={save}
+            close={close}
+          />
+        ) : showPreferences ? (
+          <div className={styles.state}>
+            {loading ? (
+              <Feedback>正在读取设备设置…</Feedback>
+            ) : (
+              <Feedback tone="error">无法读取设备设置。</Feedback>
+            )}
+            {!loading && (
               <div className={styles.actions}>
-                <Button className={styles.button} onPress={close}>
-                  关闭
+                <Button variant="outline" onPress={retry}>
+                  重试
                 </Button>
-                {!loading && (
-                  <Button className={styles.button} onPress={retry}>
-                    重试
-                  </Button>
-                )}
               </div>
-            </TabPanel>
-          )
-        )}
-        <TabPanel id="ai" keepMounted className={styles.aiPanel}>
+            )}
+          </div>
+        ) : null}
+        <TabPanel id="ai" keepMounted className={styles.scrollPanel}>
           {visitedAi &&
             (account && isAdmin !== undefined ? (
               <AiSettings
@@ -126,13 +114,8 @@ export function ReadingSettings({
             ) : (
               <Feedback>暂时无法确认账号权限。</Feedback>
             ))}
-          <div className={styles.actions}>
-            <Button className={styles.button} isDisabled={saving} onPress={close}>
-              关闭
-            </Button>
-          </div>
         </TabPanel>
-        <TabPanel id="connections" keepMounted>
+        <TabPanel id="connections" keepMounted className={styles.scrollPanel}>
           {visitedConnections &&
             (account && isAdmin !== undefined ? (
               <ConnectionsSettings
@@ -142,7 +125,6 @@ export function ReadingSettings({
                 active={tab === "connections"}
                 busy={saving}
                 setBusy={setSaving}
-                close={close}
               />
             ) : (
               <Feedback>暂时无法确认账号权限。</Feedback>
@@ -155,6 +137,7 @@ export function ReadingSettings({
 
 function PreferencesForm({
   preferences,
+  hidden,
   setTab,
   saving,
   setSaving,
@@ -162,6 +145,7 @@ function PreferencesForm({
   close,
 }: SettingsActions & {
   preferences: DevicePreferences;
+  hidden: boolean;
   setTab: (tab: string) => void;
   saving: boolean;
   setSaving: (saving: boolean) => void;
@@ -173,7 +157,8 @@ function PreferencesForm({
   const [error, setError] = useState(false);
   return (
     <Form
-      className={styles.fields}
+      className={styles.form}
+      hidden={hidden}
       validationBehavior="aria"
       onSubmit={(event) => {
         event.preventDefault();
@@ -206,7 +191,7 @@ function PreferencesForm({
           .finally(() => setSaving(false));
       }}
     >
-      <TabPanel id="appearance" keepMounted className={styles.panel}>
+      <TabPanel id="reading" keepMounted className={styles.panel}>
         <Select
           label="主题"
           value={theme}
@@ -234,14 +219,13 @@ function PreferencesForm({
         >
           减少动画
         </Checkbox>
-      </TabPanel>
-      <TabPanel id="reading" keepMounted className={styles.panel}>
         <Field
           label="字号"
           className={styles.field}
           name="fontSize"
           type="number"
           required
+          disabled={saving}
           validationBehavior="native"
           defaultValue={String(preferences.fontSize)}
           inputClassName={styles.input}
@@ -255,6 +239,7 @@ function PreferencesForm({
           name="lineHeight"
           type="number"
           required
+          disabled={saving}
           validationBehavior="native"
           defaultValue={String(preferences.lineHeight)}
           inputClassName={styles.input}
@@ -268,6 +253,7 @@ function PreferencesForm({
           name="measure"
           type="number"
           required
+          disabled={saving}
           validationBehavior="native"
           defaultValue={String(preferences.measure)}
           inputClassName={styles.input}
@@ -281,6 +267,7 @@ function PreferencesForm({
           name="sidebarWidth"
           type="number"
           required
+          disabled={saving}
           validationBehavior="native"
           defaultValue={String(preferences.sidebarWidth)}
           inputClassName={styles.input}
@@ -294,6 +281,7 @@ function PreferencesForm({
           name="toolsWidth"
           type="number"
           required
+          disabled={saving}
           validationBehavior="native"
           defaultValue={String(preferences.toolsWidth)}
           inputClassName={styles.input}
@@ -307,6 +295,7 @@ function PreferencesForm({
           label="专注快捷键"
           className={styles.field}
           name="focusKey"
+          disabled={saving}
           defaultValue={preferences.focusKey}
           inputClassName={styles.input}
           maxLength={1}
@@ -333,8 +322,8 @@ function PreferencesForm({
           无法保存设置，请重试。
         </Feedback>
       )}
-      <div className={styles.actions}>
-        <Button className={styles.button} isDisabled={saving} onPress={close}>
+      <div className={styles.formActions}>
+        <Button variant="outline" isDisabled={saving} onPress={close}>
           取消
         </Button>
         <Button type="submit" variant="primary" loading={saving}>

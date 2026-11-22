@@ -119,13 +119,10 @@ test("settings tabs preserve drafts and save values from inactive tabs", async (
   await createNote(page, "SettingsTabs.md", "设备设置分组");
   await page.getByRole("banner").getByRole("button", { name: "设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "应用设置" });
-  const appearance = settings.getByRole("tab", { name: "外观" });
-  const reading = settings.getByRole("tab", { name: "阅读与布局" });
+  const reading = settings.getByRole("tab", { name: "阅读", exact: true });
   const shortcuts = settings.getByRole("tab", { name: "快捷键" });
-  await expect(appearance).toHaveAttribute("aria-selected", "true");
-  await settings.getByRole("checkbox", { name: "减少动画" }).press("Space");
-  await appearance.press("ArrowRight");
   await expect(reading).toHaveAttribute("aria-selected", "true");
+  await settings.getByRole("checkbox", { name: "减少动画" }).press("Space");
   const fontSize = settings.getByLabel("字号", { exact: true });
   await fontSize.fill("");
   await reading.press("ArrowRight");
@@ -313,7 +310,7 @@ test("search dismissal and the settings command restore the original reading pos
   await input.fill("设置");
   await palette.getByRole("option", { name: "设置", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "应用设置" });
-  await expect(settings.getByRole("tab", { name: "外观" })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "阅读", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(settings).toBeHidden();
   await expect(reader).toBeFocused();
@@ -384,7 +381,7 @@ test("settings retry a failed initial load before exposing a draft of the existi
   }
   await expect(dialog.getByRole("alert")).toContainText("无法读取设备设置");
   await dialog.getByRole("button", { name: "重试" }).click();
-  await dialog.getByRole("tab", { name: "阅读与布局" }).click();
+  await dialog.getByRole("tab", { name: "阅读", exact: true }).click();
   await expect(dialog.getByLabel("字号", { exact: true })).toHaveValue("23");
   await dialog.getByRole("button", { name: "保存设置" }).click();
   await expect(dialog).toBeHidden();

@@ -2,99 +2,177 @@
   position: fixed;
   z-index: 4;
   inset: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: min(1rem, 4vw);
   background: var(--overlay);
 }
 
 .modal {
   container-type: inline-size;
-  width: min(100%, 38rem);
-}
-
-.modalWide {
-  container-type: inline-size;
-  width: min(100%, 44rem);
-}
-
-.modal,
-.modalWide {
-  block-size: min(82dvh, 46rem);
-  max-height: calc(100dvh - 2rem);
-  scrollbar-gutter: stable;
-  scroll-padding-block: 0.5rem;
-  overflow: auto;
+  display: flex;
+  inline-size: min(100%, 44rem);
+  block-size: min(82dvh, 36rem);
+  max-block-size: calc(100dvh - 2rem);
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
 }
 
 .dialog {
-  padding: min(1rem, 4vw);
+  display: flex;
+  inline-size: 100%;
+  max-inline-size: none;
+  block-size: 100%;
+  min-block-size: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
   outline: 0;
 }
 
-.device {
+.dialogHeader {
+  display: flex;
+  min-inline-size: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-block-end: 1px solid var(--border);
+}
+
+.dialogHeader h2 {
   min-inline-size: 0;
   margin: 0;
-  padding: 0;
-  border: 0;
+  font-size: 1.125rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
-.dialog h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.25rem;
+.dialogClose {
+  flex: 0 0 auto;
 }
 
-.fields {
+.settings {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.875rem;
+  min-block-size: 0;
+  flex: 1 1 auto;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .tabList {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 1;
-  max-width: 100%;
-  flex-wrap: wrap;
-  padding: 0;
-  border-block-end: 1px solid var(--border);
-  background: var(--surface);
+  display: flex;
+  min-block-size: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.125rem;
+  padding: 0.75rem 0.5rem;
+  overflow-y: auto;
+  border-inline-end: 1px solid var(--border);
 }
 
 .tab {
-  width: auto;
-  min-width: 0;
-  min-height: 44px;
-  flex: 1 1 5rem;
-  white-space: normal;
-  margin-block-end: -1px;
-  padding-inline: clamp(4px, 1vw, 8px);
-  border-block-end: 2px solid transparent;
-  border-radius: 0;
+  inline-size: 100%;
+  min-height: var(--control-height);
+  justify-content: flex-start;
+  padding-inline: 0.625rem;
+  border-inline-start: 2px solid transparent;
+  border-radius: var(--radius);
+  font-size: var(--ui-size);
+  text-align: start;
 }
 
 .tab[data-selected] {
-  border-block-end-color: var(--accent);
+  border-inline-start-color: var(--accent);
+  background: var(--surface-selected);
   color: var(--accent);
+}
+
+.form {
+  display: grid;
+  min-inline-size: 0;
+  min-block-size: 0;
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+.form[hidden] {
+  display: none;
 }
 
 .panel {
   display: grid;
+  min-inline-size: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem 0.875rem;
-  padding-block-start: 0.875rem;
+  align-content: start;
+  gap: 0.75rem 0.875rem;
+  padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .panel[data-inert] {
   display: none;
 }
 
+.scrollPanel {
+  min-inline-size: 0;
+  min-block-size: 0;
+  grid-column: 2;
+  grid-row: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.scrollPanel[data-inert] {
+  display: none;
+}
+
+.state {
+  display: grid;
+  min-inline-size: 0;
+  grid-column: 2;
+  grid-row: 1;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.actions {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.formActions {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-block-start: 1px solid var(--border);
+  background: var(--surface);
+}
+
 .shortcuts {
   display: grid;
+  min-inline-size: 0;
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.5rem;
@@ -110,114 +188,79 @@
 
 .field {
   display: grid;
+  min-inline-size: 0;
   align-content: start;
-  min-width: 0;
   gap: 0.25rem;
   color: var(--ink-secondary);
   font-size: var(--ui-size);
 }
 
-.input,
-.button {
-  width: 100%;
-  min-height: 44px;
-  padding: 0.4rem 0.65rem;
+.input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--control-height);
+  padding: var(--control-padding);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
+  background: var(--surface);
   color: var(--ink);
-  background: var(--paper);
   font: inherit;
-}
-
-.input {
   text-align: start;
-}
-
-.button[data-hovered] {
-  background: var(--surface-hover);
 }
 
 .checkbox {
   display: flex;
-  min-height: 44px;
+  min-height: var(--control-height);
   align-items: center;
   gap: 0.4rem;
   border-radius: var(--radius);
   font-size: var(--ui-size);
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: end;
-  gap: 0.5rem;
+/* Button classes stay layout-only; HeroUI owns height, border and variants. */
+.button {
+  inline-size: auto;
 }
 
-.actions button {
-  scroll-margin-block: 0.5rem;
-  width: auto;
-  min-height: 44px;
+.danger {
+  color: var(--control-invalid);
+  box-shadow: inset 0 0 0 1px var(--control-invalid);
+}
+
+.inlineButton {
+  inline-size: auto;
+  min-height: var(--control-height-sm);
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-}
-
-.actions button[type="submit"] {
-  padding-inline: 1rem;
-}
-
-.error {
-  margin: 0;
-}
-
-@container (max-width: 17rem) {
-  .panel {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.aiPanel[data-inert] {
-  display: none;
-}
-
-.aiPanel {
-  display: grid;
-  min-width: 0;
-  gap: 0.875rem;
-  padding-block-start: 0.875rem;
-  overflow-wrap: anywhere;
-}
-
-.aiPanel p,
-.aiPanel h3 {
-  margin: 0;
-}
-
-.aiPanel h3 {
-  font-size: 1rem;
-}
-
-.catalog {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  gap: 0.625rem 0.875rem;
-}
-
-.detail {
-  color: var(--ink-secondary);
+  background: var(--surface);
+  color: var(--ink);
   font-size: var(--ui-size);
 }
 
 .refresh {
   justify-self: start;
-  min-height: 44px;
+  min-height: var(--control-height);
   padding-inline: 0.75rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.error {
+  margin: 0 1rem 0.75rem;
+}
+
+.fields {
+  display: grid;
+  min-inline-size: 0;
+  gap: 0.875rem;
 }
 
 .controls {
   display: grid;
-  gap: 1.25rem;
   min-inline-size: 0;
+  gap: 1.25rem;
   margin: 0;
   padding: 0;
   border: 0;
@@ -225,13 +268,13 @@
 
 .section {
   display: grid;
-  min-width: 0;
+  min-inline-size: 0;
   gap: 0.75rem;
 }
 
 .section + .section {
-  border-block-start: 1px solid var(--border);
   padding-block-start: 1rem;
+  border-block-start: 1px solid var(--border);
 }
 
 .aiDisclosure {
@@ -242,17 +285,17 @@
 }
 
 .aiDisclosure:first-of-type {
-  border-block-start: 0;
   padding-block-start: 0;
+  border-block-start: 0;
 }
 
 .aiDisclosureTrigger {
   display: flex;
-  min-height: 44px;
+  inline-size: 100%;
+  min-height: var(--control-height);
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
@@ -271,13 +314,26 @@
 
 .aiDisclosureBody {
   display: grid;
-  min-width: 0;
+  min-inline-size: 0;
   gap: 0.75rem;
+}
+
+.catalog {
+  display: grid;
+  min-inline-size: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.625rem 0.875rem;
+}
+
+.detail {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
 }
 
 .modelSummary {
   display: grid;
-  min-width: 0;
+  min-inline-size: 0;
   gap: 0.35rem;
 }
 
@@ -290,7 +346,7 @@
 
 .modelDisclosure {
   display: grid;
-  min-width: 0;
+  min-inline-size: 0;
   gap: 0.35rem;
   padding-block-start: 0.25rem;
   border-block-start: 1px solid var(--border);
@@ -298,7 +354,7 @@
 
 .modelDisclosureTrigger {
   display: flex;
-  min-height: 36px;
+  min-height: var(--control-height-sm);
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -313,7 +369,7 @@
 
 .modelDisclosureTitle {
   display: flex;
-  min-width: 0;
+  min-inline-size: 0;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.35rem;
@@ -338,7 +394,7 @@
 
 .modelFacts > div {
   display: grid;
-  min-width: 0;
+  min-inline-size: 0;
   gap: 0.1rem;
 }
 
@@ -354,15 +410,84 @@
   overflow-wrap: anywhere;
 }
 
-@container (max-width: 22rem) {
-  .modelFacts {
+@media (max-width: 44rem) {
+  .overlay {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .modal {
+    inline-size: 100%;
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .dialog {
+    border-radius: 0;
+  }
+
+  .settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .tabList {
+    flex-direction: row;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border);
+  }
+
+  .tab {
+    inline-size: auto;
+    min-inline-size: 4.5rem;
+    flex: 0 0 auto;
+    justify-content: center;
+    padding-inline: 0.375rem;
+    border-inline-start: 0;
+    border-block-end: 2px solid transparent;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .tab[data-selected] {
+    border-block-end-color: var(--accent);
+    border-inline-start-color: transparent;
+    background: transparent;
+  }
+
+  .form,
+  .scrollPanel,
+  .state {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .panel {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@container (max-width: 13rem) {
+@media (max-width: 22rem) {
   .tabList {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: hidden;
+  }
+
+  .tab {
+    min-inline-size: 0;
+  }
+}
+
+@media (max-width: 26rem) {
+  .modelFacts {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

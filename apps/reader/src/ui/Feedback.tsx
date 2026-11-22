@@ -20,7 +20,8 @@ export function Feedback({
       data-feedback={tone}
       status={tone === "error" ? "danger" : tone === "success" ? "success" : "default"}
     >
-      {children}
+      <Alert.Indicator />
+      <Alert.Content>{children}</Alert.Content>
     </Alert>
   );
 }

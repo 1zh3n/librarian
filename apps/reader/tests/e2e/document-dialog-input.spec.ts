@@ -68,7 +68,7 @@ test("keeps submitted reading preferences until the response and allows a correc
   const trigger = page.getByRole("banner").getByRole("button", { name: "设置", exact: true });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "应用设置" });
-  await dialog.getByRole("tab", { name: "阅读与布局" }).click();
+  await dialog.getByRole("tab", { name: "阅读", exact: true }).click();
   const size = dialog.getByLabel("字号", { exact: true });
   await size.fill("21");
   const device = await page.evaluate(() => localStorage.getItem("librarian.device"));
@@ -87,7 +87,6 @@ test("keeps submitted reading preferences until the response and allows a correc
   await expect(dialog.getByRole("alert")).toContainText("重试");
   await expect(size).toHaveValue("21");
   await size.fill("25");
-  await dialog.getByRole("tab", { name: "外观" }).click();
   const motion = dialog.getByRole("checkbox", { name: "减少动画" });
   await motion.press("Space");
   await expect(motion).toBeChecked();

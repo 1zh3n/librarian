@@ -17,8 +17,8 @@ const settings = (page: Page) => page.getByRole("dialog", { name: "应用设置"
 
 function modalHeight(page: Page) {
   return settings(page).evaluate((element) => {
-    const container = element.closest('[data-slot="modal-container"]');
-    return container?.getBoundingClientRect().height ?? 0;
+    const container = element.closest<HTMLElement>('[data-slot="modal-container"]');
+    return container?.offsetHeight ?? 0;
   });
 }
 
