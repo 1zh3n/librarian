@@ -101,3 +101,8 @@
     min-height: 44px;
   }
 }
+
+.staticRead {
+  font-size: var(--ui-size);
+  color: var(--ink-secondary);
+}

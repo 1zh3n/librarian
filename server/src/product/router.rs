@@ -67,7 +67,8 @@ pub fn build_configured_product_router_with_parser(
         }
     });
     let routes = super::documents::routes(service.clone());
-    Ok((build(state, routes), McpBridge::new(service)))
+    let reading = super::reading::routes(service.clone());
+    Ok((build(state, routes).merge(reading), McpBridge::new(service)))
 }
 
 fn sweep(service: &super::documents::DocumentService) {
@@ -124,7 +125,7 @@ async fn asset(State(state): State<Arc<ProductState>>, Path(name): Path<String>)
     if name.contains(['/', '\\']) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let cache = if name == "reader-shell.json" {
+    let cache = if name == "reader-shell.json" || name == "static-reading.css" {
         "no-cache"
     } else {
         "public, max-age=31536000, immutable"

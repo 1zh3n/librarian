@@ -2256,3 +2256,152 @@ async fn http_multipart_upload_names_images_and_revalidates_etags() {
         .unwrap();
     assert_eq!(revalidated.status(), StatusCode::NOT_MODIFIED);
 }
+
+#[tokio::test]
+async fn static_reading_pages_serve_private_documents_and_share_snapshots() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let origin = server.url.clone();
+    let created = server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/documents",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &origin)
+        .json(&json!({
+            "path": "static/Page.md",
+            "markdown": "# 静态阅读\n\n[下一篇](Other.md) <script>alert(1)</script>\n",
+            "baseRevision": null,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created: Value = created.json().await.unwrap();
+    let document = created["document"]["id"].as_str().unwrap();
+    let other = server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/documents",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &origin)
+        .json(&json!({
+            "path": "static/Other.md",
+            "markdown": "# 下一篇\n\n正文。\n",
+            "baseRevision": null,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(other.status(), StatusCode::CREATED);
+    let other: Value = other.json().await.unwrap();
+    let other = other["document"]["id"].as_str().unwrap();
+
+    let css = server
+        .client
+        .get(format!("{}/assets/static-reading.css", server.url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(css.status(), StatusCode::OK);
+    assert_eq!(css.headers()[header::CONTENT_TYPE], "text/css");
+    assert_eq!(css.headers()[header::CACHE_CONTROL], "no-cache");
+    assert!(css.text().await.unwrap().contains(".reading"));
+
+    let private_url = format!(
+        "{}/workspaces/{workspace}/documents/{document}/read",
+        server.url
+    );
+    let private = server
+        .client
+        .get(&private_url)
+        .header(header::COOKIE, &session.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(private.status(), StatusCode::OK);
+    assert_eq!(
+        private.headers()[header::CONTENT_SECURITY_POLICY],
+        "default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    );
+    assert_eq!(private.headers()[header::CACHE_CONTROL], "no-store");
+    let html = private.text().await.unwrap();
+    assert!(html.contains("<h1 id=\"静态阅读\">"), "{html}");
+    assert!(
+        html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
+        "{html}"
+    );
+    assert!(!html.contains("<script>alert(1)</script>"), "{html}");
+    assert!(
+        html.contains(&format!(
+            "href=\"/workspaces/{workspace}/documents/{other}/read\""
+        )),
+        "{html}"
+    );
+    assert!(!html.contains("<div id=\"root\"></div>"), "{html}");
+
+    let anonymous_private = server.client.get(&private_url).send().await.unwrap();
+    assert_eq!(anonymous_private.status(), StatusCode::SEE_OTHER);
+    assert!(anonymous_private.headers()[header::LOCATION]
+        .to_str()
+        .unwrap()
+        .starts_with("/.auth/librarian/login?next="));
+
+    let snapshot = server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/snapshots",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &origin)
+        .json(&json!({
+            "kind": "current",
+            "audience": "share",
+            "documentIds": [document, other],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(snapshot.status(), StatusCode::CREATED);
+    let snapshot: Value = snapshot.json().await.unwrap();
+    let snapshot_id = snapshot["id"].as_str().unwrap();
+    let share_url = format!("{}/r/{snapshot_id}/read", server.url);
+    let share = server.client.get(&share_url).send().await.unwrap();
+    assert_eq!(share.status(), StatusCode::OK);
+    let html = share.text().await.unwrap();
+    assert!(html.contains("静态阅读"), "{html}");
+    assert!(html.contains("阅读地址中的文档"), "{html}");
+    assert!(
+        html.contains(&format!(
+            "href=\"/r/{snapshot_id}/read?documentId={other}\""
+        )),
+        "{html}"
+    );
+    assert!(!html.contains("<script>alert(1)</script>"), "{html}");
+
+    let revoked = server
+        .client
+        .delete(format!("{}/api/v1/snapshots/{snapshot_id}", server.url))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &origin)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
+    let after = server.client.get(&share_url).send().await.unwrap();
+    assert_eq!(after.status(), StatusCode::NOT_FOUND);
+}

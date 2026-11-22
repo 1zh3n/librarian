@@ -1188,6 +1188,17 @@ function DocumentWorkspace({
                         setImageDialogOpen(true);
                       },
                     },
+                    {
+                      id: "static-reading",
+                      label: "低 JS 阅读",
+                      run: () => {
+                        window.open(
+                          `/workspaces/${encodeURIComponent(workspace)}/documents/${encodeURIComponent(documentId)}/read`,
+                          "_blank",
+                          "noopener",
+                        );
+                      },
+                    },
                   ]
                 : []),
               ...(renameDocument

@@ -144,31 +144,40 @@ struct ReadQuery {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SnapshotView {
-    id: String,
+pub(super) struct SnapshotView {
+    pub(super) id: String,
     workspace_id: String,
     kind: Kind,
     audience: Audience,
     expires_at: Option<i64>,
     commit_id: Option<String>,
-    documents: Vec<SnapshotSummary>,
-    document: SnapshotDocument,
-    attachment_paths: Vec<String>,
+    pub(super) documents: Vec<SnapshotSummary>,
+    pub(super) document: SnapshotDocument,
+    pub(super) attachment_paths: Vec<String>,
+}
+
+impl SnapshotView {
+    pub(super) fn kind_label(&self) -> &'static str {
+        match self.kind {
+            Kind::Release => "固定版本",
+            Kind::Current => "当前地址",
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
-struct SnapshotSummary {
-    id: String,
-    path: String,
-    title: String,
+pub(super) struct SnapshotSummary {
+    pub(super) id: String,
+    pub(super) path: String,
+    pub(super) title: String,
 }
 
 #[derive(Serialize)]
-struct SnapshotDocument {
+pub(super) struct SnapshotDocument {
     #[serde(flatten)]
-    summary: SnapshotSummary,
-    markdown: String,
-    revision: String,
+    pub(super) summary: SnapshotSummary,
+    pub(super) markdown: String,
+    pub(super) revision: String,
 }
 
 impl CreateSnapshot {
@@ -495,63 +504,68 @@ async fn read(
     headers: HeaderMap,
 ) -> Result<Json<SnapshotView>, ApiError> {
     let Query(query) = query.map_err(|_| ApiError::invalid("Invalid snapshot query"))?;
-    run(move || {
-        with_snapshot(&service, &headers, &id, |snapshot, state| {
-            if query.document_id.as_ref().is_some_and(|id| {
-                !snapshot
-                    .manifest
-                    .documents
-                    .iter()
-                    .any(|document| &document.id == id)
-            }) {
-                return Err(ApiError::not_found());
-            }
-            let mut selected = None;
-            let mut summaries = Vec::new();
-            for entry in &snapshot.manifest.documents {
-                let is_selected = query
-                    .document_id
-                    .as_ref()
-                    .map_or_else(|| selected.is_none(), |id| id == &entry.id);
-                let result = read_entry(
-                    &service.metadata,
-                    state,
-                    &snapshot.workspace,
-                    entry,
-                    is_selected,
-                );
-                let (summary, markdown) = match result {
-                    Err(error)
-                        if (!is_selected || query.document_id.is_none())
-                            && error.status() == StatusCode::NOT_FOUND =>
-                    {
-                        continue
-                    }
-                    result => result?,
-                };
-                if let Some(markdown) = markdown {
-                    selected = Some(SnapshotDocument {
-                        summary: summary.clone(),
-                        revision: sha256_hex(markdown.as_bytes()),
-                        markdown,
-                    });
+    run(move || snapshot_view(&service, &id, query.document_id.as_deref(), &headers))
+        .await
+        .map(Json)
+}
+
+pub(super) fn snapshot_view(
+    service: &DocumentService,
+    id: &str,
+    document_id: Option<&str>,
+    headers: &HeaderMap,
+) -> Result<SnapshotView, ApiError> {
+    with_snapshot(service, headers, id, |snapshot, state| {
+        if document_id.is_some_and(|id| {
+            !snapshot
+                .manifest
+                .documents
+                .iter()
+                .any(|document| document.id == id)
+        }) {
+            return Err(ApiError::not_found());
+        }
+        let mut selected = None;
+        let mut summaries = Vec::new();
+        for entry in &snapshot.manifest.documents {
+            let is_selected = document_id.map_or_else(|| selected.is_none(), |id| id == entry.id);
+            let result = read_entry(
+                &service.metadata,
+                state,
+                &snapshot.workspace,
+                entry,
+                is_selected,
+            );
+            let (summary, markdown) = match result {
+                Err(error)
+                    if (!is_selected || document_id.is_none())
+                        && error.status() == StatusCode::NOT_FOUND =>
+                {
+                    continue
                 }
-                summaries.push(summary);
+                result => result?,
+            };
+            if let Some(markdown) = markdown {
+                selected = Some(SnapshotDocument {
+                    summary: summary.clone(),
+                    revision: sha256_hex(markdown.as_bytes()),
+                    markdown,
+                });
             }
-            Ok(Json(SnapshotView {
-                id: id.clone(),
-                workspace_id: snapshot.workspace,
-                kind: snapshot.manifest.kind,
-                audience: snapshot.manifest.audience,
-                expires_at: snapshot.expires_at,
-                commit_id: snapshot.commit_id,
-                documents: summaries,
-                document: selected.ok_or_else(ApiError::not_found)?,
-                attachment_paths: snapshot.manifest.attachments.into_keys().collect(),
-            }))
+            summaries.push(summary);
+        }
+        Ok(SnapshotView {
+            id: id.to_owned(),
+            workspace_id: snapshot.workspace,
+            kind: snapshot.manifest.kind,
+            audience: snapshot.manifest.audience,
+            expires_at: snapshot.expires_at,
+            commit_id: snapshot.commit_id,
+            documents: summaries,
+            document: selected.ok_or_else(ApiError::not_found)?,
+            attachment_paths: snapshot.manifest.attachments.into_keys().collect(),
         })
     })
-    .await
 }
 
 fn read_entry(

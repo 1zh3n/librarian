@@ -6,5 +6,6 @@ declare const styles: {
   readonly navigation: string;
   readonly offline: string;
   readonly offlineButton: string;
+  readonly staticRead: string;
 };
 export default styles;

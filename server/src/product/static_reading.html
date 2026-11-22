@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN" class="theme-{{ theme }}{% if eink %} eink{% endif %}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>{{ title }} · Librarian</title>
+    <link rel="stylesheet" href="/assets/static-reading.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="page-header">
+        {% if kind %}<p class="kind">{{ kind }}</p>{% endif %}
+        {% if show_title %}<h1>{{ title }}</h1>{% endif %}
+      </header>
+      {% if nav|length > 1 %}
+        <nav class="documents" aria-label="阅读地址中的文档">
+          <p>本文档集</p>
+          <ul>
+            {% for item in nav %}
+              <li><a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a></li>
+            {% endfor %}
+          </ul>
+        </nav>
+      {% endif %}
+      <main>
+        <article class="reading">
+          {{ content|safe }}
+        </article>
+      </main>
+      <footer class="page-footer">
+        <a href="{{ reader_url }}">在 Reader 中打开</a>
+        <span>可使用浏览器打印或另存为 PDF。</span>
+      </footer>
+    </div>
+  </body>
+</html>

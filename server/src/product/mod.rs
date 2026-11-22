@@ -29,6 +29,7 @@ mod mutations;
 pub mod password_limits;
 mod publication;
 mod reader_links;
+mod reading;
 mod references;
 mod revisions;
 pub mod router;

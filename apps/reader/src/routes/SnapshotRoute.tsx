@@ -125,6 +125,14 @@ function SnapshotReader({
     <>
       <header className={styles.header}>
         <p className={styles.kind}>{kind === "release" ? "固定版本" : "当前地址"}</p>
+        <a
+          className={styles.staticRead}
+          href={`/r/${encodeURIComponent(id)}/read?documentId=${encodeURIComponent(document.id)}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          低 JS 阅读
+        </a>
         {kind === "release" && <OfflineSnapshotControl key={id} id={id} offline={offline} />}
         {documents.length > 1 && (
           <Disclosure
