@@ -34,7 +34,8 @@ pub use tool::{
 
 pub use tools::{parse_tool_args, tool_input_schema, Tools, PAGE_DESCRIPTION, SPACE_DESCRIPTION};
 
-const BODY_LIMIT: usize = 16 * 1024 * 1024;
+// Base64 expands a 12 MiB image to 16 MiB before the JSON envelope.
+const BODY_LIMIT: usize = 20 * 1024 * 1024;
 
 /// Router that mounts the MCP endpoint at `/.mcp`.
 pub fn mcp_router(tools: Arc<dyn ToolSet>, auth: Arc<dyn Authenticate>) -> Router {

@@ -130,7 +130,7 @@ pub(super) fn validate_file_name(file_name: &str) -> Result<String, ApiError> {
     if file_name.is_empty() || file_name.len() > 255 {
         return Err(invalid_path());
     }
-    if file_name == "." || file_name == ".." {
+    if file_name == "." || file_name == ".." || file_name.starts_with('.') {
         return Err(invalid_path());
     }
     if file_name
@@ -192,7 +192,10 @@ pub(super) fn validate_directory(directory: &str) -> Result<String, ApiError> {
     if directory.is_empty() {
         return Ok(directory.to_owned());
     }
-    if !mutations::valid_file_path(directory) || directory.starts_with('/') {
+    if !mutations::valid_file_path(directory)
+        || directory.starts_with('/')
+        || directory.split('/').any(|part| part.starts_with('.'))
+    {
         return Err(invalid_path());
     }
     Ok(directory.to_owned())
@@ -265,6 +268,8 @@ mod tests {
         assert!(validate_file_name("a/b.png").is_err());
         assert!(validate_file_name("CON.png").is_err());
         assert!(validate_file_name("photo.png.").is_err());
+        assert!(validate_file_name(".hidden.png").is_err());
+        assert!(validate_directory("notes/.hidden").is_err());
     }
 
     #[test]
@@ -294,10 +299,46 @@ mod tests {
                 2,
                 3,
             ),
+            (
+                "tiny.avif",
+                include_bytes!("../../testdata/images/tiny.avif").as_slice(),
+                2,
+                3,
+            ),
         ] {
             let info = inspect(name, bytes).unwrap_or_else(|_| panic!("{name}"));
             assert_eq!((info.width, info.height), (width, height), "{name}");
         }
+    }
+
+    #[test]
+    fn rejects_images_beyond_the_side_and_pixel_limits() {
+        let tiny = include_bytes!("../../testdata/images/tiny.png");
+        let png_with = |width: u32, height: u32| {
+            let mut bytes = tiny.to_vec();
+            bytes[16..20].copy_from_slice(&width.to_be_bytes());
+            bytes[20..24].copy_from_slice(&height.to_be_bytes());
+            bytes
+        };
+        assert_eq!(
+            inspect("wide.png", &png_with(12_001, 1))
+                .unwrap_err()
+                .code(),
+            "image_too_large"
+        );
+        assert_eq!(
+            inspect("tall.png", &png_with(1, 12_001))
+                .unwrap_err()
+                .code(),
+            "image_too_large"
+        );
+        assert_eq!(
+            inspect("many.png", &png_with(8_000, 6_000))
+                .unwrap_err()
+                .code(),
+            "image_too_large"
+        );
+        assert!(inspect("wide.png", &png_with(12_000, 1)).is_ok());
     }
 
     #[test]

@@ -1319,6 +1319,89 @@ async fn mcp_uploads_reads_lists_and_undoes_an_image() {
         .await;
     assert_eq!(listed["structuredContent"]["assets"][0]["path"], path);
     assert_eq!(listed["structuredContent"]["assets"][0]["isImage"], true);
+    assert_eq!(
+        listed["structuredContent"]["assets"][0]["revision"],
+        asset["revision"]
+    );
+    let root = server
+        .tool(
+            &session,
+            "workspace_list_assets",
+            json!({"workspaceId": workspace}),
+        )
+        .await;
+    assert!(root["structuredContent"]["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|asset| !asset["path"]
+            .as_str()
+            .unwrap()
+            .to_ascii_lowercase()
+            .ends_with(".md")));
+
+    let uploaded = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "55555555-5555-4555-8555-555555555555",
+                "targetDirectory": "notes",
+                "fileName": "zzz.png",
+                "contentBase64": STANDARD.encode(png),
+            }),
+        )
+        .await;
+    assert_eq!(uploaded["isError"], Value::Null, "{uploaded}");
+    let first_page = server
+        .tool(
+            &session,
+            "workspace_list_assets",
+            json!({"workspaceId": workspace, "directory": "notes", "limit": 1}),
+        )
+        .await;
+    assert_eq!(
+        first_page["structuredContent"]["assets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(first_page["structuredContent"]["hasMore"], true);
+    let first_path = first_page["structuredContent"]["assets"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_page = server
+        .tool(
+            &session,
+            "workspace_list_assets",
+            json!({
+                "workspaceId": workspace,
+                "directory": "notes",
+                "after": first_path,
+                "limit": 10,
+            }),
+        )
+        .await;
+    assert!(second_page["structuredContent"]["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|asset| asset["path"].as_str().unwrap() > first_path.as_str()));
+    let all = server
+        .tool(
+            &session,
+            "workspace_list_assets",
+            json!({"workspaceId": workspace, "directory": "notes", "limit": 500}),
+        )
+        .await;
+    assert!(all["structuredContent"]["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|asset| !asset["path"].as_str().unwrap().contains("/.")));
 
     let undone = server
         .tool(
@@ -1336,6 +1419,148 @@ async fn mcp_uploads_reads_lists_and_undoes_an_image() {
         )
         .await;
     assert_eq!(missing["isError"], true);
+}
+
+#[tokio::test]
+async fn mcp_upload_accepts_a_full_size_image_within_the_json_body_limit() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let mut png = include_bytes!("../../../server/testdata/images/tiny.png").to_vec();
+    png.resize(12 * 1024 * 1024, 0);
+    let result = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "12121212-3434-4567-8899-121212121212",
+                "targetDirectory": "notes",
+                "fileName": "full.png",
+                "contentBase64": STANDARD.encode(&png),
+            }),
+        )
+        .await;
+    assert_eq!(result["isError"], Value::Null, "{result}");
+    assert_eq!(result["structuredContent"]["path"], "notes/full.png");
+    assert_eq!(result["structuredContent"]["width"], 2);
+    assert_eq!(result["structuredContent"]["size"], 12 * 1024 * 1024);
+
+    let read = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": "notes/full.png"}),
+        )
+        .await;
+    assert_eq!(read["isError"], Value::Null, "{read}");
+    assert_eq!(read["structuredContent"]["inline"], false);
+    assert_eq!(read["structuredContent"]["size"], 12 * 1024 * 1024);
+    assert_eq!(read["content"][0]["type"], "text");
+
+    fs::write(
+        server.root.path().join("spaces/left/oversized.png"),
+        vec![0u8; 12 * 1024 * 1024 + 1],
+    )
+    .unwrap();
+    let oversized = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": "oversized.png"}),
+        )
+        .await;
+    assert_eq!(oversized["isError"], true);
+    assert_eq!(oversized["structuredContent"]["code"], "asset_too_large");
+}
+
+#[tokio::test]
+async fn mcp_batch_upload_validates_images_and_keeps_svg_as_an_attachment() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let invalid = server
+        .tool(
+            &session,
+            "workspace_upload_files",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "77777777-7777-4777-8777-777777777777",
+                "targetDirectory": "notes",
+                "files": [{
+                    "path": "broken.png",
+                    "contentBase64": STANDARD.encode(b"not an image"),
+                }],
+            }),
+        )
+        .await;
+    assert_eq!(invalid["isError"], true, "{invalid}");
+    assert_eq!(invalid["structuredContent"]["code"], "invalid_image");
+
+    let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>";
+    let uploaded = server
+        .tool(
+            &session,
+            "workspace_upload_files",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "88888888-8888-4888-8888-888888888888",
+                "targetDirectory": "notes",
+                "files": [{
+                    "path": "icon.svg",
+                    "contentBase64": STANDARD.encode(svg),
+                }],
+            }),
+        )
+        .await;
+    assert_eq!(uploaded["isError"], Value::Null, "{uploaded}");
+    let read = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": "notes/icon.svg"}),
+        )
+        .await;
+    assert_eq!(read["isError"], Value::Null, "{read}");
+    assert_eq!(read["content"][0]["type"], "text");
+    assert_eq!(read["structuredContent"]["isImage"], false);
+    assert_eq!(read["structuredContent"]["inline"], false);
+    assert_eq!(
+        read["structuredContent"]["contentType"],
+        "application/octet-stream"
+    );
+
+    let reused = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "88888888-8888-4888-8888-888888888888",
+                "targetDirectory": "notes",
+                "fileName": "other.png",
+                "contentBase64": STANDARD.encode(include_bytes!("../../../server/testdata/images/tiny.png")),
+            }),
+        )
+        .await;
+    assert_eq!(reused["isError"], true, "{reused}");
+    assert_eq!(reused["structuredContent"]["code"], "operation_id_reused");
 }
 
 fn multipart_image_body(
@@ -1366,6 +1591,398 @@ fn multipart_image_body(
     body.extend_from_slice(image);
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     body
+}
+
+fn multipart_upload_body(
+    boundary: &str,
+    fields: &[(&str, &str)],
+    file_name: &str,
+    content_type: &str,
+    image: &[u8],
+) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (name, value) in fields {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\nContent-Type: {content_type}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(image);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
+}
+
+async fn http_upload(
+    server: &Server,
+    session: &Session,
+    workspace: &str,
+    body: Vec<u8>,
+    boundary: &str,
+) -> reqwest::Response {
+    server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/assets",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &server.url)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn http_upload_rejects_unsupported_mismatched_and_unsafe_images() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let boundary = "librarian-image-reject-boundary";
+    let png = include_bytes!("../../../server/testdata/images/tiny.png");
+    let cases = [
+        (
+            "drawing.svg",
+            "notes",
+            "image/svg+xml",
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".as_slice(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_image_type",
+        ),
+        (
+            "photo.jpg",
+            "notes",
+            "image/png",
+            png.as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_image",
+        ),
+        (
+            "broken.png",
+            "notes",
+            "image/png",
+            b"not an image".as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_image",
+        ),
+        (
+            "empty.png",
+            "notes",
+            "image/png",
+            b"".as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_image",
+        ),
+        (
+            "../escape.png",
+            "notes",
+            "image/png",
+            png.as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_path",
+        ),
+        (
+            "photo.png",
+            "../assets",
+            "image/png",
+            png.as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_path",
+        ),
+        (
+            ".hidden.png",
+            "notes",
+            "image/png",
+            png.as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_path",
+        ),
+        (
+            "photo.png",
+            "notes/.hidden",
+            "image/png",
+            png.as_slice(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_path",
+        ),
+    ];
+    for (index, (file_name, directory, content_type, bytes, status, code)) in
+        cases.into_iter().enumerate()
+    {
+        let operation = format!("9{index:07}-1111-4111-8111-111111111111");
+        let body = multipart_upload_body(
+            boundary,
+            &[
+                ("operationId", &operation),
+                ("targetDirectory", directory),
+                ("fileName", file_name),
+            ],
+            file_name,
+            content_type,
+            bytes,
+        );
+        let response = http_upload(&server, &session, workspace, body, boundary).await;
+        assert_eq!(response.status(), status, "{file_name}");
+        let error: Value = response.json().await.unwrap();
+        assert_eq!(error["code"], code, "{file_name}: {error}");
+    }
+    assert!(!server.root.path().join("spaces/left/notes").exists());
+}
+
+#[tokio::test]
+async fn http_upload_replaces_an_exact_revision_and_invalidates_the_old_etag() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let boundary = "librarian-image-replace-boundary";
+    let original = include_bytes!("../../../server/testdata/images/tiny.png");
+    let replacement = STANDARD
+        .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        .unwrap();
+    let upload = |operation: &str, base_revision: Option<&str>, bytes: &[u8]| {
+        let mut fields = vec![
+            ("operationId", operation),
+            ("targetDirectory", "notes"),
+            ("fileName", "replace.png"),
+        ];
+        if let Some(revision) = base_revision {
+            fields.push(("baseRevision", revision));
+        }
+        multipart_upload_body(boundary, &fields, "replace.png", "image/png", bytes)
+    };
+    let first = http_upload(
+        &server,
+        &session,
+        workspace,
+        upload("aaaaaaaa-1111-4111-8111-111111111111", None, original),
+        boundary,
+    )
+    .await;
+    assert_eq!(first.status(), StatusCode::CREATED);
+    let first: Value = first.json().await.unwrap();
+    assert_eq!(first["path"], "notes/replace.png");
+    let revision = first["revision"].as_str().unwrap().to_owned();
+    let asset_url = format!(
+        "{}/api/v1{}",
+        server.url,
+        first["assetPath"].as_str().unwrap()
+    );
+    let original_response = server
+        .client
+        .get(&asset_url)
+        .header(header::COOKIE, &session.cookie)
+        .send()
+        .await
+        .unwrap();
+    let old_etag = original_response.headers()[header::ETAG].clone();
+
+    let replaced = http_upload(
+        &server,
+        &session,
+        workspace,
+        upload(
+            "bbbbbbbb-2222-4222-8222-222222222222",
+            Some(&revision),
+            &replacement,
+        ),
+        boundary,
+    )
+    .await;
+    assert_eq!(replaced.status(), StatusCode::CREATED);
+    let replaced: Value = replaced.json().await.unwrap();
+    assert_eq!(replaced["path"], "notes/replace.png");
+    assert_ne!(replaced["revision"], revision);
+
+    let retried = http_upload(
+        &server,
+        &session,
+        workspace,
+        upload(
+            "bbbbbbbb-2222-4222-8222-222222222222",
+            Some(&revision),
+            &replacement,
+        ),
+        boundary,
+    )
+    .await;
+    assert_eq!(retried.status(), StatusCode::CREATED);
+    let retried: Value = retried.json().await.unwrap();
+    assert_eq!(retried["path"], replaced["path"]);
+    assert_eq!(retried["revision"], replaced["revision"]);
+    assert_eq!(retried["commitId"], replaced["commitId"]);
+
+    let reused = http_upload(
+        &server,
+        &session,
+        workspace,
+        upload(
+            "bbbbbbbb-2222-4222-8222-222222222222",
+            Some(&revision),
+            original,
+        ),
+        boundary,
+    )
+    .await;
+    assert_eq!(reused.status(), StatusCode::CONFLICT);
+    let reused: Value = reused.json().await.unwrap();
+    assert_eq!(reused["code"], "operation_id_reused");
+
+    let stale = http_upload(
+        &server,
+        &session,
+        workspace,
+        upload(
+            "cccccccc-3333-4333-8333-333333333333",
+            Some(&revision),
+            original,
+        ),
+        boundary,
+    )
+    .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+    let stale: Value = stale.json().await.unwrap();
+    assert_eq!(stale["code"], "asset_revision_conflict");
+
+    let updated = server
+        .client
+        .get(&asset_url)
+        .header(header::COOKIE, &session.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+    let new_etag = updated.headers()[header::ETAG].clone();
+    assert_eq!(updated.bytes().await.unwrap().as_ref(), replacement);
+    assert_ne!(new_etag, old_etag);
+    let stale_revalidation = server
+        .client
+        .get(&asset_url)
+        .header(header::COOKIE, &session.cookie)
+        .header(header::IF_NONE_MATCH, old_etag)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(stale_revalidation.status(), StatusCode::OK);
+    let current_revalidation = server
+        .client
+        .get(&asset_url)
+        .header(header::COOKIE, &session.cookie)
+        .header(header::IF_NONE_MATCH, new_etag)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(current_revalidation.status(), StatusCode::NOT_MODIFIED);
+}
+
+#[tokio::test]
+async fn http_upload_enforces_asset_limits_authorization_and_read_only_membership() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let reader = server.connect("reader", "left").await;
+    let workspaces = server.product_get(&session, "/workspaces").await;
+    let workspace = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|workspace| workspace["spaceId"] == "left")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let boundary = "librarian-image-limit-boundary";
+    let fields = [
+        ("operationId", "dddddddd-4444-4444-8444-444444444444"),
+        ("targetDirectory", "notes"),
+        ("fileName", "huge.png"),
+    ];
+    let mut huge = b"\x89PNG\r\n\x1a\n".to_vec();
+    huge.resize(12 * 1024 * 1024 + 1, 0);
+    let response = http_upload(
+        &server,
+        &session,
+        workspace,
+        multipart_upload_body(boundary, &fields, "huge.png", "image/png", &huge),
+        boundary,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let error: Value = response.json().await.unwrap();
+    assert_eq!(error["code"], "asset_too_large");
+
+    let fields = [
+        ("operationId", "eeeeeeee-5555-4555-8555-555555555555"),
+        ("targetDirectory", "notes"),
+        ("fileName", "reader.png"),
+    ];
+    let png = include_bytes!("../../../server/testdata/images/tiny.png");
+    let response = http_upload(
+        &server,
+        &reader,
+        workspace,
+        multipart_upload_body(boundary, &fields, "reader.png", "image/png", png),
+        boundary,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let error: Value = response.json().await.unwrap();
+    assert_eq!(error["code"], "read_only");
+
+    let response = server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/assets",
+            server.url
+        ))
+        .header(header::ORIGIN, &server.url)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(multipart_upload_body(
+            boundary,
+            &fields,
+            "reader.png",
+            "image/png",
+            png,
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let oversized_body = vec![b'x'; 20 * 1024 * 1024 + 1];
+    let response = http_upload(&server, &session, workspace, oversized_body, boundary).await;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let error: Value = response.json().await.unwrap();
+    assert_eq!(error["code"], "asset_too_large");
+    assert!(!server.root.path().join("spaces/left/notes").exists());
 }
 
 #[tokio::test]
@@ -1414,6 +2031,34 @@ async fn http_multipart_upload_names_images_and_revalidates_etags() {
     assert_eq!(second.status(), StatusCode::CREATED);
     let second: Value = second.json().await.unwrap();
     assert_eq!(second["path"], "notes/photo-2.png");
+
+    let reject = |operation: &str| {
+        let body = multipart_upload_body(
+            boundary,
+            &[
+                ("operationId", operation),
+                ("targetDirectory", "notes"),
+                ("fileName", "strict.png"),
+                ("conflictPolicy", "reject"),
+            ],
+            "strict.png",
+            "image/png",
+            png,
+        );
+        http_upload(&server, &session, workspace, body, boundary)
+    };
+    let created = reject("dddddddd-1111-4111-8111-111111111111").await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created: Value = created.json().await.unwrap();
+    let retried = reject("dddddddd-1111-4111-8111-111111111111").await;
+    assert_eq!(retried.status(), StatusCode::CREATED);
+    let retried: Value = retried.json().await.unwrap();
+    assert_eq!(retried["path"], created["path"]);
+    assert_eq!(retried["commitId"], created["commitId"]);
+    let conflict = reject("eeeeeeee-2222-4222-8222-222222222222").await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let conflict: Value = conflict.json().await.unwrap();
+    assert_eq!(conflict["code"], "asset_path_exists");
 
     let asset_url = format!(
         "{}/api/v1{}",

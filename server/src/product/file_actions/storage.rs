@@ -252,6 +252,12 @@ fn add_referenced_images(
             "Markdown must be UTF-8 before moving image references",
         )
     })?;
+    let mut total = 0usize;
+    for item in inventory.files() {
+        total += source
+            .attr(&item.path)?
+            .map_or(0, |attr| attr.len() as usize);
+    }
     let parser = pulldown_cmark::Parser::new_ext(
         &markdown,
         pulldown_cmark::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS,
@@ -301,7 +307,17 @@ fn add_referenced_images(
                         "Referenced image does not exist",
                     )
                 })?;
+                if inventory.items.iter().any(|item| {
+                    item.path == source_path
+                        && item.target_path.as_deref() == Some(destination.as_str())
+                }) {
+                    continue;
+                }
                 let bytes = source.bytes(&source_path)?;
+                total = total.saturating_add(bytes.len());
+                if total > mutations::MAX_BATCH_BYTES {
+                    return Err(asset_batch_too_large());
+                }
                 inventory.items.push(Item {
                     path: source_path,
                     object: Identity::from(&metadata),
@@ -477,15 +493,24 @@ pub(super) fn inspect(
             .as_deref()
             .ok_or_else(|| ApiError::invalid("Missing destination"))?;
         let src = &input.source_path;
+        let additions = inventory.file_count();
+        let removals = inventory.files().filter(|item| !item.copy_only).count();
+        let combined = input.action == Action::Move && source.workspace == target.workspace;
+        if additions > mutations::MAX_FILES
+            || (combined && additions + removals > mutations::MAX_FILES)
+        {
+            return if inventory.items.iter().any(|item| item.copy_only) {
+                Err(too_many_referenced_assets())
+            } else {
+                Err(too_large())
+            };
+        }
         if source.workspace == target.workspace {
             if src == dst
                 || dst.starts_with(&format!("{src}/"))
                 || src.starts_with(&format!("{dst}/"))
             {
                 return Err(ApiError::invalid("Source and destination must not overlap"));
-            }
-            if input.action == Action::Move && inventory.file_count() > mutations::MAX_FILES / 2 {
-                return Err(too_large());
             }
         } else {
             let source_root = source.root().canonicalize().map_err(ApiError::internal)?;
@@ -500,8 +525,11 @@ pub(super) fn inspect(
         inventory.target_parent = Some(Identity::from(&attr));
         let conn = metadata.connection()?;
         for item in &inventory.items {
-            let path = destination(input, &item.path);
+            let path = item_destination(input, item);
             validate_path(target.state, target.ignore, &path, item.revision.is_none())?;
+            if item.copy_only && target.attr(&path)?.is_some() {
+                return Err(path_exists());
+            }
             if item.document.is_some()
                 && conn.query_row(
                     "SELECT EXISTS(SELECT 1 FROM documents WHERE workspace_id=? AND path=?)",
@@ -1135,6 +1163,22 @@ fn verify_source(metadata: &Metadata, source: &Endpoint<'_>, plan: &Plan) -> Res
         return Err(changed());
     }
     Ok(())
+}
+
+fn too_many_referenced_assets() -> ApiError {
+    ApiError::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "too_many_referenced_assets",
+        "The document references too many files to move in one operation",
+    )
+}
+
+fn asset_batch_too_large() -> ApiError {
+    ApiError::new(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "asset_batch_too_large",
+        "The document's referenced images exceed the batch size limit",
+    )
 }
 
 fn stale(err: ApiError) -> ApiError {

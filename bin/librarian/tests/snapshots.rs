@@ -295,7 +295,7 @@ async fn current_tracks_the_document_and_release_preserves_selected_git_bytes_af
         assert_eq!(status, StatusCode::OK);
         assert_eq!(headers[header::CONTENT_TYPE], "image/png");
         assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
-        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert_eq!(headers[header::CACHE_CONTROL], "private, no-store");
         assert_eq!(bytes, expected);
         f.denied(
             "GET",

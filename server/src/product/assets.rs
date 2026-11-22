@@ -15,7 +15,7 @@ use super::{
     auth::Account,
     contract::ApiError,
     delivery,
-    documents::{is_document_path, run, state, DocumentService},
+    documents::{run, state, DocumentService},
     image_policy::{self, ConflictPolicy},
     imports, mutations,
 };
@@ -55,8 +55,26 @@ pub(super) fn upload_image(
     let state = state(&instance)?;
     let file_name = image_policy::validate_file_name(&input.file_name)?;
     let target_directory = image_policy::validate_directory(&input.target_directory)?;
+    let digest = image_digest(
+        ws,
+        &input.operation_id,
+        &target_directory,
+        &file_name,
+        input.conflict_policy,
+        input.base_revision.as_deref(),
+        &input.bytes,
+    );
+    if let Some((prior, prior_digest)) = imports::saved(service, account, ws, &input.operation_id)?
+    {
+        if prior_digest
+            .as_deref()
+            .is_some_and(|value| value != digest.as_str())
+        {
+            return Err(imports::operation_reused());
+        }
+        return image_response(service, ws, prior);
+    }
     image_policy::inspect(&file_name, &input.bytes)?;
-
     let path = choose_path(
         state,
         &target_directory,
@@ -64,18 +82,6 @@ pub(super) fn upload_image(
         input.conflict_policy,
         input.base_revision.as_deref(),
     )?;
-    let digest = sha256_hex(
-        &serde_json::to_vec(&(
-            ws,
-            &input.operation_id,
-            &target_directory,
-            &file_name,
-            input.conflict_policy == ConflictPolicy::Reject,
-            input.base_revision.as_deref(),
-            sha256_hex(&input.bytes),
-        ))
-        .map_err(ApiError::internal)?,
-    );
     let mut files = BTreeMap::new();
     files.insert(path.clone(), input.bytes);
     let updates = input
@@ -95,13 +101,41 @@ pub(super) fn upload_image(
             digest,
         },
     )?;
-    let asset = receipt.assets.first().ok_or_else(|| {
-        ApiError::new(
-            StatusCode::CONFLICT,
-            "operation_id_reused",
-            "Operation ID is already bound to another request",
-        )
-    })?;
+    image_response(service, ws, receipt)
+}
+
+fn image_digest(
+    ws: &str,
+    operation_id: &str,
+    target_directory: &str,
+    file_name: &str,
+    conflict_policy: ConflictPolicy,
+    base_revision: Option<&str>,
+    bytes: &[u8],
+) -> String {
+    sha256_hex(
+        &serde_json::to_vec(&(
+            ws,
+            operation_id,
+            target_directory,
+            file_name,
+            conflict_policy == ConflictPolicy::Reject,
+            base_revision,
+            sha256_hex(bytes),
+        ))
+        .expect("image digest inputs are serializable"),
+    )
+}
+
+fn image_response(
+    service: &DocumentService,
+    ws: &str,
+    receipt: imports::ImportReceipt,
+) -> Result<Value, ApiError> {
+    let asset = receipt
+        .assets
+        .first()
+        .ok_or_else(imports::operation_reused)?;
     let link = service.reader_links.asset(ws, &asset.path);
     let mut result = json!({
         "path": asset.path,
@@ -216,6 +250,10 @@ pub(super) fn read_asset(
     let (instance, _) = service.scope(account, ws, false)?;
     let state = state(&instance)?;
     let _read = crate::product::documents::product_read(state)?;
+    let meta = state.space.get_file_meta(path)?;
+    if meta.size as usize > MAX_IMAGE_BYTES {
+        return Err(image_policy::asset_too_large());
+    }
     let root = DiskPath::new(&state.space_folder_path);
     let bytes = mutations::current_bytes(root, state.space.as_ref(), path)?
         .ok_or_else(ApiError::not_found)?;
@@ -257,6 +295,7 @@ pub(super) fn list_assets(
     let directory = image_policy::validate_directory(directory)?;
     let (instance, _) = service.scope(account, ws, false)?;
     let state = state(&instance)?;
+    let _read = crate::product::documents::product_read(state)?;
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let prefix = if directory.is_empty() {
         String::new()
@@ -269,7 +308,7 @@ pub(super) fn list_assets(
         .into_iter()
         .map(|entry| entry.name)
         .filter(|path| {
-            !is_document_path(path)
+            !path.to_ascii_lowercase().ends_with(".md")
                 && !path.starts_with('.')
                 && delivery::included_path(path)
                 && (prefix.is_empty() || path.starts_with(&prefix))
@@ -283,17 +322,16 @@ pub(super) fn list_assets(
         .into_iter()
         .map(|path| {
             let link = service.reader_links.asset(ws, &path);
-            let info = state.space.get_file_meta(&path).ok().map(|meta| {
-                let is_image = image_policy::is_image_extension(&path);
-                (meta.size, is_image, content_type_for(&path))
-            });
-            let (size, is_image, content_type) = info.unwrap_or((
-                0,
-                image_policy::is_image_extension(&path),
-                content_type_for(&path),
-            ));
+            let meta = state.space.get_file_meta(&path).ok();
+            let revision = meta
+                .as_ref()
+                .and_then(|_| state.fs_guard.hash_for(state.space.as_ref(), &path).ok());
+            let size = meta.as_ref().map_or(0, |meta| meta.size);
+            let is_image = image_policy::is_image_extension(&path);
+            let content_type = content_type_for(&path);
             json!({
                 "path": path,
+                "revision": revision,
                 "assetPath": link.asset_path,
                 "assetUrl": link.asset_url,
                 "size": size,
@@ -385,7 +423,10 @@ async fn upload(
     Ok((StatusCode::CREATED, Json(value)))
 }
 
-fn multipart_error(_: axum::extract::multipart::MultipartError) -> ApiError {
+fn multipart_error(error: axum::extract::multipart::MultipartError) -> ApiError {
+    if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        return image_policy::asset_too_large();
+    }
     ApiError::new(
         StatusCode::BAD_REQUEST,
         "invalid_multipart",

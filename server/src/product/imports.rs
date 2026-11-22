@@ -111,7 +111,7 @@ impl ImportReceipt {
     }
 }
 
-fn saved(
+pub(super) fn saved(
     service: &DocumentService,
     account: &Account,
     ws: &str,
@@ -135,7 +135,7 @@ fn saved(
     .transpose()
 }
 
-fn operation_reused() -> ApiError {
+pub(super) fn operation_reused() -> ApiError {
     ApiError::new(
         StatusCode::CONFLICT,
         "operation_id_reused",

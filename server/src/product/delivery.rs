@@ -1029,9 +1029,24 @@ mod asset_response_tests {
         let response = workspace_asset_response("photo.png", b"first".to_vec(), &headers);
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
         assert!(response.headers().contains_key(header::ETAG));
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-cache"
+        );
+        assert!(response.headers().contains_key("x-content-revision"));
 
         let response = workspace_asset_response("photo.png", b"second".to_vec(), &headers);
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn asset_paths_hide_markdown_and_internal_directories() {
+        assert!(included_path("notes/photo.png"));
+        assert!(!included_path(".librarian/private.png"));
+        assert!(!included_path("notes/.hidden/photo.png"));
+        assert!(!included_path("notes/../photo.png"));
+        assert!(!included_path("notes/photo:stream.png"));
+        assert!(!included_path("notes/photo.png/"));
     }
 
     #[test]

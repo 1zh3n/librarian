@@ -210,6 +210,160 @@ async fn moving_a_document_rejects_missing_or_html_image_references() {
 }
 
 #[tokio::test]
+async fn moving_a_document_deduplicates_references_and_blocks_target_image_collisions() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let ws = source["id"].as_str().unwrap();
+    let created = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/sub/PhotoNote.md",
+                "markdown": "![bird](../media/bird.png)\\n![again](../media/bird.png)\\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
+    let id = created.1["document"]["id"].as_str().unwrap();
+    fs::create_dir(f.folder(&source).join("archive")).unwrap();
+    f.file_action(
+        ws,
+        &json!({
+            "action": "move",
+            "sourceKind": "document",
+            "sourcePath": "field/sub/PhotoNote.md",
+            "expectedDocumentId": id,
+            "targetPath": "archive/PhotoNote.md",
+            "targetWorkspace": ws,
+        }),
+        "ec0f4bd3-5a86-4dc8-91d6-05ba7f5a73d8",
+    )
+    .await;
+    assert_eq!(
+        fs::read(f.folder(&source).join("media/bird.png")).unwrap(),
+        PHOTO
+    );
+    assert!(!f.folder(&source).join("archive/media/bird.png").exists());
+
+    let blocked = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/Blocked.md",
+                "markdown": "![bird](media/bird.png)\\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(blocked.0, StatusCode::CREATED, "{}", blocked.1);
+    let blocked_id = blocked.1["document"]["id"].as_str().unwrap();
+    fs::create_dir_all(f.folder(&source).join("taken/media")).unwrap();
+    fs::write(f.folder(&source).join("taken/media/bird.png"), b"different").unwrap();
+    let (status, error) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/file-actions/preview"),
+            json!({
+                "action": "move",
+                "sourceKind": "document",
+                "sourcePath": "field/Blocked.md",
+                "expectedDocumentId": blocked_id,
+                "targetPath": "taken/Blocked.md",
+                "targetWorkspace": ws,
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{error}");
+    assert_eq!(error["code"], "path_exists", "{error}");
+}
+
+#[tokio::test]
+async fn moving_a_document_limits_referenced_image_count_and_total_bytes() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let ws = source["id"].as_str().unwrap();
+    let root = f.folder(&source);
+    let media = root.join("field/media");
+    let mut markdown = String::new();
+    for number in 1..=65 {
+        let name = format!("count-{number}.png");
+        fs::write(media.join(&name), PHOTO).unwrap();
+        markdown.push_str(&format!("![{number}](media/{name})\n"));
+    }
+    let too_many = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/Count.md",
+                "markdown": markdown,
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(too_many.0, StatusCode::CREATED, "{}", too_many.1);
+    let too_many_id = too_many.1["document"]["id"].as_str().unwrap();
+    let (status, error) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/file-actions/preview"),
+            json!({
+                "action": "move",
+                "sourceKind": "document",
+                "sourcePath": "field/Count.md",
+                "expectedDocumentId": too_many_id,
+                "targetPath": "archive/Count.md",
+                "targetWorkspace": ws,
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+    assert_eq!(error["code"], "too_many_referenced_assets", "{error}");
+
+    fs::write(media.join("large-1.png"), vec![0u8; 12 * 1024 * 1024]).unwrap();
+    fs::write(media.join("large-2.png"), vec![0u8; 12 * 1024 * 1024]).unwrap();
+    let too_large = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/TooLarge.md",
+                "markdown": "![one](media/large-1.png)\n![two](media/large-2.png)\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(too_large.0, StatusCode::CREATED, "{}", too_large.1);
+    let too_large_id = too_large.1["document"]["id"].as_str().unwrap();
+    let (status, error) = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/file-actions/preview"),
+            json!({
+                "action": "move",
+                "sourceKind": "document",
+                "sourcePath": "field/TooLarge.md",
+                "expectedDocumentId": too_large_id,
+                "targetPath": "archive/TooLarge.md",
+                "targetWorkspace": ws,
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{error}");
+    assert_eq!(error["code"], "asset_batch_too_large", "{error}");
+}
+
+#[tokio::test]
 async fn moving_one_document_to_another_workspace_copies_its_local_image() {
     let f = Fixture::open();
     let source = f.legacy().await;
