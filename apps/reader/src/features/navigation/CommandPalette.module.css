@@ -54,8 +54,8 @@
 
 .scope,
 .close {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--control-height);
+  min-height: var(--control-height);
   flex: 0 0 auto;
   font-size: var(--ui-size);
 }
@@ -94,24 +94,51 @@
 }
 
 .sectionTitle {
-  padding: 0.6rem 0.625rem 0.25rem;
+  padding: 0.75rem 0.625rem 0.3rem;
   color: var(--ink-secondary);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .result {
   display: grid;
-  min-height: 44px;
-  gap: 0.15rem;
-  align-content: center;
-  padding: 0.5rem 0.625rem;
+  min-height: var(--control-height);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
   border-radius: var(--radius);
 }
 
-.result[data-hovered],
+.result[data-hovered] {
+  background: var(--surface-hover);
+}
+
 .result[data-focused] {
   background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.resultIcon {
+  color: var(--ink-secondary);
+  font-size: 1rem;
+}
+
+.result[data-focused] .resultIcon {
+  color: var(--accent);
+}
+
+.resultText {
+  display: grid;
+  min-inline-size: 0;
+  gap: 0.15rem;
+}
+
+.resultTitle {
+  color: var(--ink);
+  font-size: var(--ui-size);
+  font-weight: 500;
 }
 
 .detail,
@@ -131,4 +158,13 @@
 .empty {
   margin: 0;
   padding: 0.75rem;
+}
+
+@media (max-width: 44rem), (pointer: coarse) {
+  .result,
+  .scope,
+  .close {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

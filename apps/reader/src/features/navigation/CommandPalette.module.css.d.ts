@@ -9,6 +9,9 @@ declare const styles: {
   readonly input: string;
   readonly results: string;
   readonly result: string;
+  readonly resultIcon: string;
+  readonly resultText: string;
+  readonly resultTitle: string;
   readonly detail: string;
   readonly empty: string;
   readonly searchIcon: string;

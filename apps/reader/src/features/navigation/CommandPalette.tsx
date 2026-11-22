@@ -11,12 +11,28 @@ import {
 import { Button, ToggleButton } from "../../ui/Button";
 import { SearchField } from "../../ui/SearchField";
 import { Dialog } from "../../ui/Dialog";
+import { Icon } from "../../ui/Icon";
 import type { DocumentSummary, SearchHit, Workspace } from "../../api/client";
 import { searchQuery } from "../../api/queries";
 import { recentDocuments } from "./recentDocuments";
 import styles from "./CommandPalette.module.css";
 
-type Result = { id: string; title: string; detail?: string; run: () => void };
+type ResultIcon = "file-text" | "sparkles" | "settings" | "plus" | "panel-right" | "chevron-right";
+type Result = {
+  id: string;
+  title: string;
+  detail?: string;
+  icon: ResultIcon;
+  run: () => void;
+};
+
+function commandIcon(title: string): ResultIcon {
+  if (title.includes("AI")) return "sparkles";
+  if (title.includes("设置")) return "settings";
+  if (title.includes("新建")) return "plus";
+  if (title.includes("布局")) return "panel-right";
+  return "chevron-right";
+}
 
 export function CommandPalette({
   workspace,
@@ -92,6 +108,7 @@ export function CommandPalette({
       id: document.id,
       title: document.title,
       detail: across && space ? `${space.name} · ${detail}` : detail,
+      icon: "file-text",
       run: () => openDocument(document.id, document.workspaceId),
     };
   }
@@ -107,7 +124,9 @@ export function CommandPalette({
     {
       id: "commands",
       title: "命令",
-      items: commands.filter((command) => command.title.includes(query)),
+      items: commands
+        .filter((command) => command.title.includes(query))
+        .map((command) => ({ ...command, icon: commandIcon(command.title) })),
     },
   ].filter((section) => section.items.length);
   const items = sections.flatMap((section) => section.items);
@@ -170,10 +189,13 @@ export function CommandPalette({
             <ListBoxSection id={id}>
               <Header className={styles.sectionTitle}>{title}</Header>
               <Collection items={items}>
-                {({ id, title, detail }: Result) => (
+                {({ id, title, detail, icon }: Result) => (
                   <ListBoxItem id={id} textValue={title} className={styles.result}>
-                    <span>{title}</span>
-                    {detail && <span className={styles.detail}>{detail}</span>}
+                    <Icon className={styles.resultIcon} name={icon} />
+                    <span className={styles.resultText}>
+                      <span className={styles.resultTitle}>{title}</span>
+                      {detail && <span className={styles.detail}>{detail}</span>}
+                    </span>
                   </ListBoxItem>
                 )}
               </Collection>
