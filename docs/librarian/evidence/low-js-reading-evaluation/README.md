@@ -36,4 +36,4 @@ Chromium `javaScriptEnabled: false`，1440×900：
 - 它处理 wiki links，不处理产品 Snapshot 的相对 Markdown 链接和快照资产。
 - 它把 raw HTML 原样输出，没有 sanitize；不能直接用于产品分享页。
 
-详细评估见[低 JS 阅读面评估](../../../../../../docs/superpowers/specs/2026-11-22-librarian-low-js-reading-evaluation.md)。
+详细评估见[低 JS 阅读面评估](../../../../../../../../docs/superpowers/specs/2026-11-22-librarian-low-js-reading-evaluation.md)。
