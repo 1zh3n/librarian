@@ -1,0 +1,32 @@
+{
+  "wide": {
+    "width": 1440,
+    "scrollWidth": 1440,
+    "image": {
+      "src": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+      "naturalWidth": 1500,
+      "naturalHeight": 4914,
+      "renderedWidth": 755.984375
+    }
+  },
+  "editor": {
+    "naturalWidth": 1500,
+    "renderedWidth": 755.984375
+  },
+  "phone": {
+    "width": 390,
+    "scrollWidth": 390,
+    "imageWidth": 342.984375
+  },
+  "narrow": {
+    "width": 320,
+    "scrollWidth": 320,
+    "imageWidth": 240.984375
+  },
+  "touchDialog": {
+    "x": 0,
+    "y": 573.828125,
+    "width": 390,
+    "height": 270.171875
+  }
+}
