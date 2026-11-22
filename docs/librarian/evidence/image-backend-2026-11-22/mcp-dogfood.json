@@ -1,0 +1,116 @@
+{
+  "workspace": "ws_97cc9df3a5434b28a22798e83d3febfe",
+  "directory": "dogfood",
+  "steps": [
+    {
+      "smallUpload": {
+        "path": "dogfood/dogfood.png",
+        "assetPath": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/dogfood.png",
+        "assetUrl": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/dogfood.png",
+        "revision": "6c2ba65a1b6ac109f55a3f2f40fb2c7e6dbef016ac76f279c4975678e2264919",
+        "contentType": "image/png",
+        "width": 2,
+        "height": 3,
+        "size": 296,
+        "operationId": "a0000001-1111-4111-8111-111111111111",
+        "commitId": "9d0c617909f8e3bc9d4f9d92a8c7c9fa6d37e670"
+      }
+    },
+    {
+      "twelveMiBUpload": {
+        "path": "dogfood/twelve-mib.png",
+        "assetPath": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/twelve-mib.png",
+        "assetUrl": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/twelve-mib.png",
+        "revision": "14e2a520e70e82b79e9056d7a48ffc7c8c545d334c950cb53ca50321f5509b3d",
+        "contentType": "image/png",
+        "width": 2,
+        "height": 3,
+        "size": 12582912,
+        "operationId": "a0000002-2222-4222-8222-222222222222",
+        "commitId": "d8a8256e35cd33c88fa2e0fbc42ef5d50836dd80"
+      }
+    },
+    {
+      "smallRead": {
+        "inline": true,
+        "revision": "6c2ba65a1b6ac109f55a3f2f40fb2c7e6dbef016ac76f279c4975678e2264919",
+        "contentType": "image/png"
+      }
+    },
+    {
+      "twelveMiBRead": {
+        "inline": false,
+        "size": 12582912,
+        "hasAssetUrl": true
+      }
+    },
+    {
+      "list": {
+        "assets": [
+          {
+            "path": "dogfood/dogfood.png",
+            "revision": "6c2ba65a1b6ac109f55a3f2f40fb2c7e6dbef016ac76f279c4975678e2264919",
+            "assetPath": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/dogfood.png",
+            "assetUrl": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/dogfood.png",
+            "size": 296,
+            "contentType": "image/png",
+            "isImage": true
+          },
+          {
+            "path": "dogfood/twelve-mib.png",
+            "revision": "14e2a520e70e82b79e9056d7a48ffc7c8c545d334c950cb53ca50321f5509b3d",
+            "assetPath": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/twelve-mib.png",
+            "assetUrl": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/twelve-mib.png",
+            "size": 12582912,
+            "contentType": "image/png",
+            "isImage": true
+          }
+        ],
+        "hasMore": false
+      }
+    },
+    {
+      "replace": {
+        "path": "dogfood/dogfood.png",
+        "assetPath": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/dogfood.png",
+        "assetUrl": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/dogfood.png",
+        "revision": "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+        "contentType": "image/png",
+        "width": 1,
+        "height": 1,
+        "size": 68,
+        "operationId": "a0000003-3333-4333-8333-333333333333",
+        "commitId": "2874402e02357e163117f27fccba265767c86766"
+      }
+    },
+    {
+      "replacementUndo": "original restored"
+    },
+    {
+      "wideUpload": {
+        "path": "dogfood/reader-wide.png",
+        "assetPath": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+        "assetUrl": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+        "revision": "fdd479843efe56cf9a1f2bdcc4136abd7e4343b4b5e95f1f1d6ad8bbacec4193",
+        "contentType": "image/png",
+        "width": 1500,
+        "height": 4914,
+        "size": 750420,
+        "operationId": "a0000004-4444-4444-8444-444444444444",
+        "commitId": "20882d12f1793bf4ffc7331d6a73d7dd6b214465"
+      }
+    },
+    {
+      "uploadUndos": "small and twelve MiB removed"
+    }
+  ],
+  "tools": 21,
+  "imageTools": [
+    "workspace_list_assets",
+    "workspace_read_asset",
+    "workspace_upload_image"
+  ],
+  "twelveMiBSeconds": 0.437,
+  "docPath": "dogfood/image-backend-2026-11-22.md",
+  "widePath": "dogfood/reader-wide.png"
+}
