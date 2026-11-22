@@ -31,6 +31,29 @@ describe("document saves", () => {
     expect(saves.status()).toBe("saved");
   });
 
+  it("saves after the maximum wait even while typing continues", async () => {
+    vi.useFakeTimers();
+    try {
+      const write = vi.fn().mockResolvedValue({ markdown: "连续输入第三段", revision: "next" });
+      const saves = new SaveController({ markdown: "旧内容", revision: "base" }, write, vi.fn());
+      saves.change("连续输入第一段");
+      await vi.advanceTimersByTimeAsync(400);
+      saves.change("连续输入第二段");
+      await vi.advanceTimersByTimeAsync(400);
+      saves.change("连续输入第三段");
+      expect(write).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_200);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(write).toHaveBeenCalledWith({
+        markdown: "连续输入第三段",
+        baseRevision: "base",
+      });
+      expect(saves.status()).toBe("saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retains unsaved edits through a network failure and retries the same base", async () => {
     const write = vi
       .fn()

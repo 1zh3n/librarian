@@ -11,12 +11,14 @@ export type SaveConflict<Snapshot extends MarkdownSnapshot> =
 type ReplaceSource = (markdown: string, confirmed: string, revision: string | null) => boolean;
 
 const WAIT_BEFORE_SAVE = 450;
+const MAX_WAIT_BEFORE_SAVE = 2_000;
 
 export class SaveController<Snapshot extends MarkdownSnapshot> {
   #confirmed: Snapshot;
   #latest: { markdown: string; generation: number };
   #status: SaveStatus = "idle";
   #timer: ReturnType<typeof setTimeout> | undefined;
+  #maxTimer: ReturnType<typeof setTimeout> | undefined;
   #active: Promise<void> | undefined;
   #listeners = new Set<() => void>();
   #write: (change: MarkdownWrite) => Promise<Snapshot>;
@@ -66,20 +68,22 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
   change(markdown: string) {
     if (markdown === this.#latest.markdown) return;
     this.#latest = { markdown, generation: this.#latest.generation + 1 };
-    this.cancelScheduledSave();
+    this.#clearDebounce();
     if (this.#status === "saving" || this.#status === "conflict") return;
     if (!this.isDirty()) {
+      this.cancelScheduledSave();
       this.#setStatus("saved");
       return;
     }
     if (this.#status === "error") return;
     this.#setStatus("pending");
     this.#timer = setTimeout(() => void this.flush(), WAIT_BEFORE_SAVE);
+    this.#maxTimer ??= setTimeout(() => void this.flush(), MAX_WAIT_BEFORE_SAVE);
   }
 
   cancelScheduledSave() {
-    clearTimeout(this.#timer);
-    this.#timer = undefined;
+    this.#clearDebounce();
+    this.#clearMax();
   }
 
   flush() {
@@ -154,6 +158,16 @@ export class SaveController<Snapshot extends MarkdownSnapshot> {
   async retryRemote() {
     if (this.#status !== "conflict" || this.#conflict?.state === "ready") return;
     await this.#loadRemote();
+  }
+
+  #clearDebounce() {
+    clearTimeout(this.#timer);
+    this.#timer = undefined;
+  }
+
+  #clearMax() {
+    clearTimeout(this.#maxTimer);
+    this.#maxTimer = undefined;
   }
 
   async #writeChanges() {
