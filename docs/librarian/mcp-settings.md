@@ -1,6 +1,6 @@
 # Reader 连接设置与已连接应用
 
-> **后续状态（2026-11-22）**：0.1 候选为 `release/0.1` @ `50329691`（代码/测量 `ff9a88bf`），18447 运行 `12fa1e39`。本文的连接设置 UI 和部署记录来自 `73f3442e`，保留为历史验收。MCP 正文敏感信息扫描/脱敏仍未实现，见交接仓库 `docs/superpowers/specs/2026-11-22-librarian-sensitive-data-boundary.md`。
+> **后续状态（2026-11-22）**：0.1 候选为 `release/0.1`（代码/测量 `ff9a88bf`），18447 运行 `12fa1e39`。本文的连接设置 UI 和部署记录来自 `73f3442e`，保留为历史验收。MCP 正文敏感信息扫描/脱敏仍未实现，见交接仓库 `docs/superpowers/specs/2026-11-22-librarian-sensitive-data-boundary.md`。
 
 2026-11-22，产品提交 `73f3442e`（连接设置 `d84ca08c` 加设置布局调整）。设计、狗粮背景和交接仓库证据见交接仓库的 `2026-11-22-librarian-connections-settings-and-dogfood.md`。
 
