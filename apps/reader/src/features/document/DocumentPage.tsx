@@ -1172,6 +1172,17 @@ function DocumentWorkspace({
               ...(mode === "read" && analysis.headings.length
                 ? [{ id: "contents", label: "文档目录", run: () => setTool("contents") }]
                 : []),
+              {
+                id: "static-reading",
+                label: "低 JS 阅读",
+                run: () => {
+                  window.open(
+                    `/workspaces/${encodeURIComponent(workspace)}/documents/${encodeURIComponent(documentId)}/read`,
+                    "_blank",
+                    "noopener",
+                  );
+                },
+              },
               ...(writable
                 ? [
                     {
@@ -1186,17 +1197,6 @@ function DocumentWorkspace({
                       run: () => {
                         if (mode === "read") enterEditor("preview");
                         setImageDialogOpen(true);
-                      },
-                    },
-                    {
-                      id: "static-reading",
-                      label: "低 JS 阅读",
-                      run: () => {
-                        window.open(
-                          `/workspaces/${encodeURIComponent(workspace)}/documents/${encodeURIComponent(documentId)}/read`,
-                          "_blank",
-                          "noopener",
-                        );
                       },
                     },
                   ]
