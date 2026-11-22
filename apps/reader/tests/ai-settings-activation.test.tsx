@@ -51,6 +51,7 @@ test("activation refreshes the open connection and saves a pending rename at the
     </QueryClientProvider>,
   );
 
+  fireEvent.click(await screen.findByRole("button", { name: /连接配置/ }));
   await screen.findByRole("button", { name: "启用连接" });
   const draft = "尚未保存的连接名";
   fireEvent.change(screen.getByRole("textbox", { name: "连接名称" }), { target: { value: draft } });
