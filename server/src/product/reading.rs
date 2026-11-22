@@ -922,6 +922,10 @@ fn error_page(error: ApiError) -> Response {
     );
     let mut response = (status, html).into_response();
     let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
@@ -935,6 +939,7 @@ fn error_page(error: ApiError) -> Response {
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
+    headers.insert(header::VARY, HeaderValue::from_static("Cookie"));
     response
 }
 

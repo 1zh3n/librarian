@@ -2468,4 +2468,10 @@ async fn static_reading_pages_serve_private_documents_and_share_snapshots() {
     assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
     let after = server.client.get(&share_url).send().await.unwrap();
     assert_eq!(after.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        after.headers()[header::CONTENT_TYPE],
+        "text/html; charset=utf-8"
+    );
+    let html = after.text().await.unwrap();
+    assert!(html.contains("阅读地址不可用"), "{html}");
 }
