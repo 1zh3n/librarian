@@ -1,0 +1,44 @@
+{
+  "dialogBox": {
+    "x": 369,
+    "y": 163,
+    "width": 702,
+    "height": 574
+  },
+  "tabs": [
+    "阅读",
+    "快捷键",
+    "AI",
+    "连接"
+  ],
+  "closeButtons": 1,
+  "readingBox": {
+    "x": 529,
+    "y": 220,
+    "width": 542,
+    "height": 456
+  },
+  "aiBox": {
+    "x": 369,
+    "y": 163,
+    "width": 702,
+    "height": 574
+  },
+  "connectionsBox": {
+    "x": 369,
+    "y": 163,
+    "width": 702,
+    "height": 574
+  },
+  "phoneBox": {
+    "x": 0,
+    "y": 0,
+    "width": 390,
+    "height": 844
+  },
+  "narrowMetrics": {
+    "scrollWidth": 320,
+    "width": 320,
+    "height": 720
+  }
+}
