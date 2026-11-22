@@ -7,14 +7,14 @@ use std::{
 };
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{OriginalUri, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect, Response},
     routing::get,
     Router,
 };
 use minijinja::{context, AutoEscape, Environment, Value};
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS, NON_ALPHANUMERIC};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
@@ -130,7 +130,7 @@ impl StaticLinks {
             || href.starts_with("https://")
             || href.starts_with("mailto:")
         {
-            return Some(href.to_owned());
+            return (!image).then(|| href.to_owned());
         }
         if href.starts_with("//") || href.starts_with("data:") || href.starts_with("javascript:") {
             return None;
@@ -335,11 +335,15 @@ fn split_reference(href: &str) -> Option<(String, String)> {
 }
 
 fn resolve_relative(current_path: &str, path: &str) -> Option<String> {
-    let mut parts = current_path
-        .rsplit_once('/')
-        .map_or_else(Vec::new, |(dir, _)| {
-            dir.split('/').filter(|part| !part.is_empty()).collect()
-        });
+    let mut parts = if path.starts_with('/') {
+        Vec::new()
+    } else {
+        current_path
+            .rsplit_once('/')
+            .map_or_else(Vec::new, |(dir, _)| {
+                dir.split('/').filter(|part| !part.is_empty()).collect()
+            })
+    };
     for part in path.split('/') {
         match part {
             "" | "." => {}
@@ -384,7 +388,7 @@ struct HeadingMeta {
 fn heading_metadata(markdown: &str) -> Vec<HeadingMeta> {
     let mut result = Vec::new();
     let mut current: Option<(u8, Option<String>, String)> = None;
-    let mut seen = BTreeMap::<String, usize>::new();
+    let mut seen = BTreeSet::<String>::new();
     for event in Parser::new_ext(markdown, options()) {
         match event {
             Event::Start(Tag::Heading { level, id, .. }) => {
@@ -409,13 +413,12 @@ fn heading_metadata(markdown: &str) -> Vec<HeadingMeta> {
                     let base = explicit
                         .filter(|id| !id.is_empty())
                         .unwrap_or_else(|| slugify(&text));
-                    let count = seen.entry(base.clone()).or_default();
-                    *count += 1;
-                    let id = if *count == 1 {
-                        base
-                    } else {
-                        format!("{base}-{count}")
-                    };
+                    let mut id = base.clone();
+                    let mut suffix = 2;
+                    while !seen.insert(id.clone()) {
+                        id = format!("{base}-{suffix}");
+                        suffix += 1;
+                    }
                     result.push(HeadingMeta { id, level, text });
                 }
             }
@@ -646,7 +649,7 @@ impl Renderer<'_> {
             Tag::TableHead => {
                 self.in_table_head = true;
                 self.table_cell = 0;
-                self.out.push_str("<thead>");
+                self.out.push_str("<thead><tr>");
             }
             Tag::TableRow => {
                 self.table_cell = 0;
@@ -718,7 +721,7 @@ impl Renderer<'_> {
             TagEnd::Table => self.out.push_str("</table></div>"),
             TagEnd::TableHead => {
                 self.in_table_head = false;
-                self.out.push_str("</thead>");
+                self.out.push_str("</tr></thead>");
             }
             TagEnd::TableRow => self.out.push_str("</tr>"),
             TagEnd::TableCell => {
@@ -767,9 +770,10 @@ async fn snapshot_reading(
     State(service): State<Arc<DocumentService>>,
     Path(snapshot): Path<String>,
     Query(query): Query<ReadingQuery>,
+    OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> Response {
-    let next = format!("/r/{snapshot}/read");
+    let next = original_reading_url(&uri, &format!("/r/{snapshot}/read"));
     let eink = query.eink();
     let theme = query.theme();
     let large_text = query.large_text();
@@ -790,9 +794,13 @@ async fn document_reading(
     State(service): State<Arc<DocumentService>>,
     Path((workspace, document)): Path<(String, String)>,
     Query(query): Query<ReadingQuery>,
+    OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> Response {
-    let next = format!("/workspaces/{workspace}/documents/{document}/read");
+    let next = original_reading_url(
+        &uri,
+        &format!("/workspaces/{workspace}/documents/{document}/read"),
+    );
     let eink = query.eink();
     let theme = query.theme();
     let large_text = query.large_text();
@@ -859,6 +867,11 @@ async fn document_reading(
     reading_response(result, &next)
 }
 
+fn original_reading_url(uri: &axum::http::Uri, fallback: &str) -> String {
+    uri.path_and_query()
+        .map_or_else(|| fallback.to_owned(), |value| value.as_str().to_owned())
+}
+
 fn reading_response(result: Result<String, ApiError>, next: &str) -> Response {
     match result {
         Ok(html) => {
@@ -886,7 +899,7 @@ fn reading_response(result: Result<String, ApiError>, next: &str) -> Response {
         }
         Err(error) if error.status() == StatusCode::UNAUTHORIZED => Redirect::to(&format!(
             "/.auth/librarian/login?next={}",
-            encode_component(next)
+            utf8_percent_encode(next, NON_ALPHANUMERIC)
         ))
         .into_response(),
         Err(error) => error_page(error),
@@ -959,12 +972,12 @@ mod tests {
     #[test]
     fn renders_gfm_and_rewrites_local_links_and_images() {
         let html = render_markdown(
-            "## 小标题\n\n| A | B |\n| - | -: |\n| 1 | 2 |\n\n[其他](other.md#段) ![图](photo.png) ![图标](icon.svg)\n\n- [x] 完成",
+            "## 小标题\n\n| A | B |\n| - | -: |\n| 1 | 2 |\n\n[其他](other.md#段) [根](/notes/other.md) ![图](photo.png) ![图标](icon.svg) ![外图](https://example.test/a.png)\n\n- [x] 完成",
             "notes/note.md",
             &links(),
         );
         assert!(html.contains("<h2 id=\"小标题\">"), "{html}");
-        assert!(html.contains("<table>"), "{html}");
+        assert!(html.contains("<thead><tr><th>A</th>"), "{html}");
         assert!(
             html.contains("<a href=\"/notes/other?eink=1#段\" rel=\"noreferrer\">其他</a>"),
             "{html}"
@@ -974,6 +987,11 @@ mod tests {
             "{html}"
         );
         assert!(html.contains("class=\"image-alt\">图标</span>"), "{html}");
+        assert!(
+            html.contains("href=\"/notes/other?eink=1\" rel=\"noreferrer\">根</a>"),
+            "{html}"
+        );
+        assert!(html.contains("class=\"image-alt\">外图</span>"), "{html}");
         assert!(
             html.contains("type=\"checkbox\" disabled checked"),
             "{html}"
@@ -1007,6 +1025,17 @@ mod tests {
             "{html}"
         );
         assert!(!html.contains("<script"), "{html}");
+    }
+
+    #[test]
+    fn keeps_heading_ids_unique_and_renders_empty_documents() {
+        let html = render_markdown("# A\n\n## A\n\n### A-2\n", "note.md", &links());
+        assert!(html.contains("<h1 id=\"A\">"), "{html}");
+        assert!(html.contains("<h2 id=\"A-2\">"), "{html}");
+        assert!(html.contains("<h3 id=\"A-2-2\">"), "{html}");
+        let html = render(page("")).unwrap();
+        assert!(html.contains("<h1>标题</h1>"), "{html}");
+        assert!(html.contains("<article class=\"reading\">"), "{html}");
     }
 
     #[test]

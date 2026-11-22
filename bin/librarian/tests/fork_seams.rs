@@ -2261,6 +2261,7 @@ async fn http_multipart_upload_names_images_and_revalidates_etags() {
 async fn static_reading_pages_serve_private_documents_and_share_snapshots() {
     let server = Server::boot().await;
     let session = server.connect("alice", "left").await;
+    let reader = server.connect("reader", "left").await;
     let workspaces = server.product_get(&session, "/workspaces").await;
     let workspace = workspaces
         .as_array()
@@ -2353,12 +2354,75 @@ async fn static_reading_pages_serve_private_documents_and_share_snapshots() {
     );
     assert!(!html.contains("<div id=\"root\"></div>"), "{html}");
 
-    let anonymous_private = server.client.get(&private_url).send().await.unwrap();
+    let read_only = server
+        .client
+        .get(&private_url)
+        .header(header::COOKIE, &reader.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read_only.status(), StatusCode::OK);
+    assert!(read_only.text().await.unwrap().contains("静态阅读"));
+
+    let missing = server
+        .client
+        .get(format!(
+            "{}/workspaces/{workspace}/documents/doc_missing/read",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+    let members_snapshot = server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/snapshots",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &origin)
+        .json(&json!({
+            "kind": "current",
+            "audience": "members",
+            "documentIds": [document],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(members_snapshot.status(), StatusCode::CREATED);
+    let members_snapshot: Value = members_snapshot.json().await.unwrap();
+    let members_url = format!(
+        "{}/r/{}/read",
+        server.url,
+        members_snapshot["id"].as_str().unwrap()
+    );
+    let members_anonymous = server.client.get(&members_url).send().await.unwrap();
+    assert_eq!(members_anonymous.status(), StatusCode::SEE_OTHER);
+    let members_reader = server
+        .client
+        .get(&members_url)
+        .header(header::COOKIE, &reader.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(members_reader.status(), StatusCode::OK);
+    assert!(members_reader.text().await.unwrap().contains("静态阅读"));
+
+    let anonymous_private = server
+        .client
+        .get(format!("{private_url}?eink=1&text=200"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(anonymous_private.status(), StatusCode::SEE_OTHER);
-    assert!(anonymous_private.headers()[header::LOCATION]
+    let login = anonymous_private.headers()[header::LOCATION]
         .to_str()
-        .unwrap()
-        .starts_with("/.auth/librarian/login?next="));
+        .unwrap();
+    assert!(login.starts_with("/.auth/librarian/login?next="));
+    assert!(login.contains("%3Feink%3D1%26text%3D200"), "{login}");
 
     let snapshot = server
         .client

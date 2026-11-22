@@ -86,6 +86,10 @@ body {
   margin-block-end: clamp(2rem, 5vw, 4rem);
 }
 
+.page-header.compact {
+  margin-block-end: 1.25rem;
+}
+
 .kind {
   margin: 0 0 0.75rem;
   color: var(--ink-secondary);
@@ -338,10 +342,6 @@ html.eink .page-header h1 {
     width: min(100% - 1.25rem, var(--measure));
     padding-block-start: 1.5rem;
   }
-
-  .page-header h1 {
-    font-size: 1.9rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -371,6 +371,7 @@ html.eink .page-header h1 {
 
   .page {
     width: auto;
+    max-width: var(--measure);
     padding: 0;
   }
 

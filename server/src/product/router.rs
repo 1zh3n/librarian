@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::{path::Path as FilePath, sync::Arc, time::Duration};
 
-use axum::extract::{Path, State};
+use axum::extract::{OriginalUri, Path, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -113,8 +113,52 @@ async fn api_not_found() -> impl IntoResponse {
     )
 }
 
-async fn index(State(state): State<Arc<ProductState>>) -> Response {
-    serve(&state, "index.html", "no-cache")
+async fn index(State(state): State<Arc<ProductState>>, OriginalUri(uri): OriginalUri) -> Response {
+    let Some(asset) = (state.asset)("index.html") else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut body = asset.bytes.into_owned();
+    if let Some(href) = static_reading_href(uri.path()) {
+        let text = String::from_utf8_lossy(&body);
+        if let Some(end) = text.rfind("</body>") {
+            let mut html = String::with_capacity(text.len() + 256);
+            html.push_str(&text[..end]);
+            html.push_str(
+                "<noscript><p>此阅读页需要 JavaScript。若使用低 JS 或墨水屏，请打开<a href=\"",
+            );
+            html.push_str(&href);
+            html.push_str("\">静态阅读版</a>。</p></noscript>");
+            html.push_str(&text[end..]);
+            body = html.into_bytes();
+        }
+    }
+    (
+        [
+            (header::CONTENT_TYPE, asset.content_type.as_str()),
+            (header::CACHE_CONTROL, "no-cache"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+fn static_reading_href(path: &str) -> Option<String> {
+    let path = path.trim_end_matches('/');
+    let segments = path.split('/').skip(1).collect::<Vec<_>>();
+    let safe = |value: &str| {
+        !value.is_empty()
+            && value
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "_-%.".contains(character))
+    };
+    match segments.as_slice() {
+        ["r", snapshot] if safe(snapshot) => Some(format!("/r/{snapshot}/read")),
+        ["workspaces", workspace, "documents", document] if safe(workspace) && safe(document) => {
+            Some(format!("/workspaces/{workspace}/documents/{document}/read"))
+        }
+        _ => None,
+    }
 }
 
 async fn service_worker(State(state): State<Arc<ProductState>>) -> Response {

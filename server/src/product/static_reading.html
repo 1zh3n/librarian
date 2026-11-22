@@ -10,7 +10,7 @@
   </head>
   <body>
     <div class="page">
-      <header class="page-header">
+      <header class="page-header{% if not show_title %} compact{% endif %}">
         {% if kind %}<p class="kind">{{ kind }}</p>{% endif %}
         {% if show_title %}<h1>{{ title }}</h1>{% endif %}
       </header>
