@@ -33,7 +33,6 @@ test("a readable row can offer copy without move or deletion", async () => {
         create={undefined}
         rename={undefined}
         actions={{ copy: () => {} }}
-        search={() => {}}
         close={() => {}}
       />,
     );

@@ -78,14 +78,12 @@ export function WorkspaceContextMenu({
   create,
   rename,
   actions,
-  search,
   close,
 }: {
   target: WorkspaceMenuTarget;
   actions: Partial<Record<"createFolder" | "move" | "copy" | "delete" | "deleted", () => void>>;
   rename: (() => void) | undefined;
   create: ((folder: string, origin: HTMLElement) => void) | undefined;
-  search: (origin: HTMLElement) => void;
   close: () => void;
 }) {
   return (
@@ -112,15 +110,6 @@ export function WorkspaceContextMenu({
                 },
               ]
             : []),
-          {
-            id: "search",
-            className: styles.menuItem,
-            label: "搜索文档…",
-            run: () => {
-              close();
-              search(target.trigger);
-            },
-          },
           ...(rename
             ? [
                 {

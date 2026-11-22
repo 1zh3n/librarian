@@ -9,7 +9,7 @@ test("clicking a folder row toggles it like vscode without changing file opening
   await page.goto(first.pathToNote);
   const tree = page.getByRole("treegrid", { name: "空间目录" });
   const folder = tree.getByRole("row", { name: /^行点击/ }).first();
-  const child = tree.getByRole("row", { name: /^A/ }).first();
+  const child = tree.getByRole("row", { name: "A.md", exact: true });
 
   await expect(folder).toHaveAttribute("aria-expanded", "true");
   await expect(child).toBeVisible();

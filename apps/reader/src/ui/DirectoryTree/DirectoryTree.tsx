@@ -43,7 +43,7 @@ function entries(documents: readonly DocumentSummary[], folderPaths: readonly st
     const filename = parts.pop() ?? document.path;
     addFolder(parts).push({
       id: document.id,
-      name: document.title,
+      name: filename,
       filename,
       folder: parts.join("/"),
     });
@@ -127,7 +127,6 @@ function EntryRow({
       data-context-path={path}
       data-command-target={path === markedPath || undefined}
       data-context-document={entry.children ? undefined : entry.id}
-      aria-description={entry.filename}
     >
       <TreeItemContent>
         {({ level, isExpanded, isSelected }) => (
@@ -151,11 +150,6 @@ function EntryRow({
               <span title={entry.name} className={styles.label}>
                 {entry.name}
               </span>
-              {entry.filename && entry.filename !== entry.name + ".md" && (
-                <small className={styles.label} title={entry.filename}>
-                  {entry.filename}
-                </small>
-              )}
             </div>
             {openMenu && (
               <MoreButton name={`${entry.name}更多`} folder={entry.folder} openMenu={openMenu} />

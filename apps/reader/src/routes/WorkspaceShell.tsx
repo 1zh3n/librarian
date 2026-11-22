@@ -709,10 +709,6 @@ export function WorkspaceShell() {
                 }),
             }}
             create={canCreate ? showCreateDocument : undefined}
-            search={(origin) => {
-              dialogOrigin.current = origin;
-              setSearch(true);
-            }}
             close={() => setContextMenu(undefined)}
           />
         )}

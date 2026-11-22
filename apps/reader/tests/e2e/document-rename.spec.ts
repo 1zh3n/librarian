@@ -109,12 +109,10 @@ test("renames the keyboard-targeted document in place, retaining title, stable l
 }, info) => {
   const { note, apiUrl, outline, address, otherAddress } = await sample(page);
   await page.goto(otherAddress);
-  const row = page.getByRole("row", { name: /雨季观察/ });
+  const row = page.getByRole("row", { name: /旧档\.md/ });
   await row.press("Shift+F10");
   const rename = page.getByRole("menuitem", { name: "重命名…" });
   await expect(rename).toBeVisible();
-  await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("menuitem", { name: /搜索文档/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(rename).toBeFocused();
   await page.keyboard.press("Enter");
@@ -138,16 +136,17 @@ test("renames the keyboard-targeted document in place, retaining title, stable l
   await name.press("Enter");
   expect((await submitted).postDataJSON()).toMatchObject({ expectedDocumentId: note.document.id });
   await expect(dialog).toBeHidden();
-  await expect(row).toContainText("雨后复测.md");
-  await expect(row).toBeFocused();
+  const renamed = page.getByRole("row", { name: "雨后复测.md", exact: true });
+  await expect(renamed).toContainText("雨后复测.md");
+  await expect(renamed).toBeFocused();
   const directory = page.getByRole("group", { name: "目录内容" });
-  await expect(row).toHaveCSS("outline-width", "2px");
+  await expect(renamed).toHaveCSS("outline-width", "2px");
   await expect(directory).toHaveCSS("outline-style", "none");
   await page.screenshot({ path: info.outputPath("rename-row-focus.png") });
   await directory.focus();
   await expect(directory).toBeFocused();
   await expect(directory).toHaveCSS("outline-width", "2px");
-  await expect(row).toHaveCSS("outline-style", "none");
+  await expect(renamed).toHaveCSS("outline-style", "none");
   await expect(page).toHaveURL(otherAddress);
   await expect(page.getByRole("article")).toContainText("继续读这篇");
   const saved = (await (await page.request.get(apiUrl)).json()) as DocumentSnapshot;
@@ -218,7 +217,7 @@ test.describe("touchscreen", () => {
     const { address, otherAddress } = await sample(page);
     await page.goto(address);
     await page.getByRole("button", { name: "展开目录" }).tap();
-    const more = page.getByRole("button", { name: "已占用更多" });
+    const more = page.getByRole("button", { name: "已占用.md更多" });
     await more.tap();
     const rename = page.getByRole("menuitem", { name: "重命名…" });
     await expect(rename).toBeVisible();
@@ -228,7 +227,7 @@ test.describe("touchscreen", () => {
     await expect(name).toHaveValue("已占用");
     await name.fill("第一稿");
     await dialog.getByRole("button", { name: "保存文件名" }).tap();
-    const renamed = page.getByRole("row", { name: "第一稿", exact: true });
+    const renamed = page.getByRole("row", { name: "第一稿.md", exact: true });
     await expect(renamed).toBeVisible();
     await expect(page).toHaveURL(address);
     await renamed.tap();
@@ -276,9 +275,9 @@ test("only workspace managers can rename from the document or its directory row"
         ).ok(),
       ).toBe(true);
       await member.goto(address);
-      await member.getByRole("row", { name: /雨季观察/ }).press("Shift+F10");
+      await member.getByRole("row", { name: /旧档\.md/ }).press("Shift+F10");
       const menu = member.getByRole("menu");
-      await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: /搜索文档/ })).toHaveCount(0);
       await expect(menu.getByRole("menuitem", { name: /重命名/ })).toHaveCount(0);
       await member.keyboard.press("Escape");
       const more = member.getByRole("button", { name: "文档更多" });
@@ -302,7 +301,7 @@ test("retries a lost rename receipt from the right-clicked file without applying
   await expect(page.getByRole("menuitem", { name: /新建文档/ })).toBeVisible();
   await expect(rename).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("row", { name: /雨季观察/ }).click({ button: "right" });
+  await page.getByRole("row", { name: /归档\.md\.md/ }).click({ button: "right" });
   await rename.click();
   const dialog = page.getByRole("dialog", { name: "重命名文档" });
   const name = dialog.getByLabel("文件名");
