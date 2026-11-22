@@ -1310,6 +1310,64 @@ async fn mcp_uploads_reads_lists_and_undoes_an_image() {
     assert_eq!(read["structuredContent"]["inline"], true);
     assert_eq!(read["structuredContent"]["revision"], asset["revision"]);
 
+    let replacement = STANDARD
+        .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        .unwrap();
+    let replaced = server
+        .tool(
+            &session,
+            "workspace_upload_image",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "13131313-1313-4131-8131-131313131313",
+                "targetDirectory": "notes",
+                "fileName": "tiny.png",
+                "contentBase64": STANDARD.encode(&replacement),
+                "baseRevision": asset["revision"],
+            }),
+        )
+        .await;
+    assert_eq!(replaced["isError"], Value::Null, "{replaced}");
+    assert_eq!(replaced["structuredContent"]["path"], path);
+    assert_ne!(replaced["structuredContent"]["revision"], asset["revision"]);
+    let read_replaced = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": path}),
+        )
+        .await;
+    assert_eq!(
+        STANDARD
+            .decode(read_replaced["content"][0]["data"].as_str().unwrap())
+            .unwrap(),
+        replacement
+    );
+    let undone_replaced = server
+        .tool(
+            &session,
+            "workspace_undo_operation",
+            json!({
+                "workspaceId": workspace,
+                "operationId": "13131313-1313-4131-8131-131313131313",
+            }),
+        )
+        .await;
+    assert_eq!(undone_replaced["isError"], Value::Null, "{undone_replaced}");
+    let read_original = server
+        .tool(
+            &session,
+            "workspace_read_asset",
+            json!({"workspaceId": workspace, "path": path}),
+        )
+        .await;
+    assert_eq!(
+        STANDARD
+            .decode(read_original["content"][0]["data"].as_str().unwrap())
+            .unwrap(),
+        png
+    );
+
     let listed = server
         .tool(
             &session,
@@ -1747,6 +1805,28 @@ async fn http_upload_rejects_unsupported_mismatched_and_unsafe_images() {
         assert_eq!(error["code"], code, "{file_name}: {error}");
     }
     assert!(!server.root.path().join("spaces/left/notes").exists());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let root = server.root.path().join("spaces/left");
+        fs::create_dir_all(root.join("safe")).unwrap();
+        symlink(root.join("safe"), root.join("link")).unwrap();
+        let body = multipart_upload_body(
+            boundary,
+            &[
+                ("operationId", "91919191-9191-4191-8191-919191919191"),
+                ("targetDirectory", "link"),
+                ("fileName", "escape.png"),
+            ],
+            "escape.png",
+            "image/png",
+            png,
+        );
+        let response = http_upload(&server, &session, workspace, body, boundary).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(!root.join("safe/escape.png").exists());
+    }
 }
 
 #[tokio::test]
@@ -1790,6 +1870,39 @@ async fn http_upload_replaces_an_exact_revision_and_invalidates_the_old_etag() {
     let first: Value = first.json().await.unwrap();
     assert_eq!(first["path"], "notes/replace.png");
     let revision = first["revision"].as_str().unwrap().to_owned();
+    let unicode_body = multipart_upload_body(
+        boundary,
+        &[
+            ("operationId", "45454545-4545-4545-8545-454545454545"),
+            ("targetDirectory", "notes"),
+            ("fileName", "河岸 photo.png"),
+        ],
+        "河岸 photo.png",
+        "image/png",
+        original,
+    );
+    let unicode = http_upload(&server, &session, workspace, unicode_body, boundary).await;
+    assert_eq!(unicode.status(), StatusCode::CREATED);
+    let unicode: Value = unicode.json().await.unwrap();
+    assert_eq!(unicode["path"], "notes/河岸 photo.png");
+    assert_eq!(
+        unicode["assetPath"],
+        format!("/workspaces/{workspace}/assets/notes/%E6%B2%B3%E5%B2%B8%20photo.png")
+    );
+    let unicode_response = server
+        .client
+        .get(format!(
+            "{}/api/v1{}",
+            server.url,
+            unicode["assetPath"].as_str().unwrap()
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unicode_response.status(), StatusCode::OK);
+    assert_eq!(unicode_response.bytes().await.unwrap().as_ref(), original);
+
     let asset_url = format!(
         "{}/api/v1{}",
         server.url,
@@ -1977,12 +2090,52 @@ async fn http_upload_enforces_asset_limits_authorization_and_read_only_membershi
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
+    let fields = [
+        ("operationId", "ffffffff-6666-4666-8666-666666666666"),
+        ("targetDirectory", "notes"),
+        ("fileName", "visible.png"),
+    ];
+    let visible = http_upload(
+        &server,
+        &session,
+        workspace,
+        multipart_upload_body(boundary, &fields, "visible.png", "image/png", png),
+        boundary,
+    )
+    .await;
+    assert_eq!(visible.status(), StatusCode::CREATED);
+    let visible: Value = visible.json().await.unwrap();
+    let visible_url = format!(
+        "{}/api/v1{}",
+        server.url,
+        visible["assetPath"].as_str().unwrap()
+    );
+    let anonymous = server.client.get(&visible_url).send().await.unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+    let readable = server
+        .client
+        .get(&visible_url)
+        .header(header::COOKIE, &reader.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(readable.status(), StatusCode::OK);
+
     let oversized_body = vec![b'x'; 20 * 1024 * 1024 + 1];
     let response = http_upload(&server, &session, workspace, oversized_body, boundary).await;
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     let error: Value = response.json().await.unwrap();
     assert_eq!(error["code"], "asset_too_large");
-    assert!(!server.root.path().join("spaces/left/notes").exists());
+    assert!(!server
+        .root
+        .path()
+        .join("spaces/left/notes/huge.png")
+        .exists());
+    assert!(!server
+        .root
+        .path()
+        .join("spaces/left/notes/reader.png")
+        .exists());
 }
 
 #[tokio::test]
@@ -2031,6 +2184,21 @@ async fn http_multipart_upload_names_images_and_revalidates_etags() {
     assert_eq!(second.status(), StatusCode::CREATED);
     let second: Value = second.json().await.unwrap();
     assert_eq!(second["path"], "notes/photo-2.png");
+    let upper = multipart_upload_body(
+        boundary,
+        &[
+            ("operationId", "34343434-3434-4434-8434-343434343434"),
+            ("targetDirectory", "notes"),
+            ("fileName", "PHOTO.PNG"),
+        ],
+        "PHOTO.PNG",
+        "image/png",
+        png,
+    );
+    let upper = http_upload(&server, &session, workspace, upper, boundary).await;
+    assert_eq!(upper.status(), StatusCode::CREATED);
+    let upper: Value = upper.json().await.unwrap();
+    assert_eq!(upper["path"], "notes/PHOTO-3.PNG");
 
     let reject = |operation: &str| {
         let body = multipart_upload_body(

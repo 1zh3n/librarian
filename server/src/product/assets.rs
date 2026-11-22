@@ -323,9 +323,11 @@ pub(super) fn list_assets(
         .map(|path| {
             let link = service.reader_links.asset(ws, &path);
             let meta = state.space.get_file_meta(&path).ok();
-            let revision = meta
-                .as_ref()
-                .and_then(|_| state.fs_guard.hash_for(state.space.as_ref(), &path).ok());
+            let revision = meta.as_ref().and_then(|meta| {
+                (meta.size <= MAX_IMAGE_BYTES as i64)
+                    .then(|| state.fs_guard.hash_for(state.space.as_ref(), &path).ok())
+                    .flatten()
+            });
             let size = meta.as_ref().map_or(0, |meta| meta.size);
             let is_image = image_policy::is_image_extension(&path);
             let content_type = content_type_for(&path);

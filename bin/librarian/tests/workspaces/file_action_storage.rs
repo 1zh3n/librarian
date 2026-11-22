@@ -284,6 +284,90 @@ async fn moving_a_document_deduplicates_references_and_blocks_target_image_colli
 }
 
 #[tokio::test]
+async fn copying_one_document_copies_its_local_image_and_keeps_the_source() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let ws = source["id"].as_str().unwrap();
+    let created = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/CopyNote.md",
+                "markdown": "![bird](media/bird.png)\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
+    let id = created.1["document"]["id"].as_str().unwrap();
+    fs::create_dir(f.folder(&source).join("archive")).unwrap();
+    f.file_action(
+        ws,
+        &json!({
+            "action": "copy",
+            "sourceKind": "document",
+            "sourcePath": "field/CopyNote.md",
+            "expectedDocumentId": id,
+            "targetPath": "archive/CopyNote.md",
+            "targetWorkspace": ws,
+        }),
+        "0f6c2a4e-7b3f-4aa1-bf8c-5c5f1e5c0a11",
+    )
+    .await;
+    let root = f.folder(&source);
+    assert_eq!(
+        fs::read(root.join("archive/CopyNote.md")).unwrap(),
+        b"![bird](media/bird.png)\n"
+    );
+    assert_eq!(
+        fs::read(root.join("archive/media/bird.png")).unwrap(),
+        PHOTO
+    );
+    assert_eq!(
+        fs::read(root.join("field/CopyNote.md")).unwrap(),
+        b"![bird](media/bird.png)\n"
+    );
+    assert_eq!(fs::read(root.join("field/media/bird.png")).unwrap(), PHOTO);
+}
+
+#[tokio::test]
+async fn deleting_one_document_keeps_its_local_image() {
+    let f = Fixture::open();
+    let source = f.legacy().await;
+    let ws = source["id"].as_str().unwrap();
+    let created = f
+        .request(
+            &f.admin,
+            "POST",
+            &format!("/workspaces/{ws}/documents"),
+            json!({
+                "path": "field/DeleteNote.md",
+                "markdown": "![bird](media/bird.png)\n",
+                "baseRevision": null,
+            }),
+        )
+        .await;
+    assert_eq!(created.0, StatusCode::CREATED, "{}", created.1);
+    let id = created.1["document"]["id"].as_str().unwrap();
+    f.file_action(
+        ws,
+        &json!({
+            "action": "delete",
+            "sourceKind": "document",
+            "sourcePath": "field/DeleteNote.md",
+            "expectedDocumentId": id,
+        }),
+        "6f3d1b5a-8c4e-4bb2-ae9d-6d6a2f6d1b22",
+    )
+    .await;
+    let root = f.folder(&source);
+    assert!(!root.join("field/DeleteNote.md").exists());
+    assert_eq!(fs::read(root.join("field/media/bird.png")).unwrap(), PHOTO);
+}
+
+#[tokio::test]
 async fn moving_a_document_limits_referenced_image_count_and_total_bytes() {
     let f = Fixture::open();
     let source = f.legacy().await;

@@ -339,6 +339,11 @@ mod tests {
             "image_too_large"
         );
         assert!(inspect("wide.png", &png_with(12_000, 1)).is_ok());
+        let tiny = include_bytes!("../../testdata/images/tiny.png");
+        assert_eq!(
+            inspect("tiny.png", &tiny[..16]).unwrap_err().code(),
+            "invalid_image"
+        );
     }
 
     #[test]
