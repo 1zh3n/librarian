@@ -68,7 +68,7 @@
 | --- | --- |
 | Reader Vitest | 29 文件 / 140 项通过 |
 | 图片 E2E | 5/5：选择上传、服务端重名、粘贴、拖放、阅读态入口 |
-| 产品 Playwright | 293 通过；2 个 release 用例在把 Zola 0.23.6 加入 PATH 后 6/6 通过 |
+| 产品 Playwright | 296 项中 295 通过；2 个 release 用例在把 Zola 0.23.6 加入 PATH 后 6/6 通过 |
 | 未通过 | `document-workspace.spec.ts` 的只读导入记录用例：新 Workspace 的 `deliveries/` 文档出现在 API 列表和正文，但目录树为空。与图片改动无关，待单独确认目录树对投递物理路径的预期 |
 | 类型/lint/format | `tsc --noEmit`、`oxlint --type-aware --deny-warnings`、`oxfmt --check` 通过 |
 | Rust | `make check-rust`、`cargo test -p librarian --tests`、server lib 1403 项通过 |
