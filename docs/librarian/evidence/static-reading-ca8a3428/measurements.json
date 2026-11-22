@@ -1,0 +1,267 @@
+{
+  "deployedCommit": "ca8a3428",
+  "origin": "https://192.168.8.166:18447",
+  "privateUrl": "https://192.168.8.166:18447/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/documents/doc_9c0bda1d95994551b8b446924167d5b0/read",
+  "shareUrl": "https://192.168.8.166:18447/r/94303bdd6e5c433f9734cb607a0826be/read",
+  "shareId": "94303bdd6e5c433f9734cb607a0826be",
+  "cases": {
+    "privateNoscript": {
+      "linkVisible": true,
+      "href": "/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/documents/doc_9c0bda1d95994551b8b446924167d5b0/read",
+      "text": "此阅读页需要 JavaScript。若使用低 JS 或墨水屏，请打开静态阅读版。"
+    },
+    "private1440": {
+      "title": "图片后端狗粮 · Librarian",
+      "heading": "图片后端狗粮",
+      "scripts": 0,
+      "eink": false,
+      "text200": false,
+      "width": 1440,
+      "scrollWidth": 1440,
+      "navigation": {
+        "domContentLoaded": 13,
+        "load": 16.09999990463257,
+        "transferSize": 1813,
+        "encodedBodySize": 1513
+      },
+      "image": {
+        "src": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+        "naturalWidth": 1500,
+        "naturalHeight": 4914,
+        "width": 755.984375,
+        "filter": "none"
+      },
+      "resources": [
+        {
+          "name": "https://192.168.8.166:18447/assets/static-reading.css",
+          "transferSize": 7470,
+          "encodedBodySize": 7170,
+          "duration": 2.8000000715255737
+        },
+        {
+          "name": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+          "transferSize": 750720,
+          "encodedBodySize": 750420,
+          "duration": 3.399999976158142
+        }
+      ]
+    },
+    "private390Eink": {
+      "title": "图片后端狗粮 · Librarian",
+      "heading": "图片后端狗粮",
+      "scripts": 0,
+      "eink": true,
+      "text200": false,
+      "width": 390,
+      "scrollWidth": 390,
+      "navigation": {
+        "domContentLoaded": 9.100000023841858,
+        "load": 12.300000071525574,
+        "transferSize": 1819,
+        "encodedBodySize": 1519
+      },
+      "image": {
+        "src": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+        "naturalWidth": 1500,
+        "naturalHeight": 4914,
+        "width": 369.984375,
+        "filter": "grayscale(1)"
+      },
+      "resources": [
+        {
+          "name": "https://192.168.8.166:18447/assets/static-reading.css",
+          "transferSize": 7470,
+          "encodedBodySize": 7170,
+          "duration": 2.399999976158142
+        },
+        {
+          "name": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+          "transferSize": 750720,
+          "encodedBodySize": 750420,
+          "duration": 3.299999952316284
+        }
+      ]
+    },
+    "private320Text200Eink": {
+      "title": "图片后端狗粮 · Librarian",
+      "heading": "图片后端狗粮",
+      "scripts": 0,
+      "eink": true,
+      "text200": true,
+      "width": 320,
+      "scrollWidth": 320,
+      "navigation": {
+        "domContentLoaded": 9.399999976158142,
+        "load": 18.200000047683716,
+        "transferSize": 1827,
+        "encodedBodySize": 1527
+      },
+      "image": {
+        "src": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+        "naturalWidth": 1500,
+        "naturalHeight": 4914,
+        "width": 299.984375,
+        "filter": "grayscale(1)"
+      },
+      "resources": [
+        {
+          "name": "https://192.168.8.166:18447/assets/static-reading.css",
+          "transferSize": 7470,
+          "encodedBodySize": 7170,
+          "duration": 2.200000047683716
+        },
+        {
+          "name": "https://192.168.8.166:18447/api/v1/workspaces/ws_97cc9df3a5434b28a22798e83d3febfe/assets/dogfood/reader-wide.png",
+          "transferSize": 750720,
+          "encodedBodySize": 750420,
+          "duration": 3.3000000715255737
+        }
+      ]
+    },
+    "share1440": {
+      "title": "图片后端狗粮 · Librarian",
+      "heading": "图片后端狗粮",
+      "scripts": 0,
+      "eink": false,
+      "text200": false,
+      "width": 1440,
+      "scrollWidth": 1440,
+      "navigation": {
+        "domContentLoaded": 9.599999904632568,
+        "load": 12.799999952316284,
+        "transferSize": 2477,
+        "encodedBodySize": 2177
+      },
+      "image": {
+        "src": "https://192.168.8.166:18447/api/v1/snapshots/94303bdd6e5c433f9734cb607a0826be/assets/dogfood/reader-wide.png",
+        "naturalWidth": 1500,
+        "naturalHeight": 4914,
+        "width": 755.984375,
+        "filter": "none"
+      },
+      "resources": [
+        {
+          "name": "https://192.168.8.166:18447/assets/static-reading.css",
+          "transferSize": 7470,
+          "encodedBodySize": 7170,
+          "duration": 2.1999999284744263
+        },
+        {
+          "name": "https://192.168.8.166:18447/api/v1/snapshots/94303bdd6e5c433f9734cb607a0826be/assets/dogfood/reader-wide.png",
+          "transferSize": 750720,
+          "encodedBodySize": 750420,
+          "duration": 2.899999976158142
+        }
+      ],
+      "navVisible": true,
+      "navItems": [
+        "图片后端狗粮",
+        "UI 上传大图验证",
+        "UI 上传验证"
+      ]
+    },
+    "shareSecondDocument": {
+      "title": "UI 上传大图验证 · Librarian",
+      "heading": "UI 上传大图验证",
+      "scripts": 0,
+      "eink": false,
+      "text200": false,
+      "width": 1440,
+      "scrollWidth": 1440,
+      "navigation": {
+        "domContentLoaded": 6.399999976158142,
+        "load": 8.100000023841858,
+        "transferSize": 2151,
+        "encodedBodySize": 1851
+      },
+      "image": {
+        "src": "https://192.168.8.166:18447/api/v1/snapshots/94303bdd6e5c433f9734cb607a0826be/assets/dogfood/assets/screen-01.png",
+        "naturalWidth": 1440,
+        "naturalHeight": 901,
+        "width": 755.984375,
+        "filter": "none"
+      },
+      "resources": [
+        {
+          "name": "https://192.168.8.166:18447/assets/static-reading.css",
+          "transferSize": 7470,
+          "encodedBodySize": 7170,
+          "duration": 1.600000023841858
+        },
+        {
+          "name": "https://192.168.8.166:18447/api/v1/snapshots/94303bdd6e5c433f9734cb607a0826be/assets/dogfood/assets/screen-01.png",
+          "transferSize": 216456,
+          "encodedBodySize": 216156,
+          "duration": 2
+        }
+      ]
+    },
+    "sharePrint": {
+      "navVisible": false,
+      "footerVisible": false
+    },
+    "revoked": {
+      "status": 404,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "504",
+        "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "content-type": "text/html; charset=utf-8",
+        "date": "Sun, 22 Nov 2026 12:33:52 GMT",
+        "referrer-policy": "no-referrer",
+        "vary": "Cookie",
+        "via": "1.1 Caddy",
+        "x-content-type-options": "nosniff"
+      },
+      "title": "阅读地址不可用",
+      "text": "阅读地址不可用\n\n请检查阅读地址是否仍然有效，或返回 Reader 重试。\n\n返回 Librarian"
+    }
+  },
+  "headers": {
+    "private": {
+      "cache-control": "no-store",
+      "content-length": "1513",
+      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=utf-8",
+      "date": "Sun, 22 Nov 2026 12:33:50 GMT",
+      "referrer-policy": "no-referrer",
+      "vary": "Cookie",
+      "via": "1.1 Caddy",
+      "x-content-type-options": "nosniff"
+    },
+    "share": {
+      "cache-control": "no-store",
+      "content-length": "2177",
+      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/html; charset=utf-8",
+      "date": "Sun, 22 Nov 2026 12:33:52 GMT",
+      "referrer-policy": "no-referrer",
+      "vary": "Cookie",
+      "via": "1.1 Caddy",
+      "x-content-type-options": "nosniff"
+    }
+  },
+  "resources": {
+    "cssBytes": 7170,
+    "privateHtmlBytes": 1513,
+    "shareHtmlBytes": 2177
+  },
+  "scripts": {
+    "private": [],
+    "private390": [],
+    "private320": [],
+    "share": []
+  },
+  "limits": {
+    "privateNoHorizontalOverflow": true,
+    "einkNoHorizontalOverflow": true,
+    "text200NoHorizontalOverflow": true,
+    "zeroScripts": true,
+    "zeroScriptRequests": true,
+    "imageLoaded": true,
+    "einkGrayscale": true,
+    "shareNavAndSecondDocument": true,
+    "revoked404": true,
+    "revokedHtml": true
+  }
+}
