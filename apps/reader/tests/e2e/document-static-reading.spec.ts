@@ -45,7 +45,27 @@ test("serves private documents and share snapshots without JavaScript", async ({
   });
   expect(snapshot.status()).toBe(201);
   const share = await snapshot.json();
+  const privateUrl = `/workspaces/${workspace.id}/documents/${first.document.document.id}/read`;
   const storageState = await page.context().storageState();
+
+  await page.goto(first.pathToNote);
+  await page.getByRole("button", { name: "文档更多" }).click();
+  await expect(page.getByRole("menuitem", { name: "低 JS 阅读" })).toBeVisible();
+  const documentPopup = page.waitForEvent("popup");
+  await page.getByRole("menuitem", { name: "低 JS 阅读" }).click();
+  const documentReading = await documentPopup;
+  await documentReading.waitForLoadState();
+  expect(new URL(documentReading.url()).pathname).toBe(privateUrl);
+  await expect(documentReading.getByRole("heading", { name: "静态阅读", level: 1 })).toBeVisible();
+  await documentReading.close();
+
+  await page.goto(`/r/${share.id}`);
+  const snapshotReading = page.getByRole("link", { name: "低 JS 阅读" });
+  await expect(snapshotReading).toHaveAttribute(
+    "href",
+    `/r/${share.id}/read?documentId=${first.document.document.id}`,
+  );
+  await expect(snapshotReading).toBeVisible();
 
   const privateContext = await browser.newContext({
     baseURL: origin,
@@ -55,7 +75,6 @@ test("serves private documents and share snapshots without JavaScript", async ({
   });
   const privatePage = await privateContext.newPage();
   try {
-    const privateUrl = `/workspaces/${workspace.id}/documents/${first.document.document.id}/read`;
     await privatePage.goto(`/workspaces/${workspace.id}/documents/${first.document.document.id}`);
     await expect(privatePage.getByRole("link", { name: "静态阅读版" })).toHaveAttribute(
       "href",
