@@ -1,6 +1,6 @@
 {
   "commit": "782d28a4a3592e946d13dcf9a1300a5f0f2c3b45",
-  "release": "/home/xia/.local/state/librarian-ai-workspace-candidate/runtime/releases/782d28a4/librarian",
+  "release": "/home/xia/.local/state/librarian-ai-workspace-candidate/runtime/releases/4a2cf5fc/librarian",
   "backup": "/home/xia/.local/state/librarian-ai-workspace-candidate/backups/pre-image-backend-782d28a4-20261122-140548",
   "services": [
     "librarian-ai-integration-app.service",
@@ -11,5 +11,8 @@
     "status": "ok",
     "version": "0.1.0"
   },
-  "mcpTools": 21
+  "mcpTools": 21,
+  "backendCommit": "782d28a4a3592e946d13dcf9a1300a5f0f2c3b45",
+  "readerImageCommit": "4a2cf5fc",
+  "readerImageBackup": "/home/xia/.local/state/librarian-ai-workspace-candidate/backups/pre-reader-images-4a2cf5fc-20261122-141906"
 }
