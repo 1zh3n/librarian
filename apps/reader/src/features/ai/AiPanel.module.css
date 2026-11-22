@@ -580,3 +580,37 @@
   flex: 0 0 auto;
   margin-block-start: auto;
 }
+
+.emptyState {
+  display: grid;
+  min-block-size: 0;
+  align-content: start;
+  gap: 0.75rem;
+  flex: 1 1 auto;
+  padding-block: 0.75rem;
+}
+
+.emptyTitle {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.emptyAction {
+  justify-content: flex-start;
+  text-align: start;
+}
+
+.composerMeta {
+  margin: 0.25rem 0 0;
+  color: var(--ink-secondary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

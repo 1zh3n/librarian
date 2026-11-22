@@ -9,6 +9,9 @@ declare const styles: {
   readonly snippets: string;
   readonly snippet: string;
   readonly snippetHead: string;
+  readonly otherClients: string;
+  readonly otherClientsTrigger: string;
+  readonly otherClientsBody: string;
   readonly readerLink: string;
   readonly actions: string;
   readonly button: string;

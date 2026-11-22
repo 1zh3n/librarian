@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { openFieldWorkspace } from "./productFixture";
 
 export const endpoint = "**/api/v1/ai/settings";
@@ -47,5 +47,14 @@ export async function openSettings(page: Page, admin = true) {
   await page.getByRole("banner").getByRole("button", { name: "设置", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "应用设置" });
   await dialog.getByRole("tab", { name: "AI", exact: true }).click();
+  await expandAdminSections(dialog);
   return dialog;
+}
+
+export async function expandAdminSections(dialog: Locator) {
+  for (const name of [/连接配置/, /全局 AI 与执行器/]) {
+    const trigger = dialog.getByRole("button", { name });
+    if ((await trigger.count()) === 0) continue;
+    if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();
+  }
 }

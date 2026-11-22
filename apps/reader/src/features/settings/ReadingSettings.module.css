@@ -320,6 +320,21 @@
   text-align: start;
 }
 
+.disclosureTitle {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.disclosureHint {
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
 .aiDisclosureHint {
   color: var(--ink-secondary);
   font-size: var(--ui-size);

@@ -236,3 +236,30 @@
     inline-size: 100%;
   }
 }
+
+.otherClients {
+  display: grid;
+  gap: 0.5rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--border);
+}
+
+.otherClientsTrigger {
+  display: flex;
+  min-height: var(--control-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: var(--ui-size);
+  text-align: start;
+}
+
+.otherClientsBody {
+  display: grid;
+  gap: 0.625rem;
+}

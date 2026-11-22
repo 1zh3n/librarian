@@ -5,6 +5,7 @@ import type { McpGrant, McpSettings } from "../../api/client";
 import { Button } from "../../ui/Button";
 import { CopyButton } from "../../ui/CopyButton";
 import { Dialog } from "../../ui/Dialog";
+import { Disclosure } from "../../ui/Disclosure";
 import { Feedback } from "../../ui/Feedback";
 import styles from "./ConnectionsSettings.module.css";
 
@@ -75,6 +76,7 @@ export function ConnectionsSettings({
   });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [showOtherClients, setShowOtherClients] = useState(false);
   const [revokeError, setRevokeError] = useState("");
   const [revoking, setRevoking] = useState<McpGrant>();
   const revokeTrigger = useRef<HTMLButtonElement | null>(null);
@@ -245,7 +247,7 @@ export function ConnectionsSettings({
           <CopyButton className={styles.button} text={view.endpoint} label="复制地址" />
         </div>
         <div className={styles.snippets}>
-          {snippets.map((snippet) => (
+          {snippets.slice(0, 1).map((snippet) => (
             <div className={styles.snippet} key={snippet.label}>
               <div className={styles.snippetHead}>
                 <strong>{snippet.label}</strong>
@@ -254,6 +256,26 @@ export function ConnectionsSettings({
               <pre>{snippet.text}</pre>
             </div>
           ))}
+          {snippets.length > 1 && (
+            <Disclosure
+              title="其他客户端"
+              expanded={showOtherClients}
+              onChange={setShowOtherClients}
+              className={styles.otherClients}
+              triggerClassName={styles.otherClientsTrigger}
+              bodyClassName={styles.otherClientsBody}
+            >
+              {snippets.slice(1).map((snippet) => (
+                <div className={styles.snippet} key={snippet.label}>
+                  <div className={styles.snippetHead}>
+                    <strong>{snippet.label}</strong>
+                    <CopyButton className={styles.button} text={snippet.text} label="复制命令" />
+                  </div>
+                  <pre>{snippet.text}</pre>
+                </div>
+              ))}
+            </Disclosure>
+          )}
         </div>
         <Feedback>
           连接使用你的账户权限。移动、删除和发布仍需在 Reader 中确认；你可以在这里撤销连接。

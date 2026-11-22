@@ -96,6 +96,9 @@ test("administrator enables and disables MCP without restarting", async ({ page 
   await expect(settings.getByText(endpoint, { exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "停用 MCP" })).toBeVisible();
   await expect(settings.getByText("Member app")).toBeVisible();
+  await expect(settings.getByText(/codex mcp add/)).toBeHidden();
+  await settings.getByRole("button", { name: "其他客户端", exact: true }).click();
+  await expect(settings.getByText(/codex mcp add/)).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("admin-connections-1440.png"),
   });

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
 import type { AiDiscoveryInput, DiscoveredModel, Workspace } from "../../src/api/client";
+import { expandAdminSections } from "./aiSettingsFixture";
 import { createNote, openDocumentTool, openFieldWorkspace } from "./productFixture";
 
 const endpoint = "**/api/v1/ai/settings/discover";
@@ -52,6 +53,7 @@ async function openAi(page: Page) {
   const tab = dialog.getByRole("tab", { name: "AI", exact: true });
   await expect(tab).toBeVisible();
   await tab.click();
+  await expandAdminSections(dialog);
   return dialog;
 }
 
@@ -306,6 +308,7 @@ test.describe("AI connection form on touch screens", () => {
       await trigger(page).tap();
       const dialog = settings(page);
       await dialog.getByRole("tab", { name: "AI", exact: true }).tap();
+      await expandAdminSections(dialog);
       const key = dialog.getByLabel("API Key", { exact: true });
       await key.fill("fixture-touch");
       await expect(dialog.getByRole("button", { name: /田野推理/ })).toBeVisible();
@@ -314,7 +317,7 @@ test.describe("AI connection form on touch screens", () => {
         .attach("phone-catalog", { body: await page.screenshot(), contentType: "image/png" });
       // Reduced viewport approximates the space left by an on-screen keyboard.
       await page.setViewportSize({ width, height: 390 });
-      await key.scrollIntoViewIfNeeded();
+      await key.evaluate((element) => element.scrollIntoView({ block: "center" }));
       await expect(key).toBeInViewport({ ratio: 1 });
       const refresh = dialog.getByRole("button", { name: "刷新模型" });
       await refresh.evaluate((element) => element.scrollIntoView({ block: "center" }));

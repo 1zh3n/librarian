@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
+import { expandAdminSections } from "./aiSettingsFixture";
 import { signIn } from "./productFixture";
 
 const enabled = {
@@ -47,14 +48,20 @@ test("settings keep one height while tabs and AI sections change", async ({ page
   await page.screenshot({ path: testInfo.outputPath("settings-ai-1440.png") });
 
   const connectionSection = dialog.getByRole("button", {
-    name: "连接配置",
-    exact: true,
+    name: /连接配置/,
   });
+  await expect(connectionSection).toHaveAttribute("aria-expanded", "false");
+  await expect(dialog.getByLabel("API Key", { exact: true })).toBeHidden();
+  await connectionSection.click();
   await expect(dialog.getByLabel("API Key", { exact: true })).toBeVisible();
   await connectionSection.click();
   await expect(dialog.getByLabel("API Key", { exact: true })).toBeHidden();
   await connectionSection.click();
   await expect(dialog.getByLabel("API Key", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /全局 AI 与执行器/ })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
 
   await dialog.getByRole("tab", { name: "连接", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "MCP 服务" })).toBeVisible();
@@ -91,6 +98,7 @@ test("the model capability block is collapsed until requested", async ({ page })
   await trigger(page).click();
   const dialog = settings(page);
   await dialog.getByRole("tab", { name: "AI", exact: true }).click();
+  await expandAdminSections(dialog);
   await dialog.getByLabel("API Key", { exact: true }).fill("fixture-key");
   await dialog.getByRole("button", { name: "刷新模型" }).click();
   const capability = dialog.getByRole("button", { name: /模型能力/ });

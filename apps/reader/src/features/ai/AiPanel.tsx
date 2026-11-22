@@ -2,7 +2,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, aiAccessMessage, ApiError, cancelTurn, getAiSettings } from "../../api/client";
-import type { AiContext, AiOperation, AiTask, DocumentSummary } from "../../api/client";
+import type {
+  AiContext,
+  AiOperation,
+  AiSettingsView,
+  AiTask,
+  DocumentSummary,
+} from "../../api/client";
 import { workspaceKeys, workspacesQuery } from "../../api/queries";
 import { Button } from "../../ui/Button";
 import { Form, Select, TextAreaField } from "../../ui/Forms";
@@ -36,6 +42,28 @@ const statuses: Partial<Record<AiOperation["status"], string>> = {
   conflict: "服务器内容已更新，请检查版本后重新提交。",
   canceled: "此 AI 操作已取消。",
 };
+
+function selectionSummary(view: AiSettingsView | undefined) {
+  const selection = view?.effectiveSelection;
+  if (!view || !selection) return "";
+  const connection = view.connections.find((item) => item.id === selection.connectionId);
+  const model = connection?.models.find((item) => item.id === selection.modelId);
+  const thinking =
+    selection.thinking.mode === "effort"
+      ? selection.thinking.level
+      : selection.thinking.mode === "off"
+        ? "关闭思考"
+        : "供应商默认";
+  return [connection?.label, model?.name || selection.modelId, thinking]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function runnerSummary(view: AiSettingsView | undefined) {
+  if (!view) return "";
+  if (view.dispatchMode === "legacy") return "现有执行器";
+  return view.runnerOnline ? "受管执行器在线" : "受管执行器离线";
+}
 
 export function AiPanel({
   id,
@@ -268,6 +296,15 @@ export function AiPanel({
     offline ||
     config.data?.globalEnabled === false ||
     turns.some(({ operation }) => isActiveOperation(operation));
+  const starters = global
+    ? ["比较两个空间的同名文档", "汇总最近更改", "在工作区创建一个文件"]
+    : documentId
+      ? ["总结这篇文档的要点", "找出需要核对的说法", "列出可执行的下一步"]
+      : ["总结这个空间", "找出最近更改", "创建一个文档"];
+  const showEmptyState = !hasTurns && !chat.accessDenied;
+  const composerMeta = [selectionSummary(config.data), runnerSummary(config.data)]
+    .filter(Boolean)
+    .join(" · ");
   const refreshConversation = chat.refresh;
   const markUnavailable = useCallback(
     (id: string) => {
@@ -690,6 +727,27 @@ export function AiPanel({
           </div>
         </div>
       )}
+      {showEmptyState && (
+        <div className={styles.emptyState}>
+          <p className={styles.emptyTitle}>可以让 AI 做这些</p>
+          <div className={styles.emptyActions}>
+            {starters.map((starter) => (
+              <Button
+                key={starter}
+                size="sm"
+                variant="outline"
+                className={styles.emptyAction}
+                onPress={() => {
+                  setPrompt(starter);
+                  requestAnimationFrame(() => composer.current?.querySelector("textarea")?.focus());
+                }}
+              >
+                {starter}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
       <Form
         aria-label="AI 请求"
         className={styles.form}
@@ -735,6 +793,7 @@ export function AiPanel({
             </p>
           )}
           {standalone ? attachments || sendControls : sendControls}
+          {composerMeta && <p className={styles.composerMeta}>{composerMeta}</p>}
         </div>
       </Form>
     </section>

@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { openDocumentTool } from "./productFixture";
-import { endpoint, openSettings, saved, selection, snapshot } from "./aiSettingsFixture";
+import {
+  endpoint,
+  expandAdminSections,
+  openSettings,
+  saved,
+  selection,
+  snapshot,
+} from "./aiSettingsFixture";
 
 test("legacy remains active until an online runner and an explicit replayable activation", async ({
   page,
@@ -117,6 +124,7 @@ test("the open document chat observes a global pause when settings close", async
   await chat.getByRole("textbox", { name: "提示词" }).fill("保留提问");
   await page.getByRole("banner").getByRole("button", { name: "设置", exact: true }).click();
   await dialog.getByRole("tab", { name: "AI", exact: true }).click();
+  await expandAdminSections(dialog);
   await dialog.getByRole("button", { name: "暂停全局 AI" }).click();
   await expect(dialog.getByRole("button", { name: "恢复全局 AI" })).toBeVisible();
   await dialog.getByRole("button", { name: "关闭应用设置", exact: true }).click();

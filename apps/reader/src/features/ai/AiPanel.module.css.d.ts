@@ -26,6 +26,11 @@ declare const styles: {
   readonly actions: string;
   readonly button: string;
   readonly references: string;
+  readonly emptyState: string;
+  readonly emptyTitle: string;
+  readonly emptyActions: string;
+  readonly emptyAction: string;
+  readonly composerMeta: string;
   readonly changeList: string;
   readonly diff: string;
   readonly workspace: string;

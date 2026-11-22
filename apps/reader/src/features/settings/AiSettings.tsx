@@ -121,8 +121,8 @@ export function AiSettings({
   const [savedSelection, setSavedSelection] = useState<ModelSelection>();
   const [editing, setEditing] = useState<string>();
   const [epoch, setEpoch] = useState(0);
-  const [showConnections, setShowConnections] = useState(true);
-  const [showGlobal, setShowGlobal] = useState(true);
+  const [showConnections, setShowConnections] = useState(false);
+  const [showGlobal, setShowGlobal] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const lock = useRef(false);
@@ -180,17 +180,34 @@ export function AiSettings({
       ? undefined
       : (view.connections.find((item) => item.id === view.defaultSelection?.connectionId) ??
         view.connections[0]));
+  const connectionHint = connection
+    ? `${connection.label} · ${connection.enabled ? "已启用" : "已停用"} · ${connection.models.length} 个模型`
+    : "尚未配置";
+  const globalHint = `${view.globalEnabled ? "全局 AI 已开启" : "全局 AI 已暂停"} · ${
+    view.dispatchMode === "legacy"
+      ? "现有执行器"
+      : view.runnerOnline
+        ? "受管执行器在线"
+        : "受管执行器离线"
+  }`;
   return (
     <>
-      <p className={styles.detail}>
-        {view.globalEnabled ? "全局 AI 已开启" : "全局 AI 已暂停"} ·{" "}
-        {view.dispatchMode === "legacy" ? "现有执行器" : "受管执行器"}
-      </p>
+      {!isAdmin && (
+        <p className={styles.detail}>
+          {view.globalEnabled ? "全局 AI 已开启" : "全局 AI 已暂停"} ·{" "}
+          {view.dispatchMode === "legacy" ? "现有执行器" : "受管执行器"}
+        </p>
+      )}
       <fieldset className={styles.controls} disabled={busy} aria-busy={busy}>
         <PreferenceForm key={JSON.stringify([view.preference, epoch])} view={view} write={write} />
         {isAdmin && (
           <Disclosure
-            title="连接配置"
+            title={
+              <span className={styles.disclosureTitle}>
+                <span>连接配置</span>
+                <span className={styles.disclosureHint}>{connectionHint}</span>
+              </span>
+            }
             expanded={showConnections}
             onChange={setShowConnections}
             className={styles.aiDisclosure}
@@ -239,7 +256,12 @@ export function AiSettings({
         )}
         {isAdmin ? (
           <Disclosure
-            title="全局 AI 与执行器"
+            title={
+              <span className={styles.disclosureTitle}>
+                <span>全局 AI 与执行器</span>
+                <span className={styles.disclosureHint}>{globalHint}</span>
+              </span>
+            }
             expanded={showGlobal}
             onChange={setShowGlobal}
             className={styles.aiDisclosure}

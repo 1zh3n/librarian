@@ -28,6 +28,8 @@ declare const styles: {
   readonly section: string;
   readonly aiDisclosure: string;
   readonly aiDisclosureTrigger: string;
+  readonly disclosureTitle: string;
+  readonly disclosureHint: string;
   readonly aiDisclosureHint: string;
   readonly aiDisclosureBody: string;
   readonly catalog: string;

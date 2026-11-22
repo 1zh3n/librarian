@@ -90,6 +90,20 @@ test("document AI leaves text readable at desktop and 360px", async ({ page }) =
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 });
 
+test("document AI starts from real prompts and shows the active runner", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await createNote(page, "AiEmptyState.md", "# 河口观察\n\n连续的阅读正文。\n");
+  await openDocumentTool(page, "AI");
+  const panel = page.getByRole("region", { name: "文档 AI" });
+  await expect(panel.getByText("可以让 AI 做这些")).toBeVisible();
+  const starter = panel.getByRole("button", { name: "总结这篇文档的要点" });
+  await starter.click();
+  const prompt = panel.getByRole("textbox", { name: "提示词" });
+  await expect(prompt).toHaveValue("总结这篇文档的要点");
+  await expect(prompt).toBeFocused();
+  await expect(panel.getByText("现有执行器", { exact: true })).toBeVisible();
+});
+
 test("only the AI input draws a focus border, including when actions receive focus", async ({
   page,
 }) => {
