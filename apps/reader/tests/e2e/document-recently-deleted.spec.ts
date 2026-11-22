@@ -31,7 +31,8 @@ async function setup(page: Page) {
 async function remove(page: Page, path: string, { folder = false, touch = false } = {}) {
   const press = (target: Locator) => (touch ? target.tap() : target.click());
   const row = page.locator(`[data-context-path="${path}"]`);
-  await press(row.getByRole("button", { name: /更多/u }));
+  if (touch) await row.getByRole("button", { name: /更多/u }).tap();
+  else await row.click({ button: "right" });
   await press(page.getByRole("menuitem", { name: "删除…" }));
   const dialog = page.getByRole("dialog", { name: folder ? "删除文件夹" : "删除文档" });
   await press(dialog.getByRole("button", { name: "删除", exact: true }));

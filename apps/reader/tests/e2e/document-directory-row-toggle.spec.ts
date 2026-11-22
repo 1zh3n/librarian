@@ -14,6 +14,7 @@ test("clicking a folder row toggles it like vscode without changing file opening
   await expect(folder).toHaveAttribute("aria-expanded", "true");
   await expect(child).toBeVisible();
 
+  await expect(tree.getByRole("button", { name: "行点击更多" })).toHaveCount(0);
   await folder.click();
   await expect(folder).toHaveAttribute("aria-expanded", "false");
   await expect(child).toBeHidden();
@@ -22,8 +23,7 @@ test("clicking a folder row toggles it like vscode without changing file opening
   await expect(folder).toHaveAttribute("aria-expanded", "true");
   await expect(child).toBeVisible();
 
-  await folder.hover();
-  await tree.getByRole("button", { name: "行点击更多" }).click();
+  await folder.click({ button: "right" });
   await expect(page.getByRole("menu", { name: "目录操作" })).toBeVisible();
   await expect(folder).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
