@@ -1,4 +1,7 @@
-use std::{fs, time::Duration};
+use std::{
+    fs,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -2410,6 +2413,35 @@ async fn static_reading_pages_serve_private_documents_and_share_snapshots() {
         .unwrap();
     assert_eq!(members_reader.status(), StatusCode::OK);
     assert!(members_reader.text().await.unwrap().contains("静态阅读"));
+
+    let expires_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+        + 1;
+    let expiring = server
+        .client
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace}/snapshots",
+            server.url
+        ))
+        .header(header::COOKIE, &session.cookie)
+        .header(header::ORIGIN, &origin)
+        .json(&json!({
+            "kind": "current",
+            "audience": "share",
+            "documentIds": [document],
+            "expiresAt": expires_at,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(expiring.status(), StatusCode::CREATED);
+    let expiring: Value = expiring.json().await.unwrap();
+    let expiring_url = format!("{}/r/{}/read", server.url, expiring["id"].as_str().unwrap());
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let expired = server.client.get(&expiring_url).send().await.unwrap();
+    assert_eq!(expired.status(), StatusCode::NOT_FOUND);
 
     let anonymous_private = server
         .client
