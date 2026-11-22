@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { createNote, openFieldWorkspace } from "./productFixture";
+import { createNote, openFieldWorkspace, signIn } from "./productFixture";
 
 const png = readFileSync(new URL("../../../../server/testdata/images/tiny.png", import.meta.url));
 
@@ -172,5 +172,44 @@ test("serves private documents and share snapshots without JavaScript", async ({
     await sharePage.screenshot({ path: "test-results/static-share-print.png" });
   } finally {
     await shareContext.close();
+  }
+});
+
+test("read-only members can open static reading from the document menu", async ({
+  page,
+  browser,
+}) => {
+  await page.goto("/");
+  const origin = new URL(page.url()).origin;
+  const context = await browser.newContext({
+    baseURL: origin,
+    viewport: { width: 1440, height: 900 },
+  });
+  const memberPage = await context.newPage();
+  try {
+    await signIn(memberPage, "offline-reader", "offline-reader-test-password");
+    const workspaces = await memberPage.request.get("/api/v1/workspaces");
+    const workspace = ((await workspaces.json()) as { id: string; name: string }[]).find(
+      (item) => item.name === "另一空间",
+    );
+    expect(workspace).toBeTruthy();
+    const documents = await memberPage.request.get(`/api/v1/workspaces/${workspace!.id}/documents`);
+    const document = ((await documents.json()) as { id: string; path: string }[]).find(
+      (item) => item.path === "01.md",
+    );
+    expect(document).toBeTruthy();
+    await memberPage.goto(`/workspaces/${workspace!.id}/documents/${document!.id}`);
+    await memberPage.getByRole("button", { name: "文档更多" }).click();
+    await expect(memberPage.getByRole("menuitem", { name: "低 JS 阅读" })).toBeVisible();
+    const popup = memberPage.waitForEvent("popup");
+    await memberPage.getByRole("menuitem", { name: "低 JS 阅读" }).click();
+    const reading = await popup;
+    await reading.waitForLoadState();
+    expect(new URL(reading.url()).pathname).toBe(
+      `/workspaces/${workspace!.id}/documents/${document!.id}/read`,
+    );
+    await expect(reading.getByRole("heading", { name: "另一份鸟鸣", level: 1 })).toBeVisible();
+  } finally {
+    await context.close();
   }
 });
