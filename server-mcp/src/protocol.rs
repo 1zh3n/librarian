@@ -620,7 +620,7 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_body_is_413() {
-        let big = "x".repeat(16 * 1024 * 1024 + 1);
+        let big = "x".repeat(crate::BODY_LIMIT + 1);
         let (res, _) = send(
             "POST",
             &[("authorization", "Bearer ok")],

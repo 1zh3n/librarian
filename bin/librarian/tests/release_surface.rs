@@ -44,6 +44,17 @@ fn init_creates_a_first_administrator_and_preserves_existing_accounts() {
     );
 }
 
+fn without_noscript(html: &str) -> String {
+    let Some(start) = html.find("<noscript>") else {
+        return html.to_owned();
+    };
+    let Some(offset) = html[start..].find("</noscript>") else {
+        return html.to_owned();
+    };
+    let end = start + offset + "</noscript>".len();
+    format!("{}{}", &html[..start], &html[end..])
+}
+
 async fn get(router: &Router, path: &str) -> (StatusCode, axum::http::HeaderMap, String) {
     let response = router
         .clone()
@@ -77,7 +88,9 @@ async fn serves_product_bundle_and_deep_link() {
     assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
     assert!(home.contains("<title>Librarian</title>"));
     let (_, _, deep) = get(&router, "/workspaces/native/documents/doc-1").await;
-    assert_eq!(home, deep);
+    assert!(deep.contains("静态阅读版"));
+    assert!(deep.contains("/workspaces/native/documents/doc-1/read"));
+    assert_eq!(home, without_noscript(&deep));
     let (status, _, workspace_ai) = get(&router, "/workspaces/native/ai").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(home, workspace_ai);
@@ -144,7 +157,11 @@ async fn bundle_skips_upstream_ssr() {
     let (_, _, home) = get(&router, "/").await;
     let (status, _, deep) = get(&router, "/workspaces/native/documents/markdown-with-html").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(home, deep);
+    assert_eq!(home, without_noscript(&deep));
     assert!(deep.contains("<div id=\"root\"></div>"));
+    assert!(deep.contains("/workspaces/native/documents/markdown-with-html/read"));
+    let (status, _, snapshot) = get(&router, "/r/reading-link").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(snapshot.contains("/r/reading-link/read"));
     assert_eq!(get(&router, "/unknown").await.0, StatusCode::NOT_FOUND);
 }
