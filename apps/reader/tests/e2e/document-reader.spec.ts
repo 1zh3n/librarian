@@ -240,8 +240,9 @@ test("preserves phone-size controls and monochrome reading with reduced motion",
     const settings = page.getByRole("dialog", { name: "应用设置" });
     await settings.getByText("墨水屏", { exact: true }).tap();
     await expect(settings.getByRole("checkbox", { name: "墨水屏" })).toBeChecked();
-    await settings.getByRole("button", { name: "保存设置" }).tap();
     await expect(page.locator("html")).toHaveAttribute("data-eink", "true");
+    await settings.getByRole("button", { name: "关闭应用设置" }).click();
+    await expect(settings).toBeHidden();
     await expect(page.locator("html")).toHaveCSS("background-color", "rgb(255, 255, 255)");
     await expect(page.getByRole("article")).toHaveCSS("color", "rgb(0, 0, 0)");
     await page.reload();

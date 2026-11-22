@@ -1,7 +1,7 @@
 import { AiSettings } from "./AiSettings";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { Dialog } from "../../ui/Dialog";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/Button";
 import { Checkbox, Field, Form, Select } from "../../ui/Forms";
 import { Feedback } from "../../ui/Feedback";
@@ -24,6 +24,68 @@ type SettingsActions = {
   close: () => void;
 };
 
+type Draft = {
+  theme: DevicePreferences["theme"];
+  font: DevicePreferences["font"];
+  eink: boolean;
+  reduceMotion: boolean;
+  fontSize: string;
+  lineHeight: string;
+  measure: string;
+  sidebarWidth: string;
+  toolsWidth: string;
+  focusKey: string;
+};
+
+function draftFrom(preferences: DevicePreferences): Draft {
+  return {
+    theme: preferences.theme,
+    font: preferences.font,
+    eink: preferences.eink,
+    reduceMotion: preferences.reduceMotion,
+    fontSize: String(preferences.fontSize),
+    lineHeight: String(preferences.lineHeight),
+    measure: String(preferences.measure),
+    sidebarWidth: String(preferences.sidebarWidth),
+    toolsWidth: String(preferences.toolsWidth),
+    focusKey: preferences.focusKey,
+  };
+}
+
+function patchFrom(draft: Draft): { patch?: Partial<DevicePreferences>; error?: string } {
+  const fontSize = Number(draft.fontSize);
+  const lineHeight = Number(draft.lineHeight);
+  const measure = Number(draft.measure);
+  const sidebarWidth = Number(draft.sidebarWidth);
+  const toolsWidth = Number(draft.toolsWidth);
+  const focusKey = draft.focusKey.toLowerCase().trim();
+  if (fontSize < 16 || fontSize > 28)
+    return { error: "字号需在 16–28 之间；修改已保留，请修正后重试。" };
+  if (lineHeight < 1.4 || lineHeight > 2.4)
+    return { error: "行高需在 1.4–2.4 之间；修改已保留，请修正后重试。" };
+  if (measure < 28 || measure > 56)
+    return { error: "每行汉字数需在 28–56 之间；修改已保留，请修正后重试。" };
+  if (sidebarWidth < 176 || sidebarWidth > 360)
+    return { error: "空间目录宽度需在 176–360 之间；修改已保留，请修正后重试。" };
+  if (toolsWidth < 200 || toolsWidth > 480)
+    return { error: "文档工具宽度需在 200–480 之间；修改已保留，请修正后重试。" };
+  if (!/^[a-z]?$/u.test(focusKey)) return { error: "专注快捷键只能是一个英文字母，或留空。" };
+  return {
+    patch: {
+      theme: draft.theme,
+      font: draft.font,
+      eink: draft.eink,
+      reduceMotion: draft.reduceMotion,
+      fontSize,
+      lineHeight,
+      measure,
+      sidebarWidth,
+      toolsWidth,
+      focusKey,
+    },
+  };
+}
+
 export function ReadingSettings({
   preferences,
   loading,
@@ -40,17 +102,27 @@ export function ReadingSettings({
   retry: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [tab, setTab] = useState("reading");
   const [visitedAi, setVisitedAi] = useState(false);
   const [visitedConnections, setVisitedConnections] = useState(false);
+  const flush = useRef<(() => Promise<boolean>) | null>(null);
   const showPreferences = tab === "reading" || tab === "shortcuts";
+  async function requestClose() {
+    if (saving || closing) return;
+    setClosing(true);
+    const ok = (await flush.current?.()) ?? true;
+    setClosing(false);
+    if (ok) close();
+    else setTab("reading");
+  }
   return (
     <Dialog
       title="应用设置"
       showClose
       closeLabel="关闭应用设置"
-      busy={saving}
-      onClose={close}
+      busy={saving || closing}
+      onClose={() => void requestClose()}
       classes={{ overlay: styles.overlay, modal: styles.modal, dialog: styles.dialog }}
       headerClassName={styles.dialogHeader}
       closeClassName={styles.dialogClose}
@@ -58,7 +130,7 @@ export function ReadingSettings({
       <Tabs
         className={styles.settings}
         value={tab}
-        disabled={saving}
+        disabled={saving || closing}
         onChange={(id) => {
           setTab(id);
           if (id === "ai") setVisitedAi(true);
@@ -77,12 +149,11 @@ export function ReadingSettings({
         {preferences ? (
           <PreferencesForm
             preferences={preferences}
-            saving={saving}
+            saving={saving || closing}
             hidden={!showPreferences}
             setSaving={setSaving}
-            setTab={setTab}
             save={save}
-            close={close}
+            flushRef={flush}
           />
         ) : showPreferences ? (
           <div className={styles.state}>
@@ -138,84 +209,143 @@ export function ReadingSettings({
 function PreferencesForm({
   preferences,
   hidden,
-  setTab,
   saving,
   setSaving,
   save,
-  close,
-}: SettingsActions & {
+  flushRef,
+}: {
   preferences: DevicePreferences;
   hidden: boolean;
-  setTab: (tab: string) => void;
   saving: boolean;
   setSaving: (saving: boolean) => void;
+  save: (changes: Partial<DevicePreferences>) => Promise<DevicePreferences>;
+  flushRef: { current: (() => Promise<boolean>) | null };
 }) {
-  const [theme, setTheme] = useState(preferences.theme);
-  const [font, setFont] = useState(preferences.font);
-  const [eink, setEink] = useState(preferences.eink);
-  const [reduceMotion, setReduceMotion] = useState(preferences.reduceMotion);
-  const [error, setError] = useState(false);
+  const [draft, setDraft] = useState(() => draftFrom(preferences));
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const latest = useRef(draft);
+  const timer = useRef<number | undefined>(undefined);
+  const savedTimer = useRef<number | undefined>(undefined);
+  const changeVersion = useRef(0);
+  const savedVersion = useRef(0);
+  const running = useRef<Promise<boolean> | null>(null);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      if (timer.current) window.clearTimeout(timer.current);
+      if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    },
+    [],
+  );
+  function update(patch: Partial<Draft>) {
+    const next = { ...latest.current, ...patch };
+    latest.current = next;
+    setDraft(next);
+    changeVersion.current += 1;
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = undefined;
+      void flush();
+    }, 250);
+  }
+  function flush(): Promise<boolean> {
+    if (timer.current) {
+      window.clearTimeout(timer.current);
+      timer.current = undefined;
+    }
+    if (savedVersion.current === changeVersion.current) return Promise.resolve(true);
+    if (running.current) return running.current;
+    const promise = (async () => {
+      setSaving(true);
+      let ok = true;
+      while (savedVersion.current !== changeVersion.current) {
+        const version = changeVersion.current;
+        const parsed = patchFrom(latest.current);
+        if (!parsed.patch) {
+          if (mounted.current) {
+            setStatus("error");
+            setMessage(parsed.error ?? "请检查设置后再试。");
+          }
+          ok = false;
+          break;
+        }
+        if (mounted.current) {
+          setStatus("saving");
+          setMessage("");
+        }
+        try {
+          await save(parsed.patch);
+          savedVersion.current = version;
+          if (version === changeVersion.current && mounted.current) {
+            setStatus("saved");
+            if (savedTimer.current) window.clearTimeout(savedTimer.current);
+            savedTimer.current = window.setTimeout(() => setStatus("idle"), 1_500);
+          }
+        } catch {
+          if (version === changeVersion.current && mounted.current) {
+            setStatus("error");
+            setMessage("无法保存设置，请重试。");
+          }
+          ok = false;
+          break;
+        }
+      }
+      if (mounted.current) setSaving(false);
+      return ok;
+    })();
+    running.current = promise;
+    void promise.finally(() => {
+      if (running.current === promise) running.current = null;
+    });
+    return promise;
+  }
+  useEffect(() => {
+    flushRef.current = flush;
+    return () => {
+      flushRef.current = null;
+    };
+  });
   return (
     <Form
       className={styles.form}
       hidden={hidden}
-      validationBehavior="aria"
       onSubmit={(event) => {
         event.preventDefault();
-        if (saving) return;
-        // Reveal the tab before the browser focuses an invalid field.
-        const invalid = event.currentTarget.querySelector<HTMLInputElement>("input:invalid");
-        if (invalid) {
-          setTab(invalid.name === "focusKey" ? "shortcuts" : "reading");
-          requestAnimationFrame(() => invalid.reportValidity());
-          return;
-        }
-        const fields = new FormData(event.currentTarget);
-        const number = (name: string) => Number(fields.get(name));
-        const key = fields.get("focusKey");
-        setSaving(true);
-        setError(false);
-        void save({
-          theme,
-          font,
-          eink,
-          reduceMotion,
-          fontSize: number("fontSize"),
-          lineHeight: number("lineHeight"),
-          measure: number("measure"),
-          sidebarWidth: number("sidebarWidth"),
-          toolsWidth: number("toolsWidth"),
-          focusKey: typeof key === "string" ? key.toLowerCase().trim() : preferences.focusKey,
-        })
-          .then(close, () => setError(true))
-          .finally(() => setSaving(false));
+        void flush();
       }}
     >
       <TabPanel id="reading" keepMounted className={styles.panel}>
         <Select
           label="主题"
-          value={theme}
+          value={draft.theme}
           disabled={saving}
-          onChange={setTheme}
+          onChange={(theme) => update({ theme })}
           entries={themes}
           className={styles.field}
         />
         <Select
           label="字体"
-          value={font}
+          value={draft.font}
           disabled={saving}
-          onChange={setFont}
+          onChange={(font) => update({ font })}
           entries={fonts}
           className={styles.field}
         />
-        <Checkbox className={styles.checkbox} disabled={saving} checked={eink} onChange={setEink}>
+        <Checkbox
+          className={styles.checkbox}
+          disabled={saving}
+          checked={draft.eink}
+          onChange={(eink) => update({ eink })}
+        >
           墨水屏
         </Checkbox>
         <Checkbox
           className={styles.checkbox}
           disabled={saving}
-          checked={reduceMotion}
-          onChange={setReduceMotion}
+          checked={draft.reduceMotion}
+          onChange={(reduceMotion) => update({ reduceMotion })}
         >
           减少动画
         </Checkbox>
@@ -227,7 +357,8 @@ function PreferencesForm({
           required
           disabled={saving}
           validationBehavior="native"
-          defaultValue={String(preferences.fontSize)}
+          value={draft.fontSize}
+          onChange={(fontSize) => update({ fontSize })}
           inputClassName={styles.input}
           min={16}
           max={28}
@@ -241,7 +372,8 @@ function PreferencesForm({
           required
           disabled={saving}
           validationBehavior="native"
-          defaultValue={String(preferences.lineHeight)}
+          value={draft.lineHeight}
+          onChange={(lineHeight) => update({ lineHeight })}
           inputClassName={styles.input}
           min={1.4}
           max={2.4}
@@ -255,7 +387,8 @@ function PreferencesForm({
           required
           disabled={saving}
           validationBehavior="native"
-          defaultValue={String(preferences.measure)}
+          value={draft.measure}
+          onChange={(measure) => update({ measure })}
           inputClassName={styles.input}
           min={28}
           max={56}
@@ -269,7 +402,8 @@ function PreferencesForm({
           required
           disabled={saving}
           validationBehavior="native"
-          defaultValue={String(preferences.sidebarWidth)}
+          value={draft.sidebarWidth}
+          onChange={(sidebarWidth) => update({ sidebarWidth })}
           inputClassName={styles.input}
           min={176}
           max={360}
@@ -283,7 +417,8 @@ function PreferencesForm({
           required
           disabled={saving}
           validationBehavior="native"
-          defaultValue={String(preferences.toolsWidth)}
+          value={draft.toolsWidth}
+          onChange={(toolsWidth) => update({ toolsWidth })}
           inputClassName={styles.input}
           min={200}
           max={480}
@@ -296,7 +431,8 @@ function PreferencesForm({
           className={styles.field}
           name="focusKey"
           disabled={saving}
-          defaultValue={preferences.focusKey}
+          value={draft.focusKey}
+          onChange={(focusKey) => update({ focusKey })}
           inputClassName={styles.input}
           maxLength={1}
           pattern="[A-Za-z]?"
@@ -317,18 +453,21 @@ function PreferencesForm({
           </dd>
         </dl>
       </TabPanel>
-      {error && (
-        <Feedback tone="error" className={styles.error}>
-          无法保存设置，请重试。
-        </Feedback>
-      )}
-      <div className={styles.formActions}>
-        <Button variant="outline" isDisabled={saving} onPress={close}>
-          取消
-        </Button>
-        <Button type="submit" variant="primary" loading={saving}>
-          保存设置
-        </Button>
+      <div
+        className={styles.formStatus}
+        data-active={status !== "idle" || undefined}
+        aria-live="polite"
+      >
+        {status === "saving" && <span className={styles.saveNote}>正在保存…</span>}
+        {status === "saved" && <span className={styles.saveNote}>已保存</span>}
+        {status === "error" && (
+          <Feedback tone="error" className={styles.error}>
+            {message}
+            <Button size="sm" variant="outline" onPress={() => void flush()}>
+              重试
+            </Button>
+          </Feedback>
+        )}
       </div>
     </Form>
   );

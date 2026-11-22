@@ -266,8 +266,9 @@ for (const scheme of ["light", "dark"] as const) {
     await page.getByRole("button", { name: "设置", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "应用设置" });
     await settings.getByRole("checkbox", { name: "墨水屏" }).press("Space");
-    await settings.getByRole("button", { name: "保存设置" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-eink", "true");
+    await settings.getByRole("button", { name: "关闭应用设置" }).click();
+    await expect(settings).toBeHidden();
     const article = page.getByRole("article");
     await article.focus();
     await page.keyboard.press("Tab");

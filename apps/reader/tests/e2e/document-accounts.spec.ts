@@ -71,9 +71,9 @@ test("topbar actions and settings fit a phone with double-size text", async ({ p
     const tab = dialog.getByRole("tab", { name, exact: true });
     await tab.click();
     await expect(tab).toBeInViewport({ ratio: 1 });
-    const save = dialog.getByRole("button", { name: "保存设置" });
-    await save.scrollIntoViewIfNeeded();
-    await expect(save).toBeInViewport({ ratio: 1 });
+    const field = dialog.getByLabel(name === "阅读" ? "文档工具宽度" : "专注快捷键");
+    await field.scrollIntoViewIfNeeded();
+    await expect(field).toBeInViewport();
     expect(await dialog.evaluate((node) => node.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });

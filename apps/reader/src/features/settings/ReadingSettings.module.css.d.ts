@@ -12,7 +12,8 @@ declare const styles: {
   readonly scrollPanel: string;
   readonly state: string;
   readonly actions: string;
-  readonly formActions: string;
+  readonly formStatus: string;
+  readonly saveNote: string;
   readonly shortcuts: string;
   readonly field: string;
   readonly input: string;

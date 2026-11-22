@@ -70,12 +70,10 @@ test("keeps submitted reading preferences until the response and allows a correc
   const dialog = page.getByRole("dialog", { name: "应用设置" });
   await dialog.getByRole("tab", { name: "阅读", exact: true }).click();
   const size = dialog.getByLabel("字号", { exact: true });
-  await size.fill("21");
   const device = await page.evaluate(() => localStorage.getItem("librarian.device"));
   const endpoint = `/api/v1/settings/devices/${device}`;
   const held = await delayNextWrite(page, endpoint, "PUT", "fail");
-  const submit = dialog.getByRole("button", { name: "保存设置" });
-  await submit.click();
+  await size.fill("21");
   try {
     await held.wait();
     await expect(size).not.toBeEditable();
@@ -84,14 +82,14 @@ test("keeps submitted reading preferences until the response and allows a correc
   } finally {
     held.release();
   }
-  await expect(dialog.getByRole("alert")).toContainText("重试");
+  await expect(dialog.getByRole("alert")).toContainText("无法保存设置");
+  await expect(dialog.getByRole("button", { name: "重试" })).toBeVisible();
   await expect(size).toHaveValue("21");
+  const retry = await delayNextWrite(page, endpoint, "PUT", "save");
   await size.fill("25");
   const motion = dialog.getByRole("checkbox", { name: "减少动画" });
   await motion.press("Space");
   await expect(motion).toBeChecked();
-  const retry = await delayNextWrite(page, endpoint, "PUT", "save");
-  await submit.click();
   try {
     await retry.wait();
     await expect(motion).toBeDisabled();
@@ -110,6 +108,8 @@ test("keeps submitted reading preferences until the response and allows a correc
   } finally {
     retry.release();
   }
+  await expect(dialog.getByText("已保存")).toBeVisible();
+  await dialog.getByRole("button", { name: "关闭应用设置" }).click();
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
   const saved = (await (await page.request.get(endpoint)).json()) as DevicePreferences;
