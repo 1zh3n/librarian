@@ -1,0 +1,24 @@
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    Checking form_urlencoded v1.2.3
+   Compiling librarian v0.1.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/bin/librarian)
+    Checking url v2.5.9
+    Checking serde_urlencoded v0.7.1
+    Checking axum v0.8.9
+    Checking tower-http v0.6.11
+    Checking cookie_store v0.22.1
+    Checking reqwest v0.12.28
+    Checking silverbullet-server-common v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/server-common)
+    Checking oauth2 v5.0.0
+    Checking silverbullet-server-space-tools v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/server-space-tools)
+    Checking silverbullet-server-search v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/server-search)
+    Checking openidconnect v4.1.0
+    Checking reqwest v0.13.5
+    Checking chromiumoxide v0.9.1
+    Checking silverbullet-server v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/server)
+    Checking sb v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/bin/sb)
+    Checking silverbullet-server-mcp v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/server-mcp)
+    Checking silverbullet-server-runtime-chrome v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/server-runtime-chrome)
+    Checking silverbullet v0.0.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/bin/silverbullet)
+    Checking docs v0.1.0 (/home/xia/Projects/Doc/librarian/.superpowers/sdd/reader-ai-integration/bin/docs)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.69s

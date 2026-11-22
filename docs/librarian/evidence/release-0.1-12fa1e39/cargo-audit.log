@@ -1,0 +1,130 @@
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1560 security advisories (from /home/xia/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (590 crate dependencies)
+Crate:     rsa
+Version:   0.9.10
+Title:     Marvin Attack: potential key recovery through timing sidechannels
+Date:      2023-11-22
+ID:        RUSTSEC-2023-0071
+URL:       https://rustsec.org/advisories/RUSTSEC-2023-0071
+Severity:  5.9 (medium)
+Solution:  Upgrade to >=0.10.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:      Insecure Preservation of SUID/SGID Bits during ZIP Extraction Leading to Potential Privilege Escalation
+Date:      2026-10-09
+ID:        RUSTSEC-2026-0367
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0367
+Severity:  7.3 (high)
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     zip: `ZipArchive::extract` creates symbolic links whose attacker-controlled targets are outside the destination directory
+Date:      2026-10-09
+ID:        RUSTSEC-2026-0368
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0368
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     ZipStreamReader::extract() and ZipArchive::extract() apply Unix permissions through symlinks without confining the target
+Date:      2026-10-10
+ID:        RUSTSEC-2026-0369
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0369
+Severity:  9.1 (critical)
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     zip: `ZipArchive::extract` aborts the process on a symlink entry with a large declared size
+Date:      2026-10-22
+ID:        RUSTSEC-2026-0429
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0429
+Severity:  7.5 (high)
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     AES entries returned without checking their authentication code when the data ends early or is empty
+Date:      2026-10-22
+ID:        RUSTSEC-2026-0545
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0545
+Severity:  6.5 (medium)
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     `ZipArchive::extract` can write outside the destination through absolute or chained symlink targets
+Date:      2026-10-22
+ID:        RUSTSEC-2026-0546
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0546
+Severity:  7.4 (high)
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     Legacy Shrink, Reduce and Implode decoders preallocate the declared uncompressed size
+Date:      2026-10-22
+ID:        RUSTSEC-2026-0547
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0547
+Severity:  7.5 (high)
+Solution:  Upgrade to >=9.0.0 (patched)
+
+Crate:     zip
+Version:   8.6.0
+Title:     `ZipStreamReader` extracts entries under local-header names that can differ from the central directory
+Date:      2026-10-17
+ID:        RUSTSEC-2026-0548
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0548
+Solution:  Upgrade to >=9.0.5 (patched)
+
+Crate:     chrono
+Version:   0.4.45
+Warning:   unmaintained
+Title:     chrono is unmaintained
+Date:      2026-09-14
+ID:        RUSTSEC-2026-0543
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0543
+Solution:  No fixed upgrade is available!
+
+Crate:     paste
+Version:   1.0.15
+Warning:   unmaintained
+Title:     paste - no longer maintained
+Date:      2024-10-07
+ID:        RUSTSEC-2024-0436
+URL:       https://rustsec.org/advisories/RUSTSEC-2024-0436
+Solution:  No fixed upgrade is available!
+
+Crate:     ttf-parser
+Version:   0.25.1
+Warning:   unmaintained
+Title:     `ttf-parser` is unmaintained
+Date:      2026-06-28
+ID:        RUSTSEC-2026-0192
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0192
+Solution:  No fixed upgrade is available!
+
+Crate:     unsafe-libyaml
+Version:   0.2.11
+Warning:   unmaintained
+Title:     unsafe-libyaml is unmaintained
+Date:      2024-03-25
+ID:        RUSTSEC-2024-0449
+URL:       https://rustsec.org/advisories/RUSTSEC-2024-0449
+Solution:  No fixed upgrade is available!
+
+Crate:     lru
+Version:   0.16.4
+Warning:   unsound
+Title:     Potential use-after-free due to lack of panic safety in `LruCache::pop()`
+Date:      2026-05-12
+ID:        RUSTSEC-2026-0253
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0253
+Solution:  Upgrade to >=0.18.2 (patched)
+
+error: 9 vulnerabilities found!
+warning: 5 allowed warnings found
