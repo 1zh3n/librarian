@@ -69,7 +69,7 @@ Vary: Cookie
 | Reader Vitest | 140/140 通过 |
 | Reader TypeScript / Oxlint / Oxfmt | 通过 |
 | `make check-rust` | 通过（`cargo fmt --check` + workspace clippy `-D warnings`） |
-| 完整产品 Playwright | 303/304 通过；唯一失败是 `document-settings-layout.spec.ts` 的「模型能力块收起」用例，单独复跑仍失败，属于并行中的设置/AI 改动，与本切片无关 |
+| 完整产品 Playwright | 303/304 通过；唯一失败是 `document-release.spec.ts` 的备份设置重试用例，单文件复跑 6/6 通过；属于并行共享 fixture 的抖动，与本切片无关 |
 
 完整日志见 `product-playwright.log`。
 
