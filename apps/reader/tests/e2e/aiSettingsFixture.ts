@@ -52,6 +52,7 @@ export async function openSettings(page: Page, admin = true) {
 }
 
 export async function expandAdminSections(dialog: Locator) {
+  await dialog.getByText("我的模型").waitFor({ state: "visible" });
   for (const name of [/连接配置/, /全局 AI 与执行器/]) {
     const trigger = dialog.getByRole("button", { name });
     if ((await trigger.count()) === 0) continue;
