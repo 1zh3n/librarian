@@ -47,8 +47,9 @@ test("directory and toolbar icons follow their controls without changing documen
   await expectIcon(page.getByRole("row", { name: "符号", exact: true }), "file-text");
   await expectIcon(page.getByRole("button", { name: "文档更多" }), "ellipsis");
   await openDocumentTool(page, "AI");
-  const ai = page.getByRole("tab", { name: "AI", exact: true });
-  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expectIcon(page.getByRole("button", { name: "收起文档 AI" }), "x");
+  await page.getByRole("button", { name: "收起文档 AI" }).click();
+  await openDocumentTool(page, "版本");
   await expectIcon(page.getByRole("button", { name: "收起文档辅助区" }), "panel-right-close");
   const search = page.getByRole("button", { name: "搜索文档" });
   await search.press("Enter");

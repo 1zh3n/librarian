@@ -559,3 +559,24 @@
     min-height: 44px;
   }
 }
+
+.panel[data-floating] {
+  display: flex;
+  block-size: 100%;
+  min-block-size: 0;
+  flex-direction: column;
+  padding: 0.75rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.panel[data-floating] .transcript {
+  max-block-size: none;
+  flex: 1 1 auto;
+}
+
+.panel[data-floating] .form {
+  flex: 0 0 auto;
+  margin-block-start: auto;
+}

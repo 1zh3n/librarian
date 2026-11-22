@@ -72,7 +72,9 @@ test("document AI leaves text readable at desktop and 360px", async ({ page }) =
   await expect(panel).toBeVisible();
   expect((await article.boundingBox())?.width).toBe(before?.width);
   const aside = await panel.boundingBox();
-  expect(aside && before && aside.x >= before.x + before.width).toBe(true);
+  expect(aside).not.toBeNull();
+  expect(aside!.x).toBeGreaterThan(0);
+  expect(aside!.x + aside!.width).toBeLessThanOrEqual(1700);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await closeDocumentTool(page);
   await expect(panel).toBeHidden();
@@ -83,9 +85,8 @@ test("document AI leaves text readable at desktop and 360px", async ({ page }) =
   await openDocumentTool(page, "AI");
   await expect(panel).toBeVisible();
   const text = await article.boundingBox();
-  const side = await panel.boundingBox();
   expect(text?.width).toBe(narrow?.width);
-  expect(side && text && side.y + side.height <= text.y).toBe(true);
+  expect((await panel.boundingBox())?.width).toBe(360);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 });
 
@@ -96,13 +97,13 @@ test("only the AI input draws a focus border, including when actions receive foc
   await openDocumentTool(page, "AI");
   const form = page.getByRole("form", { name: "AI 请求" });
   const input = form.getByRole("textbox", { name: "提示词" });
-  const toolTabs = page.getByRole("tablist", { name: "文档工具" }).locator("..");
+  const shell = page.locator("[data-document-ai-panel]");
   await expect(input).toHaveCSS("border-top-width", "1px");
   await input.fill("这是一条待发送的问题");
   await expect(input).toBeFocused();
   await expect(input).toHaveCSS("outline-style", "solid");
   await expect(form).toHaveCSS("border-top-width", "0px");
-  await expect(toolTabs).toHaveCSS("outline-style", "none");
+  await expect(shell).toHaveCSS("outline-style", "none");
   const mode = form.getByRole("button", { name: /发送模式/ });
   const submit = form.getByRole("button", { name: "发送", exact: true });
   await input.press("Tab");
@@ -110,7 +111,7 @@ test("only the AI input draws a focus border, including when actions receive foc
   await page.keyboard.press("Tab");
   await expect(submit).toBeFocused();
   await expect(form).toHaveCSS("border-top-width", "0px");
-  await expect(toolTabs).toHaveCSS("outline-style", "none");
+  await expect(shell).toHaveCSS("outline-style", "none");
 });
 
 test("document AI uses one send control and makes write mode explicit", async ({

@@ -11,28 +11,36 @@ test("reloads a document deep link", async ({ page }) => {
   await expect(page).toHaveURL(target);
 });
 
-test("opens one accessible document tool pane and keeps AI input when switching tabs", async ({
-  page,
-}) => {
+test("keeps document tools and AI in separate surfaces with their own focus", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(await fieldDocument(page, "野外/02.md"));
   const open = page.getByRole("button", { name: "打开文档辅助区" });
+  const openAi = page.getByRole("button", { name: "打开文档 AI" });
   const tabs = page.getByRole("tablist", { name: "文档工具" });
   await expect(open).toBeVisible();
   await expect(tabs).toHaveCount(0);
   await open.press("Enter");
-  await expect(tabs.getByRole("tab")).toHaveCount(4);
+  await expect(tabs.getByRole("tab")).toHaveCount(3);
   const outline = tabs.getByRole("tab", { name: "提纲", exact: true });
   await expect(outline).toHaveAttribute("aria-selected", "true");
   await expect(outline).toBeFocused();
   await page.keyboard.press("ArrowRight");
-  const ai = tabs.getByRole("tab", { name: "AI", exact: true });
-  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expect(tabs.getByRole("tab", { name: "版本", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await openAi.click();
+  await expect(tabs).toHaveCount(0);
   const prompt = page.getByRole("textbox", { name: "提示词" });
   await prompt.fill("保留的草稿提示词");
-  await tabs.getByRole("tab", { name: "版本", exact: true }).click();
-  await ai.click();
+  await open.click();
+  await expect(page.getByRole("region", { name: "文档 AI" })).toBeHidden();
+  await tabs.getByRole("tab", { name: "引用", exact: true }).click();
+  await openAi.click();
   await expect(prompt).toHaveValue("保留的草稿提示词");
+  await page.getByRole("button", { name: "收起文档 AI" }).click();
+  await expect(openAi).toBeFocused();
+  await open.click();
   await page.getByRole("button", { name: "收起文档辅助区" }).click();
   await expect(tabs).toHaveCount(0);
   await expect(open).toBeFocused();
@@ -112,7 +120,7 @@ test("keeps the canvas readable when document contents open", async ({ page }) =
   await expect(page.getByRole("heading", { name: "水线" })).toBeInViewport();
 });
 
-test("opens document AI alongside reading at normal desktop width", async ({ page }) => {
+test("opens document AI without moving the reading column", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(await fieldDocument(page));
   const article = page.getByRole("article");
@@ -123,15 +131,16 @@ test("opens document AI alongside reading at normal desktop width", async ({ pag
   await openDocumentTool(page, "AI");
   const panel = page.getByRole("region", { name: "文档 AI", exact: true });
   await expect(panel).toBeVisible();
-  await expect
-    .poll(async () => {
-      const paper = await article.boundingBox();
-      const tool = await panel.boundingBox();
-      return paper && tool && tool.x >= paper.x + paper.width;
-    })
-    .toBe(true);
   const after = await article.boundingBox();
+  expect(Math.abs((after?.x ?? 0) - before.x)).toBeLessThan(1);
+  expect(Math.abs((after?.width ?? 0) - before.width)).toBeLessThan(1);
   expect(Math.abs((after?.y ?? 0) - before.y)).toBeLessThan(8);
+  const box = await panel.boundingBox();
+  if (!box) throw new Error("Missing document AI panel");
+  expect(box.x).toBeGreaterThan(1440 / 2);
+  expect(box.x + box.width).toBeLessThanOrEqual(1440);
+  expect(box.width).toBeGreaterThanOrEqual(280);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 for (const width of [390, 1440]) {
@@ -156,9 +165,9 @@ for (const width of [390, 1440]) {
     });
     await expect(trigger).toBeInViewport({ ratio: 1 });
     await trigger.press("Enter");
-    if (width === 1440) await openDocumentTool(page, "版本");
+    await openDocumentTool(page, "版本");
     const panel = page.getByRole("region", {
-      name: width === 390 ? "文档 AI" : "版本历史",
+      name: "版本历史",
       exact: true,
     });
     await expect(panel).toBeInViewport({ ratio: 0.6 });
@@ -270,14 +279,14 @@ test("opens phone tools beside the current passage and follows a contents link i
     viewport.scrollTop += el.getBoundingClientRect().top - 190;
   });
   const before = (await passage.boundingBox())!.y;
-  await openDocumentTool(page, "AI");
+  await openDocumentTool(page, "引用");
   const pane = page.getByRole("region", { name: "文档辅助区", exact: true });
   await expect(pane).toBeInViewport({ ratio: 1 });
   await expect(passage).toBeInViewport({ ratio: 1 });
   expect((await passage.boundingBox())!.y).toBeGreaterThanOrEqual(
     (await pane.boundingBox())!.y + (await pane.boundingBox())!.height,
   );
-  await openDocumentTool(page, "引用");
+  await openDocumentTool(page, "版本");
   await expect(pane).toBeInViewport({ ratio: 1 });
   await closeDocumentTool(page);
   await expect

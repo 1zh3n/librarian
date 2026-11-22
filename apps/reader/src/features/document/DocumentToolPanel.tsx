@@ -10,7 +10,6 @@ import styles from "./DocumentPage.module.css";
 
 const documentTabs = [
   { id: "outline", label: "提纲", icon: "align-left" },
-  { id: "ai", label: "AI", icon: "sparkles" },
   { id: "history", label: "版本", icon: "history" },
   { id: "references", label: "引用", icon: "link" },
 ] as const;
@@ -49,11 +48,9 @@ export function useDocumentTools(
   const layoutDefault =
     preferences.layout === "review"
       ? "history"
-      : preferences.layout === "research"
-        ? "ai"
-        : preferences.layout === "writing" && outlineEnabled
-          ? "outline"
-          : undefined;
+      : preferences.layout === "writing" && outlineEnabled
+        ? "outline"
+        : undefined;
   const normal = choice.normal;
   const tool = focus.active
     ? choice.focus?.activation === focus.activation
@@ -73,7 +70,7 @@ export function useDocumentTools(
       ...(isDocumentTab(next) && { lastTab: next }),
     }));
   }
-  const rememberedTab: DocumentTab = lastTab ?? (outlineEnabled ? "outline" : "ai");
+  const rememberedTab: DocumentTab = lastTab ?? (outlineEnabled ? "outline" : "history");
   return { tool, chooseTool, rememberedTab };
 }
 
@@ -85,7 +82,6 @@ export function DocumentToolPanel({
   onSelect,
   onClose,
   outline,
-  ai,
   history,
   references,
   contents,
@@ -98,7 +94,6 @@ export function DocumentToolPanel({
   onSelect: (tab: DocumentTab) => void;
   onClose: () => void;
   outline?: ReactNode;
-  ai: ReactNode;
   history: ReactNode;
   references: ReactNode;
   contents: ReactNode;
@@ -118,7 +113,7 @@ export function DocumentToolPanel({
   }, [onClose, ref, tool]);
   const tabbed = isDocumentTab(tool);
   const tabs = documentTabs.filter((tab) => tab.id !== "outline" || outline !== undefined);
-  const panels = { outline, ai, history, references };
+  const panels = { outline, history, references };
   return (
     <section
       ref={ref}
@@ -158,7 +153,7 @@ export function DocumentToolPanel({
           }))}
         >
           {tabs.map(({ id }) => {
-            const keepSession = id === "outline" || id === "ai";
+            const keepSession = id === "outline";
             return (
               <TabPanel key={id} id={id} className={styles.tabPanel} keepMounted={keepSession}>
                 {(keepSession || tool === id) && panels[id]}

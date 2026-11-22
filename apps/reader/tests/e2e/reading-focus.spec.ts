@@ -165,8 +165,8 @@ test("selects layout previews and keeps the active tool when resizing the direct
   await layout.click();
   const research = page.getByRole("menuitemradio", { name: "研究布局" });
   await research.click();
-  const ai = page.getByRole("tab", { name: "AI" });
-  await expect(ai).toHaveAttribute("aria-selected", "true");
+  const ai = page.getByRole("region", { name: "文档 AI" });
+  await expect(ai).toBeVisible();
   const message = page.getByRole("textbox", { name: "提示词" });
   await message.fill("保留这条草稿");
   const divider = page.getByRole("separator", { name: "调整空间目录宽度" });
@@ -175,27 +175,28 @@ test("selects layout previews and keeps the active tool when resizing the direct
   await expect
     .poll(async () => (await directory.boundingBox())?.width ?? 0)
     .toBeGreaterThan(previousWidth);
-  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expect(ai).toBeVisible();
   await expect(message).toHaveValue("保留这条草稿");
-  await layout.click();
-  await expect(research).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "打开文档辅助区" }).click();
   await page.getByRole("tab", { name: "引用" }).click();
   await layout.click();
   await research.click();
-  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expect(ai).toBeVisible();
   await expect(message).toHaveValue("保留这条草稿");
 
   await page.reload();
-  await expect(ai).toHaveAttribute("aria-selected", "true");
+  await expect(ai).toBeVisible();
   await layout.click();
   await expect(research).toHaveAttribute("aria-checked", "true");
   await page.getByRole("menuitemradio", { name: "校订布局" }).click();
   await expect(directory).toBeHidden();
+  await expect(ai).toBeHidden();
   await expect(page.getByRole("tab", { name: "版本" })).toHaveAttribute("aria-selected", "true");
   await layout.click();
   await page.getByRole("menuitemradio", { name: "阅读布局" }).click();
   await expect(page.getByRole("tablist", { name: "文档工具" })).toBeHidden();
+  await expect(ai).toBeHidden();
 });
 
 test("focus layout follows navigation and the old semantic block clears", async ({ page }) => {

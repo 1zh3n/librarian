@@ -5,6 +5,9 @@ declare const styles: {
   readonly citationNotice: string;
   readonly iconButton: string;
   readonly closePane: string;
+  readonly toolButton: string;
+  readonly toolLabel: string;
+  readonly aiLauncher: string;
   readonly tabIcon: string;
   readonly actionButton: string;
   readonly documentGrid: string;

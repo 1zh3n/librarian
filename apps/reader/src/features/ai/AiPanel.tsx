@@ -42,6 +42,7 @@ export function AiPanel({
   workspace,
   documentId,
   standalone = false,
+  floating = false,
   global = false,
   active = true,
   documents,
@@ -58,6 +59,7 @@ export function AiPanel({
   workspace: string;
   documentId?: string;
   standalone?: boolean;
+  floating?: boolean;
   global?: boolean;
   active?: boolean;
   documents: readonly DocumentSummary[];
@@ -454,6 +456,7 @@ export function AiPanel({
       data-standalone={standalone || undefined}
       className={styles.panel}
       data-document-ai={Boolean(documentId) || undefined}
+      data-floating={floating || undefined}
       aria-label={documentId ? "文档 AI" : global ? "AI 助手对话" : "工作区 AI"}
     >
       {standalone ? (

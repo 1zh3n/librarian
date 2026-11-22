@@ -7,6 +7,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "../../ui/Button";
 import { ActionMenu } from "../../ui/Menu";
 import { DocumentToolPanel, useDocumentTools } from "./DocumentToolPanel";
+import { DocumentAiPanel } from "./DocumentAiPanel";
 import type { Tool } from "./DocumentToolPanel";
 import { api, ApiError } from "../../api/client";
 import type { AiContext, AssetUpload, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
@@ -143,6 +144,7 @@ function DocumentWorkspace({
   const {
     focus,
     preferences,
+    layoutSelection,
     createdDocument,
     clearCreatedDocument,
     navigationCancelled,
@@ -313,7 +315,7 @@ function DocumentWorkspace({
   const outlineEnabled = outlineRequested || snapshot.document.outlineEnabled;
   const showOutline = outlineEnabled || citation?.outline === true;
   const initialTool = returnVisit
-    ? "ai"
+    ? "layout"
     : citation
       ? citation.outline
         ? "outline"
@@ -324,6 +326,19 @@ function DocumentWorkspace({
     location.state.__TSR_key,
     initialTool,
   );
+  const [aiOpen, setAiOpen] = useState(Boolean(returnVisit) || preferences.layout === "research");
+  const layoutKey = `${preferences.layout}:${layoutSelection}`;
+  const [aiLayout, setAiLayout] = useState(layoutKey);
+  const aiLauncher = useRef<HTMLButtonElement>(null);
+  if (aiLayout !== layoutKey) {
+    setAiLayout(layoutKey);
+    if (preferences.layout === "research") {
+      chooseTool(undefined);
+      setAiOpen(true);
+    } else {
+      setAiOpen(false);
+    }
+  }
   const savedSelection = useRef<{ source: string; range: Range } | undefined>(undefined);
   const toolAnchor = useRef<ReturnType<typeof captureReaderAnchor>>(undefined);
   const toolPane = useRef<HTMLElement>(null);
@@ -347,6 +362,7 @@ function DocumentWorkspace({
   const returnFromTool = useRef(false);
   function setTool(next: Tool | undefined) {
     if (next === tool) return;
+    if (next) setAiOpen(false);
     const viewport = canvas.current?.closest("main");
     if (next === "contents" && viewport) setContentsInitial(headingAtReadingPosition(viewport));
     toolAnchor.current =
@@ -374,6 +390,14 @@ function DocumentWorkspace({
       }
     }
     chooseTool(next);
+  }
+  function openAi() {
+    if (tool) setTool(undefined);
+    setAiOpen(true);
+  }
+  function closeAi() {
+    setAiOpen(false);
+    requestAnimationFrame(() => aiLauncher.current?.focus({ preventScroll: true }));
   }
   const outline = useQuery({
     ...outlineQuery(workspace, documentId),
@@ -542,7 +566,7 @@ function DocumentWorkspace({
 
   useEffect(() => {
     const viewport = canvas.current?.closest("main");
-    if (!returnVisit || tool !== "ai" || !viewport || handledVisit.current === returnVisit) return;
+    if (!returnVisit || !aiOpen || !viewport || handledVisit.current === returnVisit) return;
     // The shell resets the scroller when document identity changes.
     let stop: (() => void) | undefined;
     const frame = requestAnimationFrame(() => {
@@ -561,7 +585,7 @@ function DocumentWorkspace({
       cancelAnimationFrame(frame);
       stop?.();
     };
-  }, [tool, returnVisit, analysis.blocks, snapshot.revision]);
+  }, [aiOpen, returnVisit, analysis.blocks, snapshot.revision]);
 
   const rememberReadingSelection = useCallback(() => {
     if (modeRef.current !== "read") return;
@@ -1118,15 +1142,15 @@ function DocumentWorkspace({
         {!tool && (
           <Button
             ref={openToolButton}
-            isIconOnly
             aria-label="打开文档辅助区"
             aria-controls={paneId}
             aria-expanded={false}
             onPressStart={rememberReadingSelection}
             onPress={() => setTool(rememberedTab)}
-            className={styles.iconButton}
+            className={styles.toolButton}
           >
             <Icon name="panel-right" />
+            <span className={styles.toolLabel}>工具</span>
           </Button>
         )}
         {(writable || semantic.length > 0 || analysis.headings.length > 0) && (
@@ -1237,20 +1261,6 @@ function DocumentWorkspace({
               </>
             ) : undefined
           }
-          ai={
-            <AiPanel
-              key={location.state.__TSR_key}
-              citationDraft={citationDraft}
-              active={tool === "ai"}
-              workspace={workspace}
-              documentId={documentId}
-              documents={documents ?? []}
-              writable={writable}
-              resolveContext={resolveAiContext}
-              returnVisit={returnVisit?.transcript}
-              onSourceVisit={rememberSource}
-            />
-          }
           history={
             <VersionPanel
               workspace={workspace}
@@ -1325,6 +1335,32 @@ function DocumentWorkspace({
           )}
         </div>
       </div>
+      <DocumentAiPanel open={aiOpen} onClose={closeAi}>
+        <AiPanel
+          key={location.state.__TSR_key}
+          citationDraft={citationDraft}
+          floating
+          active={aiOpen}
+          workspace={workspace}
+          documentId={documentId}
+          documents={documents ?? []}
+          writable={writable}
+          resolveContext={resolveAiContext}
+          returnVisit={returnVisit?.transcript}
+          onSourceVisit={rememberSource}
+        />
+      </DocumentAiPanel>
+      {!aiOpen && (
+        <Button
+          ref={aiLauncher}
+          className={styles.aiLauncher}
+          isIconOnly
+          aria-label="打开文档 AI"
+          onPress={openAi}
+        >
+          <Icon name="sparkles" />
+        </Button>
+      )}
       {mode === "read" && selectedBlock && (
         <fieldset className={styles.semanticControls} aria-label="语义聚焦">
           <Button

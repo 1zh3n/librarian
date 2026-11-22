@@ -1,6 +1,6 @@
 import { Button as HeroButton } from "@heroui/react/button";
 import { ToggleButton as HeroToggleButton } from "@heroui/react/toggle-button";
-import type { ReactNode, Ref } from "react";
+import type { KeyboardEventHandler, PointerEventHandler, ReactNode, Ref } from "react";
 
 type ButtonProps = {
   "aria-current"?: "page";
@@ -22,6 +22,8 @@ type ButtonProps = {
   slot?: "chevron";
   onPress?: (event: { target: Element }) => void;
   onPressStart?: () => void;
+  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 };
 
 export function Button({ variant = "ghost", loading = false, ...props }: ButtonProps) {

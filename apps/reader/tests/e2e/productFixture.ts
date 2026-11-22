@@ -11,6 +11,13 @@ export async function openDocumentTool(
     await page.getByRole("menuitem", { name, exact: true }).click();
     return;
   }
+  if (name === "AI") {
+    const panel = page.getByRole("region", { name: "文档 AI" });
+    if (await panel.isVisible().catch(() => false)) return;
+    await page.getByRole("button", { name: "打开文档 AI" }).click();
+    await panel.waitFor({ state: "visible" });
+    return;
+  }
   const open = page.getByRole("button", { name: "打开文档辅助区" });
   const tabs = page.getByRole("tablist", { name: "文档工具" });
   await open.or(tabs).first().waitFor({ state: "visible" });
@@ -19,6 +26,11 @@ export async function openDocumentTool(
 }
 
 export async function closeDocumentTool(page: Page) {
+  const ai = page.getByRole("button", { name: "收起文档 AI" });
+  if (await ai.isVisible().catch(() => false)) {
+    await ai.click();
+    return;
+  }
   await page.getByRole("button", { name: "收起文档辅助区" }).click();
 }
 

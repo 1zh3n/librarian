@@ -64,13 +64,11 @@ test("resizes document tools from their visible width and saves only completed a
   });
   expect(preference.ok()).toBe(true);
   await page.reload();
-  await openDocumentTool(page, "AI");
+  await openDocumentTool(page, "版本");
   const handle = page.getByRole("separator", { name: "调整文档辅助区宽度" });
   await expect(handle).toBeVisible();
   const pane = page.getByRole("region", { name: "文档辅助区", exact: true });
   const initial = Math.round((await bounds(pane)).width);
-  const draft = page.getByRole("textbox", { name: "提示词" });
-  await draft.fill("请核对这段笔记");
   await handle.press("End");
   const capped = Math.round((await bounds(pane)).width);
   expect(capped).toBe(initial);
@@ -97,10 +95,9 @@ test("resizes document tools from their visible width and saves only completed a
   await page.mouse.move(x + 24, y);
   await page.mouse.up();
   await expect.poll(async () => (await deviceSettings(page)).toolsWidth).toBe(saved - 24);
-  await expect(draft).toHaveValue("请核对这段笔记");
   await page.screenshot({ path: info.outputPath("desktop-tools.png") });
   await page.reload();
-  await openDocumentTool(page, "AI");
+  await openDocumentTool(page, "版本");
   await expect.poll(async () => Math.round((await bounds(pane)).width)).toBe(saved - 24);
   await info.attach("tool-widths", {
     body: JSON.stringify({
@@ -139,7 +136,7 @@ test("hiding the tool divider cancels a drag still held across the narrow breakp
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await createNote(page, "拖动时转为窄屏.md", "继续同一篇文档");
-  await openDocumentTool(page, "AI");
+  await openDocumentTool(page, "版本");
   const pane = page.getByRole("region", { name: "文档辅助区", exact: true });
   const handle = page.getByRole("separator", { name: "调整文档辅助区宽度" });
   const initial = (await deviceSettings(page)).toolsWidth;
