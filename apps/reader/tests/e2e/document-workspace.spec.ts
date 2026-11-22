@@ -896,7 +896,7 @@ test("a read-only workspace member can open an import receipt without upload or 
     await expect(viewer.getByRole("article")).toContainText("已授权文档");
     const directory = viewer.locator("#workspace-navigation");
     await expect(directory.getByRole("button", { name: /更多/ })).toHaveCount(0);
-    const row = directory.getByRole("row", { name: "共享回执", exact: true });
+    const row = directory.getByRole("row", { name: "已授权文档", exact: true });
     await row.click({ button: "right" });
     const menu = viewer.getByRole("menu");
     await expect(menu.getByRole("menuitem", { name: /新建文档/ })).toHaveCount(0);
