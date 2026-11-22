@@ -8,6 +8,7 @@ import { OfflineSnapshotControl } from "../features/offline/OfflineSnapshotContr
 import { offlineAvailable } from "../features/offline/readerOffline";
 import { analyzeMarkdown } from "../markdown/analyze";
 import { ReaderSurface } from "../markdown/ReaderSurface";
+import { isInlineImagePath } from "../markdown/imagePath";
 import { relativeDocumentPath } from "../markdown/relativePath";
 import { Disclosure } from "../ui/Disclosure";
 import styles from "./SnapshotRoute.module.css";
@@ -111,7 +112,7 @@ function SnapshotReader({
   const resolveImage = useCallback(
     (src: string) => {
       const relative = relativeDocumentPath(document.path, src);
-      return relative && attachmentPaths.includes(relative.path)
+      return relative && isInlineImagePath(relative.path) && attachmentPaths.includes(relative.path)
         ? api.snapshotAsset(id, relative.path)
         : null;
     },

@@ -33,10 +33,22 @@ import { anchorSampleInset, blockAtOffset, resolveAnchor } from "../../markdown/
 import type { AnchorPlacement, ScrollAnchor } from "../../markdown/anchors";
 import type { Block } from "../../markdown/blocks";
 import { composing, compositionEvents, setComposing } from "./composition";
-import { documentPreviewTypography, hideFrontMatterControl, livePreview } from "./livePreview";
+import {
+  documentPreviewTypography,
+  hideFrontMatterControl,
+  imagePreview,
+  livePreview,
+} from "./livePreview";
+import type { ImageResolver } from "./livePreview";
 import { paperScrollAnchor } from "./paperScrollAnchor";
 import { markdownEnter } from "./markdownEnter";
 import { frontMatterRange } from "./syntax";
+
+function imageFiles(files: FileList | null | undefined) {
+  return Array.from(files ?? []).filter(
+    (file) => file.type.startsWith("image/") || /\.(?:avif|gif|jpe?g|png|webp)$/iu.test(file.name),
+  );
+}
 
 const replaceSource = StateEffect.define<SourceDocument>();
 const restoreLineEndings = StateEffect.define<readonly TextEdit[]>();
@@ -125,6 +137,8 @@ type EditorOptions = {
   readonly ariaLabel?: string;
   readonly hideMetadataInPreview?: boolean;
   readonly documentTypography?: boolean;
+  readonly resolveImage?: ImageResolver | undefined;
+  readonly onImageFiles?: ((files: File[], at?: number) => void) | undefined;
   readonly onDeferredExternalResult?: (revision: string | null, result: ExternalResult) => void;
   readonly onBufferChange?: (source: string, composing: boolean) => void;
 };
@@ -151,6 +165,8 @@ export interface EditorSession {
   isBelowLastLine(y: number): boolean;
   placeCaretAtPaperPoint(x: number, y: number, viewport?: HTMLElement | null): void;
   applyChanges(changes: readonly TextEdit[]): void;
+  insertMarkdown(markdown: string, at?: number): void;
+  setImageHandler(handler: ((files: File[], at?: number) => void) | undefined): void;
   setSourceMode(enabled: boolean): boolean;
   trackAnchor(anchor: ScrollAnchor | undefined): void;
   trackedAnchor(): AnchorPlacement | undefined;
@@ -169,9 +185,10 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
   const source = readSource(initial);
   const doc = Text.of(editorText(initial).split("\n"));
   const metadata = frontMatterRange(doc);
+  const imageExtension = options.resolveImage ? [imagePreview.of(options.resolveImage)] : [];
   const previewExtensions = options.documentTypography
-    ? [livePreview, documentPreviewTypography]
-    : livePreview;
+    ? [livePreview, documentPreviewTypography, ...imageExtension]
+    : [livePreview, ...imageExtension];
   const preview = new Compartment();
   const undoHistory = new Compartment();
   const paperAnchor = paperScrollAnchor();
@@ -179,6 +196,7 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
   let revision = options.revision;
   let confirmedSource = initial;
   let pendingExternal: ExternalPatch | undefined;
+  let imageHandler = options.onImageFiles;
   let state = EditorState.create({
     doc,
     selection: selection
@@ -209,6 +227,32 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
       EditorState.readOnly.of(options.readOnly ?? false),
       EditorView.editable.of(!options.readOnly),
       EditorView.contentAttributes.of({ "aria-label": options.ariaLabel ?? "Markdown 正文" }),
+      EditorView.domEventHandlers({
+        paste(event) {
+          const files = imageFiles(event.clipboardData?.files);
+          if (!files.length || !imageHandler) return false;
+          event.preventDefault();
+          imageHandler(files);
+          return true;
+        },
+        drop(event, view) {
+          const files = imageFiles(event.dataTransfer?.files);
+          if (!files.length || !imageHandler) return false;
+          event.preventDefault();
+          const position =
+            view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+            view.state.selection.main.head;
+          view.dispatch({ selection: { anchor: position } });
+          const source = view.state.field(sourceField);
+          imageHandler(files, originalOffset(source, position));
+          return true;
+        },
+        dragover(event) {
+          if (!imageHandler || !imageFiles(event.dataTransfer?.files).length) return false;
+          event.preventDefault();
+          return true;
+        },
+      }),
     ],
   });
   let view: EditorView | undefined;
@@ -313,6 +357,41 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     );
   }
 
+  function insertMarkdown(markdown: string, at?: number) {
+    if (!markdown || state.readOnly) return;
+    const current = state.field(sourceField);
+    const from = at === undefined ? state.selection.main.from : editorOffset(current, at);
+    const to = at === undefined ? state.selection.main.to : from;
+    const originalFrom = originalOffset(current, from);
+    const originalTo = originalOffset(current, to);
+    const before = current.value.slice(0, originalFrom);
+    const after = current.value.slice(originalTo);
+    const ending = current.value.includes("\r\n") ? "\r\n" : "\n";
+    const block = markdown.replace(/\r\n?|\n/gu, ending);
+    const prefix =
+      before === "" || before.endsWith(ending + ending)
+        ? ""
+        : before.endsWith(ending)
+          ? ending
+          : ending + ending;
+    const suffix =
+      after === ""
+        ? ending
+        : after.startsWith(ending + ending)
+          ? ""
+          : after.startsWith(ending)
+            ? ending
+            : ending + ending;
+    applyEdits([{ from: originalFrom, to: originalTo, insert: prefix + block + suffix }], false);
+    const next = state.field(sourceField);
+    const position = editorOffset(
+      next,
+      originalFrom + prefix.length + block.length + suffix.length,
+    );
+    dispatch(state.update({ selection: { anchor: position }, scrollIntoView: true }));
+    focus();
+  }
+
   return {
     source: () => state.field(sourceField).value,
     selection() {
@@ -389,6 +468,10 @@ export function openEditor(initial: string, options: EditorOptions = {}): Editor
     },
     applyChanges(edits) {
       applyEdits(edits, false);
+    },
+    insertMarkdown,
+    setImageHandler(handler) {
+      imageHandler = handler;
     },
     applyExternal(change) {
       if (change.baseRevision !== revision || pendingExternal) return "conflict";

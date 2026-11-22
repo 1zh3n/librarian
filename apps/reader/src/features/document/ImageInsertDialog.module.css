@@ -1,0 +1,77 @@
+.overlay {
+  position: fixed;
+  z-index: 8;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: min(1rem, 4vw);
+  overflow: auto;
+  background: var(--overlay);
+}
+
+.modal {
+  width: min(100%, 32rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+
+.dialog {
+  padding: clamp(16px, 5vw, 2rem);
+  border: 1px solid var(--border-strong);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.dialog h2 {
+  margin: 0 0 1rem;
+  font-size: 1.3rem;
+}
+
+.form {
+  display: grid;
+  gap: 0.875rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  line-height: 1.6;
+}
+
+.hint code {
+  color: var(--ink);
+  font-size: 0.8125rem;
+}
+
+.files {
+  max-height: 8rem;
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  overflow-y: auto;
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+@media (pointer: coarse) {
+  .overlay {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: min(90dvh, 44rem);
+    border-radius: calc(var(--radius) * 2) calc(var(--radius) * 2) 0 0;
+  }
+}

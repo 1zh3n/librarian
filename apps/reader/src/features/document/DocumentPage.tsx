@@ -9,7 +9,7 @@ import { ActionMenu } from "../../ui/Menu";
 import { DocumentToolPanel, useDocumentTools } from "./DocumentToolPanel";
 import type { Tool } from "./DocumentToolPanel";
 import { api, ApiError } from "../../api/client";
-import type { AiContext, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
+import type { AiContext, AssetUpload, DocumentSnapshot, OutlineSnapshot } from "../../api/client";
 import {
   DocumentMoved,
   documentQuery,
@@ -22,6 +22,7 @@ import type { EditorMountAnchor } from "../../editor/codemirror/adapter";
 import type { AnchorPlacement } from "../../markdown/anchors";
 import { analyzeMarkdown } from "../../markdown/analyze";
 import { reanalyzeMarkdown } from "../../markdown/reanalyze";
+import { isInlineImagePath } from "../../markdown/imagePath";
 import { relativeDocumentPath } from "../../markdown/relativePath";
 import { ReaderSurface } from "../../markdown/ReaderSurface";
 import { AiPanel } from "../ai/AiPanel";
@@ -50,6 +51,14 @@ import { parseCitationHash } from "./sourceVisit";
 import type { CitationDraft } from "./citationHistory";
 import type { AiTranscriptVisit, SourceVisit } from "./sourceVisit";
 import { SaveNotice } from "./SaveNotice";
+import { ImageInsertDialog } from "./ImageInsertDialog";
+import {
+  assetsDirectory,
+  imageUploadError,
+  imageValidationError,
+  markdownForImages,
+} from "./imageInsert";
+import { NotificationPortal } from "../../ui/NotificationStack";
 import styles from "./DocumentPage.module.css";
 
 type Mode = "read" | "preview" | "source";
@@ -164,9 +173,10 @@ function DocumentWorkspace({
   const resolveImage = useCallback(
     (src: string) => {
       const relative = relativeDocumentPath(path, src);
-      if (relative && /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/iu.test(relative.path)) {
-        return api.workspaceAsset(workspace, relative.path);
+      if (!relative) {
+        return /^(?:https?:|data:image\/)/iu.test(src) ? undefined : null;
       }
+      return isInlineImagePath(relative.path) ? api.workspaceAsset(workspace, relative.path) : null;
     },
     [path, workspace],
   );
@@ -197,6 +207,7 @@ function DocumentWorkspace({
       readOnly: !writable,
       ariaLabel: "Markdown 正文",
       documentBody: true,
+      resolveImage,
       write: async ({ markdown, baseRevision }) => {
         if (baseRevision === null) throw new Error("正文缺少保存版本");
         await queryClient.cancelQueries({ queryKey: bodyKey, exact: true });
@@ -206,6 +217,86 @@ function DocumentWorkspace({
       readCurrent: () => api.getDocument(documentId),
     }),
   );
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageNotice, setImageNotice] = useState<
+    { tone: "error" | "success" | "status"; text: string } | undefined
+  >();
+  const imageNoticeTimer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (imageNoticeTimer.current !== undefined) window.clearTimeout(imageNoticeTimer.current);
+    },
+    [],
+  );
+  const showImageNotice = useCallback(
+    (notice: { tone: "error" | "success" | "status"; text: string }) => {
+      if (imageNoticeTimer.current !== undefined) window.clearTimeout(imageNoticeTimer.current);
+      setImageNotice(notice);
+      if (notice.tone === "success") {
+        imageNoticeTimer.current = window.setTimeout(() => setImageNotice(undefined), 2_500);
+      }
+    },
+    [],
+  );
+  const insertImageFiles = useCallback(
+    async (files: File[], at?: number) => {
+      const invalid = imageValidationError(files);
+      if (invalid) throw new Error(invalid);
+      if (imageBusy) throw new Error("已有图片正在上传，请稍候。");
+      setImageBusy(true);
+      const uploaded: AssetUpload[] = [];
+      try {
+        for (const file of files) {
+          const form = new FormData();
+          form.set("operationId", crypto.randomUUID());
+          form.set("targetDirectory", assetsDirectory(path));
+          form.set("fileName", file.name);
+          form.set("conflictPolicy", "rename");
+          form.set("file", file, file.name);
+          uploaded.push(await api.uploadWorkspaceAsset(workspace, form));
+        }
+        body.editor.insertMarkdown(markdownForImages(path, uploaded), at);
+      } catch (error) {
+        if (uploaded.length) body.editor.insertMarkdown(markdownForImages(path, uploaded), at);
+        const message = imageUploadError(error);
+        throw new Error(
+          uploaded.length ? `已插入 ${uploaded.length} 张，其余失败：${message}` : message,
+        );
+      } finally {
+        setImageBusy(false);
+      }
+    },
+    [body, imageBusy, path, workspace],
+  );
+  const insertDroppedImages = useCallback(
+    async (files: File[], at?: number) => {
+      if (!writable) return;
+      showImageNotice({ tone: "status", text: `正在上传 ${files.length} 张图片…` });
+      try {
+        await insertImageFiles(files, at);
+        showImageNotice({ tone: "success", text: `已插入 ${files.length} 张图片` });
+      } catch (error) {
+        showImageNotice({
+          tone: "error",
+          text: error instanceof Error ? error.message : "图片上传失败，请重试。",
+        });
+      }
+    },
+    [insertImageFiles, showImageNotice, writable],
+  );
+  useLayoutEffect(() => {
+    body.editor.setImageHandler((files, at) => void insertDroppedImages(files, at));
+  }, [body, insertDroppedImages]);
+  async function insertImagesFromDialog(files: File[]) {
+    await insertImageFiles(files);
+    setImageDialogOpen(false);
+    requestAnimationFrame(() => body.editor.focus());
+  }
+  function closeImageDialog() {
+    setImageDialogOpen(false);
+    requestAnimationFrame(() => moreButton.current?.focus());
+  }
   const [reading, setReading] = useState(() => ({
     source: snapshot.markdown,
     analysis: analyzeMarkdown(snapshot.markdown, documentId),
@@ -1065,6 +1156,14 @@ function DocumentWorkspace({
                       run: () => enterEditor(mode === "source" ? "preview" : "source"),
                     },
                     { id: "metadata", label: "文档属性", run: () => setTool("metadata") },
+                    {
+                      id: "image",
+                      label: "插入图片…",
+                      run: () => {
+                        if (mode === "read") enterEditor("preview");
+                        setImageDialogOpen(true);
+                      },
+                    },
                   ]
                 : []),
               ...(renameDocument
@@ -1268,6 +1367,24 @@ function DocumentWorkspace({
             清除聚焦
           </Button>
         </fieldset>
+      )}
+      {imageNotice && (
+        <NotificationPortal>
+          <Feedback
+            tone={imageNotice.tone}
+            className={imageNotice.tone === "error" ? styles.saveError : styles.saved}
+          >
+            {imageNotice.text}
+          </Feedback>
+        </NotificationPortal>
+      )}
+      {imageDialogOpen && (
+        <ImageInsertDialog
+          documentPath={path}
+          busy={imageBusy}
+          onClose={closeImageDialog}
+          onInsert={insertImagesFromDialog}
+        />
       )}
       <SaveNotice
         saves={body.saves}

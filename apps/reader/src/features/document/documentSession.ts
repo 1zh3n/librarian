@@ -11,6 +11,8 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
   readOnly,
   ariaLabel,
   documentBody = false,
+  resolveImage,
+  onImageFiles,
 }: {
   initial: Snapshot;
   write: (write: MarkdownWrite) => Promise<Snapshot>;
@@ -19,6 +21,8 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
   readOnly: boolean;
   ariaLabel: string;
   documentBody?: boolean;
+  resolveImage?: (src: string) => string | null | undefined;
+  onImageFiles?: (files: File[], at?: number) => void;
 }) {
   const editor = openEditor(initial.markdown, {
     revision: initial.revision,
@@ -26,6 +30,8 @@ export function openMarkdownSession<Snapshot extends MarkdownSnapshot>({
     ariaLabel,
     hideMetadataInPreview: documentBody,
     documentTypography: documentBody,
+    resolveImage,
+    onImageFiles,
     onBufferChange(markdown, composing) {
       if (composing) saves.cancelScheduledSave();
       else if (!readOnly) saves.change(markdown);

@@ -12,3 +12,11 @@ export function relativeDocumentPath(document: string, href: string) {
     return undefined;
   }
 }
+
+export function relativeAssetPath(document: string, asset: string) {
+  const from = document.split("/").slice(0, -1);
+  const to = asset.split("/");
+  let common = 0;
+  while (common < from.length && common < to.length && from[common] === to[common]) common++;
+  return [...from.slice(common).map(() => ".."), ...to.slice(common)].join("/");
+}

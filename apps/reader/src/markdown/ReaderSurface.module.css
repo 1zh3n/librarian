@@ -13,11 +13,6 @@
   transition: color var(--reading-transition, 0ms);
 }
 
-.article img {
-  max-width: 100%;
-  height: auto;
-}
-
 .article pre,
 .tableScroll {
   max-width: 100%;
@@ -27,4 +22,34 @@
 .tableScroll table {
   width: max-content;
   min-width: 100%;
+}
+
+.article img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.25rem auto;
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--surface-muted);
+}
+
+.article p:has(> img:only-child) {
+  margin-block: 1.25rem;
+}
+
+.imageFallback {
+  display: block;
+  max-width: 100%;
+  margin: 1rem auto;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--ink-secondary);
+  font-size: var(--ui-size);
+  text-align: center;
+}
+
+:root[data-eink="true"] .article img {
+  border-radius: 0;
+  background: transparent;
 }

@@ -4,6 +4,7 @@ import type { ComponentProps, KeyboardEventHandler } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import type { MarkdownAnalysis } from "./analyze";
 import { paperTree } from "./paperSpacing";
+import { ReaderImage } from "./ReaderImage";
 import styles from "./ReaderSurface.module.css";
 
 const components = {
@@ -72,13 +73,15 @@ export function ReaderSurface({
               );
             },
           }),
-          ...(resolveImage && {
-            img: ({ src, alt, ...props }: ComponentProps<"img">) => {
-              const target = src ? resolveImage(src) : null;
-              if (target === null) return alt ? <span>{alt}</span> : null;
-              return <img {...props} src={target ?? src} alt={alt ?? ""} loading="lazy" />;
-            },
-          }),
+          img: ({ src, alt, ...props }: ComponentProps<"img">) => {
+            const target = src && resolveImage ? resolveImage(src) : undefined;
+            if (target === null) {
+              const label = alt?.trim() || "图片无法加载";
+              return <span className={styles.imageFallback}>{label}</span>;
+            }
+            if (!src) return null;
+            return <ReaderImage {...props} src={target ?? src} alt={alt} />;
+          },
         },
       }),
     [analysis, resolveImage, resolveLink],

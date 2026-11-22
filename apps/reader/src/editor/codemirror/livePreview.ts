@@ -12,6 +12,10 @@ export { documentPreviewTypography } from "./documentTypography";
 import { frontMatterRange, selectionTouches } from "./syntax";
 
 const hide = Decoration.replace({});
+export type ImageResolver = (src: string) => string | null | undefined;
+export const imagePreview = Facet.define<ImageResolver, ImageResolver | undefined>({
+  combine: (values) => values[0],
+});
 const hiddenHeadingText = Decoration.mark({ attributes: { hidden: "" } });
 export const hideFrontMatterControl = Facet.define<boolean, boolean>({
   combine: (values) => values.includes(true),
@@ -170,6 +174,21 @@ function inlineDecorations(view: EditorView): DecorationSet {
           return;
         }
         visited.add(key);
+        if (name === "Image") {
+          const resolver = state.facet(imagePreview);
+          const urlNode = node.getChild("URL");
+          if (resolver && urlNode && !selectionTouches(state, from, to)) {
+            const source = state.sliceDoc(from, to);
+            const alt = /^!\[([\s\S]*?)\]/u.exec(source)?.[1] ?? "";
+            const url = resolver(state.sliceDoc(urlNode.from, urlNode.to));
+            if (url) {
+              ranges.push(
+                Decoration.replace({ widget: new ImageWidget(url, alt, from) }).range(from, to),
+              );
+            }
+          }
+          return false;
+        }
         if (name === "FencedCode" || name === "CodeBlock") {
           const begin = state.doc.lineAt(Math.max(from, visible.from)).number;
           const end = state.doc.lineAt(Math.min(to, visible.to)).number;
@@ -219,6 +238,52 @@ const previewInline = ViewPlugin.fromClass(
   },
   { decorations: (plugin) => plugin.decorations },
 );
+
+class ImageWidget extends WidgetType {
+  readonly url: string;
+  readonly alt: string;
+  readonly from: number;
+
+  constructor(url: string, alt: string, from: number) {
+    super();
+    this.url = url;
+    this.alt = alt;
+    this.from = from;
+  }
+
+  override eq(other: ImageWidget): boolean {
+    return other.url === this.url && other.alt === this.alt && other.from === this.from;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrapper = view.dom.ownerDocument.createElement("span");
+    wrapper.dataset.previewImage = "";
+    wrapper.contentEditable = "false";
+    const image = view.dom.ownerDocument.createElement("img");
+    image.src = this.url;
+    image.alt = this.alt;
+    image.loading = "lazy";
+    image.decoding = "async";
+    wrapper.append(image);
+    const reveal = () => {
+      if (view.state.field(composing)) return;
+      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
+      view.focus();
+    };
+    wrapper.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      reveal();
+    });
+    wrapper.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        reveal();
+      }
+    });
+    wrapper.tabIndex = 0;
+    return wrapper;
+  }
+}
 
 class BlockWidget extends WidgetType {
   readonly kind: "table" | "frontmatter";
@@ -342,6 +407,18 @@ const previewTheme = EditorView.baseTheme({
   "[data-preview-code]": { fontFamily: "monospace", backgroundColor: "var(--inline-code)" },
   ".cm-content code": { backgroundColor: "var(--inline-code)" },
   "[data-preview-block]": { maxWidth: "100%", overflowX: "auto" },
+  "[data-preview-image]": {
+    display: "block",
+    maxWidth: "100%",
+    marginBlock: "0.75rem",
+    cursor: "text",
+  },
+  "[data-preview-image] img": {
+    display: "block",
+    maxWidth: "100%",
+    height: "auto",
+    borderRadius: "var(--radius)",
+  },
   "&:not([data-document-preview]) [data-preview-block]": { padding: "0.2rem 0.4rem" },
   "[data-preview-block='table'] table": { borderCollapse: "collapse", cursor: "text" },
   "&:not([data-document-preview]) [data-preview-block='table'] :is(td, th)": {
