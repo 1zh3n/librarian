@@ -113,6 +113,12 @@
   font-size: var(--ui-size);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .row .more {
+    display: none;
+  }
+}
+
 @media (any-pointer: coarse) {
   .item,
   .disclosure,
