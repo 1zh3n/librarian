@@ -302,6 +302,12 @@ impl MutationContext<'_> {
             }
         }
         let changes = plan_edits(&root, space, edits)?;
+        let delta = changes.iter().fold(0i64, |total, change| {
+            let after = change.after.as_ref().map_or(0, |bytes| bytes.len() as i64);
+            let before = change.before.as_ref().map_or(0, |bytes| bytes.len() as i64);
+            total.saturating_add(after).saturating_sub(before)
+        });
+        super::quota::check_and_charge(self.state, delta)?;
         let files: Vec<_> = changes
             .iter()
             .map(|change| OperationFile {

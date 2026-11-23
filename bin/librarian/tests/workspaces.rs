@@ -782,3 +782,24 @@ async fn v10_workspace_gains_internal_level_on_upgrade() {
 
 #[path = "workspaces/file_action_storage.rs"]
 mod file_action_storage;
+
+#[tokio::test]
+async fn workspace_count_is_capped_per_account() {
+    let f = Fixture::open();
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    for index in 0..10 {
+        db.execute(
+            "INSERT INTO workspaces (id, space_id, owner, origin, retention)
+             VALUES (?1, ?2, 'alice', 'native', 'persistent')",
+            rusqlite::params![format!("ws_{index:032x}"), format!("quota-space-{index}")],
+        )
+        .unwrap();
+    }
+    drop(db);
+
+    let (status, error) = f
+        .request(&f.alice, "POST", "/workspaces", json!({"name":"超出配额"}))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{error}");
+    assert_eq!(error["code"], "workspace_quota_exceeded");
+}

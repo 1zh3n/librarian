@@ -459,9 +459,13 @@ fn save_locked(
         return Err(too_large());
     }
     check_file_path(state, path)?;
+    let mut old_size = 0i64;
     let current = match state.space.get_file_meta(path) {
         Ok(_) if expected.is_none() => return Err(ApiError::conflict(None)),
-        Ok(_) => Some(sha256_hex(read_markdown(state, path)?.as_bytes())),
+        Ok(meta) => {
+            old_size = meta.size;
+            Some(sha256_hex(read_markdown(state, path)?.as_bytes()))
+        }
         Err(SpaceError::NotFound) => None,
         Err(error) => return Err(error.into()),
     };
@@ -470,6 +474,7 @@ fn save_locked(
     }
     let revision = sha256_hex(markdown.as_bytes());
     if current.as_ref() != Some(&revision) {
+        super::quota::check_and_charge(state, markdown.len() as i64 - old_size)?;
         let file = state.space.write_file(path, markdown.as_bytes(), None)?;
         if let Some(engine) = &state.revisions {
             engine.mark_account_write(path, &actor);

@@ -1329,3 +1329,64 @@ async fn ai_sources_block_high_confidence_credentials() {
     assert_eq!(error["code"], "policy_blocked");
     assert_eq!(error["ruleId"], "private_key");
 }
+
+fn seed_running(connection: &Connection, workspace: &str, count: usize, prefix: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    for index in 0..count {
+        connection
+            .execute(
+                "INSERT INTO ai_operations (id, workspace_id, status, lease_id, expires_at, entry)
+                 VALUES (?1, ?2, 'running', NULL, ?3, '{}')",
+                rusqlite::params![format!("{prefix}-{index}"), workspace, now + 3600],
+            )
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn ai_concurrency_is_capped_per_workspace() {
+    let f = Fixture::open().await;
+    let c = f.conversation(&f.user, Some(&f.doc)).await;
+    seed_running(&f.db(), &f.ws, 2, "busy");
+
+    let (status, error) = f
+        .req(
+            &f.user,
+            "POST",
+            &turns(&c),
+            json!({"clientTurnId":"busy","mode":"chat","prompt":"read"}),
+        )
+        .await;
+    assert_eq!(status, 429, "{error}");
+    assert_eq!(error["code"], "ai_busy");
+}
+
+#[tokio::test]
+async fn ai_concurrency_is_capped_globally() {
+    let f = Fixture::open().await;
+    let other_workspace: String = f
+        .db()
+        .query_row(
+            "SELECT workspace_id FROM documents WHERE id = ?1",
+            [&f.foreign_doc],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let c = f.conversation(&f.user, Some(&f.doc)).await;
+    seed_running(&f.db(), &f.ws, 1, "local");
+    seed_running(&f.db(), &other_workspace, 7, "remote");
+
+    let (status, error) = f
+        .req(
+            &f.user,
+            "POST",
+            &turns(&c),
+            json!({"clientTurnId":"global-busy","mode":"chat","prompt":"read"}),
+        )
+        .await;
+    assert_eq!(status, 429, "{error}");
+    assert_eq!(error["code"], "ai_busy");
+}

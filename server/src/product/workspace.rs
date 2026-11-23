@@ -504,6 +504,9 @@ pub(super) fn create_under_guard(
         return Err(ApiError::not_found());
     }
     let prefix = format!("/librarian-space-{}", binding.simple());
+    if input.origin == Origin::Native {
+        super::quota::check_workspace_count(&service.metadata, account.username())?;
+    }
     let config = serde_json::from_value(serde_json::json!({
         "name": name,
         "binding": {"prefix": prefix},

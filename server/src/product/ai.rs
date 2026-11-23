@@ -280,6 +280,7 @@ impl Operation {
             op.protocol = super::ai_managed::Protocol::Managed;
             op.connection_version = Some(version);
         }
+        super::quota::check_ai_concurrency_in(&db, &op.view.workspace_id)?;
         Ok(op)
     }
 
