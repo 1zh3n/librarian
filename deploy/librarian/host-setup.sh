@@ -36,8 +36,12 @@ fi
 if [[ -r /etc/os-release ]]; then
   # shellcheck disable=SC1091
   . /etc/os-release
-  if [[ "${ID:-}" != "ubuntu" || "${VERSION_ID:-}" != "24.04" ]]; then
-    echo "Expected Ubuntu 24.04 for glibc 2.39; found ${PRETTY_NAME:-unknown}." >&2
+  if [[ "${ID:-}" != "ubuntu" ]]; then
+    echo "Expected Ubuntu; found ${PRETTY_NAME:-unknown}." >&2
+    exit 1
+  fi
+  if [[ "$(printf '%s\n' "24.04" "${VERSION_ID:-0}" | sort -V | head -n 1)" != "24.04" ]]; then
+    echo "Expected Ubuntu 24.04 or newer for glibc 2.39; found ${VERSION_ID:-unknown}." >&2
     exit 1
   fi
 fi

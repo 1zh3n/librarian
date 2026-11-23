@@ -12,6 +12,7 @@
 # overwrites the forwarding headers after resolving the real client address.
 {
 	admin off
+	auto_https disable_redirects
 	servers {
 		trusted_proxies static {$LIBRARIAN_TRUSTED_PROXIES}
 		trusted_proxies_strict
