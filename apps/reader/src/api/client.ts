@@ -88,6 +88,16 @@ export type AccountSummary = components["schemas"]["AccountSummary"];
 export type AccountSession = components["schemas"]["AccountSession"];
 type AccountSessionList = components["schemas"]["AccountSessionList"];
 type RevokedSessions = components["schemas"]["RevokedSessions"];
+export type AuditEvent = components["schemas"]["AuditEvent"];
+type AuditList = components["schemas"]["AuditList"];
+export type AuditFilters = {
+  workspaceId?: string;
+  actor?: string;
+  action?: string;
+  result?: "ok" | "denied";
+  before?: number;
+  limit?: number;
+};
 export type McpSettings = components["schemas"]["McpSettings"];
 export type McpGrant = components["schemas"]["McpGrant"];
 type CreateAccount = components["schemas"]["CreateAccount"];
@@ -214,6 +224,17 @@ async function responseError(response: Response) {
     error?.message ?? `Request failed (${response.status})`,
     error?.currentRevision,
   );
+}
+
+function auditQuery(filters: AuditFilters) {
+  const query = new URLSearchParams();
+  if (filters.workspaceId) query.set("workspaceId", filters.workspaceId);
+  if (filters.actor) query.set("actor", filters.actor);
+  if (filters.action) query.set("action", filters.action);
+  if (filters.result) query.set("result", filters.result);
+  if (filters.before) query.set("before", String(filters.before));
+  if (filters.limit) query.set("limit", String(filters.limit));
+  return query.toString();
 }
 
 const workspacePath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}`;
@@ -447,6 +468,12 @@ export const api = {
   },
   listAccountSessions(signal?: AbortSignal) {
     return request<AccountSessionList>("/session/sessions", signal);
+  },
+  listAudit(filters: AuditFilters, signal?: AbortSignal) {
+    return request<AuditList>(`/audit?${auditQuery(filters)}`, signal);
+  },
+  auditCsvUrl(filters: AuditFilters) {
+    return `/api/v1/audit.csv?${auditQuery(filters)}`;
   },
   revokeAccountSession(id: string) {
     return request<void>(`/session/sessions/${encodeURIComponent(id)}`, undefined, {

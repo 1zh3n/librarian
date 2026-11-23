@@ -14,6 +14,7 @@ mod ai_space_management;
 mod ai_transfer;
 mod assets;
 mod audit;
+mod audit_api;
 mod auth;
 mod backup;
 mod content_policy;

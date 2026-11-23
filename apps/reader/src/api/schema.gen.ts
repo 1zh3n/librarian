@@ -1714,6 +1714,38 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/audit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listAudit"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/audit.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["exportAudit"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2884,6 +2916,25 @@ export interface components {
     };
     AcceptedInvite: {
       recoveryCodes: string[];
+    };
+    AuditEvent: {
+      id: number;
+      at: number;
+      actor: string | null;
+      workspaceId: string | null;
+      action: string;
+      target: string | null;
+      /** @enum {string} */
+      result: "ok" | "denied";
+      ruleId: string | null;
+      requestId: string | null;
+      metadata: {
+        [key: string]: unknown;
+      } | null;
+    };
+    AuditList: {
+      events: components["schemas"]["AuditEvent"][];
+      nextBefore: number | null;
     };
   };
   responses: {
@@ -7767,6 +7818,78 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AcceptedInvite"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  listAudit: {
+    parameters: {
+      query?: {
+        workspaceId?: string;
+        actor?: string;
+        action?: string;
+        result?: "ok" | "denied";
+        before?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditList"];
+        };
+      };
+      /** @description Request could not be completed */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ApiError"];
+        };
+      };
+    };
+  };
+  exportAudit: {
+    parameters: {
+      query?: {
+        workspaceId?: string;
+        actor?: string;
+        action?: string;
+        result?: "ok" | "denied";
+        before?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description CSV export */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/csv": string;
         };
       };
       /** @description Request could not be completed */

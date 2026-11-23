@@ -1,6 +1,6 @@
 use axum::{
     body::{to_bytes, Body},
-    http::{header, Request, StatusCode},
+    http::{header, HeaderMap, Request, StatusCode},
     Router,
 };
 use serde_json::{json, Value};
@@ -142,6 +142,31 @@ impl Fixture {
     ) -> (StatusCode, Value) {
         self.send(method, path, Some((header::COOKIE, cookie)), ORIGIN, input)
             .await
+    }
+
+    async fn raw(&self, method: &str, path: &str, cookie: &str) -> (StatusCode, HeaderMap, String) {
+        let response = self
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(format!("/api/v1{path}"))
+                    .header(header::HOST, HOST)
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (parts, body) = response.into_parts();
+        let bytes = to_bytes(body, 2_000_000).await.unwrap();
+        (
+            parts.status,
+            parts.headers,
+            String::from_utf8_lossy(&bytes).into_owned(),
+        )
     }
 
     async fn public(&self, method: &str, path: &str, input: Value) -> (StatusCode, Value) {
@@ -989,4 +1014,68 @@ async fn lists_and_revokes_browser_sessions() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (status, _) = f.request("GET", "/session", &first, Value::Null).await;
     assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn administrator_queries_and_exports_audit_events() {
+    let f = Fixture::new();
+    let admin = f.login("admin", ORIGINAL).await;
+    let member = f.login("member", ORIGINAL).await;
+
+    let (status, _) = f.request("GET", "/audit", &member, Value::Null).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, workspace) = f
+        .request("POST", "/workspaces", &admin, json!({"name":"审计空间"}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{workspace}");
+    let workspace_id = workspace["id"].as_str().unwrap();
+    let (status, raised) = f
+        .request(
+            "PATCH",
+            &format!("/workspaces/{workspace_id}"),
+            &admin,
+            json!({"securityLevel":"confidential"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{raised}");
+
+    let path = format!(
+        "/audit?workspaceId={workspace_id}&action=workspace.security_level.change&result=ok"
+    );
+    let (status, audit) = f.request("GET", &path, &admin, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{audit}");
+    let events = audit["events"].as_array().unwrap();
+    assert_eq!(events.len(), 1, "{audit}");
+    assert_eq!(events[0]["actor"], "admin");
+    assert_eq!(events[0]["workspaceId"], workspace_id);
+    assert_eq!(events[0]["action"], "workspace.security_level.change");
+    assert_eq!(events[0]["result"], "ok");
+    assert!(events[0]["at"].as_i64().unwrap() > 0);
+
+    let csv_path = format!(
+        "/audit.csv?workspaceId={workspace_id}&action=workspace.security_level.change&result=ok&limit=10"
+    );
+    let (status, headers, csv) = f.raw("GET", &csv_path, &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/csv; charset=utf-8")
+    );
+    assert!(headers
+        .get(header::CONTENT_DISPOSITION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("attachment; filename=\"librarian-audit-")));
+    assert!(
+        csv.starts_with("at,actor,workspace_id,action,target,result,rule_id,request_id,metadata\n")
+    );
+    assert!(csv.contains("workspace.security_level.change"));
+    assert!(csv.contains(workspace_id));
+
+    let (status, _) = f
+        .request("GET", "/audit?result=unknown", &admin, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }

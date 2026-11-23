@@ -3,6 +3,16 @@ use serde_json::Value;
 
 use super::{contract::ApiError, db::Metadata};
 
+pub(super) const RETENTION_SECS: i64 = 90 * 24 * 3600;
+
+pub(super) fn prune(metadata: &Metadata) -> Result<(), ApiError> {
+    let cutoff = chrono::Utc::now().timestamp() - RETENTION_SECS;
+    metadata
+        .connection()?
+        .execute("DELETE FROM product_audit WHERE at < ?1", [cutoff])?;
+    Ok(())
+}
+
 pub(super) fn migrate(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS product_audit (

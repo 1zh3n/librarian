@@ -675,6 +675,7 @@ pub(crate) fn routes(service: Arc<DocumentService>) -> Router {
         .merge(super::imports::routes())
         .merge(super::snapshots::routes())
         .merge(super::session::routes())
+        .merge(super::audit_api::routes())
         .merge(super::publication::routes())
         .merge(super::backup::routes())
         .merge(super::mcp_settings::routes())

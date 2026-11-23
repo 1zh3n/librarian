@@ -410,3 +410,38 @@ test("lists and revokes other browser sessions", async ({ page, browser }, testI
     await thirdContext.close();
   }
 });
+
+test("queries and exports audit events", async ({ page }, testInfo) => {
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const origin = new URL(page.url()).origin;
+  const name = `审计 UI 空间-${randomUUID()}`;
+  const created = await page.request.post("/api/v1/workspaces", {
+    headers: { origin },
+    data: { name },
+  });
+  expect(created.status()).toBe(201);
+  const workspace = (await created.json()) as Workspace;
+  const raised = await page.request.patch(`/api/v1/workspaces/${workspace.id}`, {
+    headers: { origin },
+    data: { securityLevel: "confidential" },
+  });
+  expect(raised.ok()).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/accounts");
+  const section = page.getByRole("region", { name: "审计日志" });
+  await expect(section).toBeVisible();
+  await section.getByLabel("动作").fill("workspace.security_level.change");
+  await section.getByRole("button", { name: "查询" }).click();
+  const list = section.getByRole("list", { name: "审计记录" });
+  await expect(list).toBeVisible();
+  await expect(list).toContainText("workspace.security_level.change");
+  await expect(list).toContainText(name);
+  await expect(list).toContainText("fixture-admin");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("audit-390.png"), fullPage: true });
+
+  const download = page.waitForEvent("download");
+  await section.getByRole("button", { name: "导出 CSV" }).click();
+  expect((await download).suggestedFilename()).toMatch(/^librarian-audit-\d{8}\.csv$/);
+});
