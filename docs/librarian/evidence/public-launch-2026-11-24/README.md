@@ -20,7 +20,7 @@
 - HSTS：`max-age=86400; includeSubDomains`。
 - Authenticated Origin Pulls：全局模式开启；Caddy `client_auth` 为 `require_and_verify`。
 - Cloudflare 段：22 个 IPv4/IPv6 段写入 `/etc/librarian/cloudflare.env` 和 UFW。
-- DNSSEC：Cloudflare 已生成 DS，状态 `pending`，等待写入 NameSilo：
+- DNSSEC：NameSilo 已写入 DS，Cloudflare 状态 `active`；Cloudflare 和 Google DoH 对 DS 与 `librarian` A 记录均返回 `AD: true`。
 
 ```text
 zanghua.dev. 3600 IN DS 2371 13 2 BB93F991EF91A0701C5F0AE9BFEC02E631A40010B80A394C460B1F685942F531
@@ -95,7 +95,7 @@ curl: (55) OpenSSL SSL_read: ... tlsv13 alert certificate required
 
 ## 未完成
 
-- Cloudflare WAF 托管规则、缓存规则、DNSSEC DS 写入 NameSilo、注册商锁/账号 2FA。
+- 注册商锁/账号 2FA。
 - 真实告警 webhook、异地 restic 备份。
 - 生产规格升级、zone-level AOP 自定义证书。
 - 发布和 S2 grant 的 step-up、S2 例外、会话列表 UI、完整 OpenAPI、审计查询 UI。
