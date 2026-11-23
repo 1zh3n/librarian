@@ -243,6 +243,8 @@ struct Update {
     security_level: Option<SecurityLevel>,
     #[serde(default)]
     confirm_security_downgrade: bool,
+    #[serde(default)]
+    step_up_token: Option<String>,
 }
 
 fn present_expiry<'de, D: Deserializer<'de>>(value: D) -> Result<Option<Option<i64>>, D::Error> {
@@ -647,6 +649,7 @@ pub(super) fn rename_under_guard(
             expires_at: None,
             security_level: None,
             confirm_security_downgrade: false,
+            step_up_token: None,
         },
         Some(operation_id),
     )
@@ -701,6 +704,13 @@ fn update_under_guard(
                 "security_downgrade_confirmation_required",
                 "Lowering the workspace security level requires confirmation",
             ));
+        }
+        if security_level.rank() < details.security_level.rank() {
+            super::auth::require_step_up_if_enrolled(
+                &service.spaces,
+                account,
+                input.step_up_token.as_deref(),
+            )?;
         }
         let mut connection = service.metadata.connection()?;
         let transaction = connection.transaction()?;

@@ -38,6 +38,7 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .route("/session/totp/start", post(totp_start))
         .route("/session/totp/verify", post(totp_verify))
         .route("/session/totp/disable", post(totp_disable))
+        .route("/session/step-up", post(step_up))
         .route("/accounts/{username}/totp/reset", post(reset_totp))
         .route("/invites", get(list_invites).post(create_invite))
         .route(
@@ -337,6 +338,86 @@ struct TotpEnabled {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TotpDisable {
     code: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StepUpInput {
+    code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StepUpToken {
+    token: String,
+    expires_in: u64,
+}
+
+async fn step_up(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+    input: Result<Json<StepUpInput>, JsonRejection>,
+) -> Result<Json<StepUpToken>, ApiError> {
+    let account = browser(&service, &headers, true)?;
+    let input = body(input)?;
+    run(move || {
+        let users = &service.spaces.users;
+        if !users.totp_enabled(account.username()) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "totp_required",
+                "Enable two-factor authentication before this action",
+            ));
+        }
+        let Some(attempt) = service
+            .spaces
+            .password_limits
+            .reserve(account.username(), None)
+        else {
+            return Err(ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "Too many verification attempts",
+            ));
+        };
+        let now = chrono::Utc::now().timestamp() as u64;
+        if !users.verify_totp(account.username(), &input.code, now)
+            && !users.verify_recovery_code(account.username(), &input.code)
+        {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "invalid_totp_code",
+                "The verification code is not valid",
+            ));
+        }
+        let version = users
+            .credential_version(account.username())
+            .ok_or_else(|| ApiError::internal("Account is unavailable"))?;
+        let token = service
+            .spaces
+            .authenticator
+            .issue_step_up(account.username(), Some(version))
+            .map_err(ApiError::internal)?;
+        attempt.succeeded();
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(account.username()),
+                workspace: None,
+                action: "account.step_up",
+                target: Some(account.username()),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
+        Ok(Json(StepUpToken {
+            token,
+            expires_in: 300,
+        }))
+    })
+    .await
 }
 
 async fn totp_status(

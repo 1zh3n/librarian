@@ -3,6 +3,7 @@ declare const styles: {
   readonly modal: string;
   readonly dialog: string;
   readonly text: string;
+  readonly field: string;
   readonly actions: string;
   readonly danger: string;
 };

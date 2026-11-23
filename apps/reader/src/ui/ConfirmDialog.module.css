@@ -33,6 +33,11 @@
   overflow-wrap: anywhere;
 }
 
+.field {
+  display: grid;
+  gap: 0.375rem;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

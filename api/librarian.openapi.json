@@ -7707,6 +7707,10 @@
           "confirmSecurityDowngrade": {
             "type": "boolean",
             "description": "Set to true to lower the workspace security level."
+          },
+          "stepUpToken": {
+            "type": "string",
+            "description": "Short-lived step-up token required when the account has TOTP enabled."
           }
         }
       },
@@ -7982,6 +7986,10 @@
               "string",
               "null"
             ]
+          },
+          "stepUpToken": {
+            "type": "string",
+            "description": "Short-lived step-up token for an anonymous share when TOTP is enabled."
           }
         }
       },

@@ -1,8 +1,8 @@
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Feedback } from "../../ui/Feedback";
-import { Select } from "../../ui/Forms";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Field, Select } from "../../ui/Forms";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../../api/client";
 import type { Workspace } from "../../api/client";
@@ -69,14 +69,27 @@ export function WorkspaceSecurity({ workspace }: { workspace: Workspace }) {
   const [level, setLevel] = useState<Level>(workspace.securityLevel);
   const [confirming, setConfirming] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const totp = useQuery({
+    queryKey: ["totp", "status"],
+    queryFn: ({ signal }) => api.getTotpStatus(signal),
+  });
+  const totpEnabled = totp.data?.enabled ?? false;
   const lowering = rank[level] < rank[current.securityLevel];
   const dirty = level !== current.securityLevel;
   const save = useMutation({
-    mutationFn: (confirmed: boolean) =>
-      api.updateWorkspace(workspace.id, {
+    mutationFn: async (confirmed: boolean) => {
+      let stepUpToken: string | undefined;
+      if (lowering && confirmed && totpEnabled) {
+        stepUpToken = (await api.stepUp(code)).token;
+      }
+      return api.updateWorkspace(workspace.id, {
         securityLevel: level,
         ...(lowering && confirmed && { confirmSecurityDowngrade: true }),
-      }),
+        ...(stepUpToken && { stepUpToken }),
+      });
+    },
     onSuccess: (next) => {
       client.setQueryData<Workspace[]>(workspaceKeys.all, (list) =>
         list?.map((item) => (item.id === next.id ? next : item)),
@@ -84,6 +97,8 @@ export function WorkspaceSecurity({ workspace }: { workspace: Workspace }) {
       setCurrent(next);
       setLevel(next.securityLevel);
       setConfirming(false);
+      setCode("");
+      setCodeError("");
       setSaved(true);
     },
   });
@@ -159,11 +174,41 @@ export function WorkspaceSecurity({ workspace }: { workspace: Workspace }) {
           title="降低安全等级？"
           confirmLabel="降低等级"
           destructive
-          busy={save.isPending}
-          error={save.isError ? "无法保存安全等级。" : undefined}
-          onConfirm={() => save.mutate(true)}
+          busy={save.isPending || totp.isPending}
+          error={
+            save.isError
+              ? save.error instanceof ApiError && save.error.code === "invalid_totp_code"
+                ? "验证码或恢复码不正确。"
+                : "无法保存安全等级。"
+              : codeError || undefined
+          }
+          field={
+            totpEnabled ? (
+              <Field
+                label="验证码或恢复码"
+                value={code}
+                onChange={(value) => {
+                  setCode(value);
+                  setCodeError("");
+                }}
+                autoComplete="one-time-code"
+                required
+                className={styles.field}
+                inputClassName={styles.input}
+              />
+            ) : undefined
+          }
+          onConfirm={() => {
+            if (totpEnabled && !code.trim()) {
+              setCodeError("请输入验证码或恢复码。");
+              return;
+            }
+            save.mutate(true);
+          }}
           onCancel={() => {
             setConfirming(false);
+            setCode("");
+            setCodeError("");
             save.reset();
           }}
         >

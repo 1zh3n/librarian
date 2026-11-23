@@ -11,6 +11,7 @@ export function ConfirmDialog({
   busy = false,
   destructive = false,
   error,
+  field,
   onConfirm,
   onCancel,
 }: {
@@ -20,12 +21,14 @@ export function ConfirmDialog({
   busy?: boolean;
   destructive?: boolean;
   error?: string | undefined;
+  field?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   return (
     <Dialog title={title} busy={busy} onClose={onCancel} classes={styles}>
       <p className={styles.text}>{children}</p>
+      {field && <div className={styles.field}>{field}</div>}
       {error && <Feedback tone="error">{error}</Feedback>}
       <div className={styles.actions}>
         <Button isDisabled={busy} onPress={onCancel}>

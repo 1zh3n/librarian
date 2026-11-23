@@ -92,6 +92,8 @@ struct CreateSnapshot {
     attachment_paths: Vec<String>,
     expires_at: Option<i64>,
     commit_id: Option<String>,
+    #[serde(default)]
+    step_up_token: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -228,6 +230,13 @@ async fn create(
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let mut request = body(request)?;
     request.validate()?;
+    if matches!(request.audience, Audience::Share) {
+        super::auth::require_step_up_if_enrolled(
+            &service.spaces,
+            &account,
+            request.step_up_token.as_deref(),
+        )?;
+    }
     run(move || {
         let _workspace = service.metadata.workspace_guard()?;
         let (instance, _) = service.scope(&account, &workspace, true)?;

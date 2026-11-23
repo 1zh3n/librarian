@@ -1898,6 +1898,8 @@ export interface components {
       securityLevel?: "public" | "internal" | "confidential" | "secret";
       /** @description Set to true to lower the workspace security level. */
       confirmSecurityDowngrade?: boolean;
+      /** @description Short-lived step-up token required when the account has TOTP enabled. */
+      stepUpToken?: string;
     };
     RenameWorkspacePaths: {
       operationId: string;
@@ -1962,6 +1964,8 @@ export interface components {
       attachmentPaths?: string[];
       expiresAt?: number | null;
       commitId?: string | null;
+      /** @description Short-lived step-up token for an anonymous share when TOTP is enabled. */
+      stepUpToken?: string;
     };
     SnapshotLink: {
       id: string;

@@ -94,6 +94,7 @@ export type TotpStatus = { enabled: boolean; recoveryRemaining: number };
 export type TotpStart = { secret: string; uri: string };
 export type TotpEnabled = { recoveryCodes: string[] };
 export type TotpVerifyInput = { secret: string; code: string };
+export type StepUpToken = { token: string; expiresIn: number };
 export type InviteWorkspace = { id: string; name: string };
 export type InvitePreview = {
   username: string;
@@ -475,6 +476,12 @@ export const api = {
   },
   disableTotp(body: { code: string }) {
     return request<void>("/session/totp/disable", undefined, { method: "POST", body });
+  },
+  stepUp(code: string) {
+    return request<StepUpToken>("/session/step-up", undefined, {
+      method: "POST",
+      body: { code },
+    });
   },
   resetTotp(username: string) {
     return request<void>(`${accountPath(username)}/totp/reset`, undefined, { method: "POST" });

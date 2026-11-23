@@ -709,3 +709,151 @@ async fn invites_are_one_time_and_create_a_totp_account() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn totp_step_up_is_required_for_security_downgrades() {
+    let f = Fixture::new();
+    let admin = f.login("admin", ORIGINAL).await;
+    let (_, start) = f
+        .request("POST", "/session/totp/start", &admin, Value::Null)
+        .await;
+    let secret = start["secret"].as_str().unwrap().to_owned();
+    let code = totp::current_code(&secret, now()).unwrap();
+    let (status, _) = f
+        .request(
+            "POST",
+            "/session/totp/verify",
+            &admin,
+            json!({"secret": secret, "code": code}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, workspace) = f
+        .request(
+            "POST",
+            "/workspaces",
+            &admin,
+            json!({"name":"分步验证空间"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{workspace}");
+    let id = workspace["id"].as_str().unwrap();
+    let path = format!("/workspaces/{id}");
+    let (status, raised) = f
+        .request(
+            "PATCH",
+            &path,
+            &admin,
+            json!({"securityLevel":"confidential"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{raised}");
+
+    let (status, error) = f
+        .request(
+            "PATCH",
+            &path,
+            &admin,
+            json!({"securityLevel":"internal","confirmSecurityDowngrade":true}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "step_up_required");
+
+    let (status, step) = f
+        .request(
+            "POST",
+            "/session/step-up",
+            &admin,
+            json!({"code": totp::current_code(&secret, now()).unwrap()}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{step}");
+    let token = step["token"].as_str().unwrap();
+    let (status, lowered) = f
+        .request(
+            "PATCH",
+            &path,
+            &admin,
+            json!({
+                "securityLevel":"internal",
+                "confirmSecurityDowngrade":true,
+                "stepUpToken":token
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{lowered}");
+    assert_eq!(lowered["securityLevel"], "internal");
+}
+
+#[tokio::test]
+async fn totp_step_up_is_required_for_anonymous_shares() {
+    let f = Fixture::new();
+    let admin = f.login("admin", ORIGINAL).await;
+    let (_, start) = f
+        .request("POST", "/session/totp/start", &admin, Value::Null)
+        .await;
+    let secret = start["secret"].as_str().unwrap().to_owned();
+    let code = totp::current_code(&secret, now()).unwrap();
+    let (status, _) = f
+        .request(
+            "POST",
+            "/session/totp/verify",
+            &admin,
+            json!({"secret": secret, "code": code}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, workspace) = f
+        .request(
+            "POST",
+            "/workspaces",
+            &admin,
+            json!({"name":"分步分享空间"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{workspace}");
+    let workspace_id = workspace["id"].as_str().unwrap();
+    let (status, document) = f
+        .request(
+            "POST",
+            &format!("/workspaces/{workspace_id}/documents"),
+            &admin,
+            json!({"path":"Note.md","markdown":"# Note\n","baseRevision":null}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{document}");
+    let document_id = document["document"]["id"].as_str().unwrap();
+    let body = json!({"kind":"current","audience":"share","documentIds":[document_id]});
+    let snapshots = format!("/workspaces/{workspace_id}/snapshots");
+
+    let (status, error) = f.request("POST", &snapshots, &admin, body.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "step_up_required");
+
+    let (_, step) = f
+        .request(
+            "POST",
+            "/session/step-up",
+            &admin,
+            json!({"code": totp::current_code(&secret, now()).unwrap()}),
+        )
+        .await;
+    let token = step["token"].as_str().unwrap();
+    let (status, created) = f
+        .request(
+            "POST",
+            &snapshots,
+            &admin,
+            json!({
+                "kind":"current",
+                "audience":"share",
+                "documentIds":[document_id],
+                "stepUpToken":token
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+}

@@ -165,6 +165,33 @@ impl Authenticator {
         (claims.token_use.as_deref() == Some("totp")).then_some(claims)
     }
 
+    /// A short-lived proof that the user re-entered a TOTP or recovery code.
+    pub fn issue_step_up(
+        &self,
+        username: &str,
+        credential_version: Option<String>,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
+        let claims = Claims {
+            username: username.into(),
+            session_id: None,
+            credential_version,
+            token_use: Some("step_up".into()),
+            space: None,
+            aud: None,
+            exp: now_secs().saturating_add(300) as usize,
+        };
+        encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(&self.secret)?,
+        )
+    }
+
+    pub fn verify_step_up(&self, token: &str) -> Option<Claims> {
+        let claims = self.verify_jwt(token).ok()?;
+        (claims.token_use.as_deref() == Some("step_up")).then_some(claims)
+    }
+
     /// A JWT for an existing browser session, expiring with the session but
     /// no later than `expiry_secs` from now.
     pub fn issue_browser_jwt_for_session(

@@ -159,3 +159,35 @@ pub(super) fn effective_level(
         .level_for(Some(username))
         .min(member))
 }
+
+/// Sensitive actions require a recent step-up only for accounts that have
+/// enrolled TOTP. Accounts without TOTP keep the existing confirmation path
+/// until enrolment is mandatory.
+pub(super) fn require_step_up_if_enrolled(
+    spaces: &NativeSpaces,
+    account: &Account,
+    token: Option<&str>,
+) -> Result<(), ApiError> {
+    if !spaces.users.totp_enabled(account.username()) {
+        return Ok(());
+    }
+    let Some(token) = token else {
+        return Err(step_up_required());
+    };
+    let Some(claims) = spaces.authenticator.verify_step_up(token) else {
+        return Err(step_up_required());
+    };
+    let version = spaces.users.credential_version(account.username());
+    if claims.username != account.username() || claims.credential_version != version {
+        return Err(step_up_required());
+    }
+    Ok(())
+}
+
+fn step_up_required() -> ApiError {
+    ApiError::new(
+        StatusCode::FORBIDDEN,
+        "step_up_required",
+        "Re-enter two-factor authentication to continue",
+    )
+}

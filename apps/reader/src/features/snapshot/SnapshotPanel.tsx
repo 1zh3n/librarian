@@ -36,7 +36,14 @@ export function SnapshotPanel({
   const [commit, setCommit] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [expiryError, setExpiryError] = useState(false);
+  const [stepUpCode, setStepUpCode] = useState("");
+  const [stepUpError, setStepUpError] = useState("");
   const client = useQueryClient();
+  const totp = useQuery({
+    queryKey: ["totp", "status"],
+    queryFn: ({ signal }) => api.getTotpStatus(signal),
+  });
+  const totpEnabled = totp.data?.enabled ?? false;
   const addressesKey = [...workspaceKeys.workspace(workspace), "snapshots"];
   const addresses = useQuery({
     queryKey: addressesKey,
@@ -44,8 +51,19 @@ export function SnapshotPanel({
   });
   const [revoking, setRevoking] = useState<SnapshotLinkSummary>();
   const create = useMutation({
-    mutationFn: (body: CreateSnapshot) => api.createSnapshot(workspace, body),
+    mutationFn: async (body: CreateSnapshot) => {
+      let stepUpToken: string | undefined;
+      if (body.audience === "share" && totpEnabled) {
+        stepUpToken = (await api.stepUp(stepUpCode)).token;
+      }
+      return api.createSnapshot(workspace, {
+        ...body,
+        ...(stepUpToken && { stepUpToken }),
+      });
+    },
     onSuccess: async () => {
+      setStepUpCode("");
+      setStepUpError("");
       await client.invalidateQueries({ queryKey: addressesKey });
     },
   });
@@ -76,6 +94,11 @@ export function SnapshotPanel({
               return;
             }
             setExpiryError(false);
+            if (audience === "share" && totpEnabled && !stepUpCode.trim()) {
+              setStepUpError("请输入验证码或恢复码。");
+              return;
+            }
+            setStepUpError("");
             const attachmentPaths = Array.from(
               new Set(
                 attachmentInput
@@ -153,6 +176,24 @@ export function SnapshotPanel({
               </Feedback>
             )}
           </Disclosure>
+          {audience === "share" && totpEnabled && (
+            <Field
+              className={styles.field}
+              inputClassName={styles.input}
+              label="验证码或恢复码"
+              value={stepUpCode}
+              onChange={(value) => {
+                setStepUpCode(value);
+                setStepUpError("");
+              }}
+              autoComplete="one-time-code"
+            />
+          )}
+          {stepUpError && (
+            <Feedback tone="error" className={styles.status}>
+              {stepUpError}
+            </Feedback>
+          )}
           {create.isError && (
             <Feedback tone="error" className={styles.status}>
               {create.error instanceof ApiError && create.error.status === 409
