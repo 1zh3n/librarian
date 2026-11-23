@@ -358,9 +358,7 @@ test("starts a long shared collection in the article and focuses the chosen chap
   await directory.press("Enter");
   const nav = page.getByRole("navigation", { name: "阅读地址中的文档" });
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
-  await nav
-    .getByRole("link", { name: notes[15]!.path.split("/").at(-1)! })
-    .press("Enter");
+  await nav.getByRole("link", { name: notes[15]!.path.split("/").at(-1)! }).press("Enter");
   const heading = article.getByRole("heading", { level: 1, name: notes[15]!.title });
   await expect(heading).toBeFocused();
   await expect(heading).toBeInViewport();
