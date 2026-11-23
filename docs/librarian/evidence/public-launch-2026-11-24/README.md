@@ -8,7 +8,7 @@
 - 域名：`librarian.zanghua.dev`，Cloudflare 免费套餐，代理开启。
 - 入口：Cloudflare → Caddy 2.11.9 → `127.0.0.1:8080`。
 - 应用：`librarian 0.1.0`，数据根 `/var/lib/librarian/data`。
-- 最终部署：`feat/librarian-public-hardening` @ `e21643b9`，包 SHA-256 `e971990a...b3bf`。
+- 最终部署：`feat/librarian-public-hardening` @ `57dd8117`，包 SHA-256 `b279114a...b9a4`。
 - 生产规格建议仍为 2 vCPU / 4 GB 起步；当前主机只用于功能演练。
 
 ## 入口和 TLS
@@ -92,6 +92,8 @@ curl: (55) OpenSSL SSL_read: ... tlsv13 alert certificate required
 - `public-workspace-1440.png`：登录后的工作区，公开等级徽标。
 - `public-workspace-390.png`：390 px 工作区。
 - `public-settings-1440.png`：空间设置和安全等级能力摘要。
+- `../session-list-2026-11-24/`：登录设备列表和撤销。
+- `../audit-log-2026-11-24/`：管理员审计查询和 CSV 导出。
 
 ## 未完成
 

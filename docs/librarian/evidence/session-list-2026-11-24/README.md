@@ -5,4 +5,4 @@
 - “撤销其他设备”保留当前会话，并显示撤销数量。
 - 390 px 和 320 px + 200% 字号下无横向溢出。
 - Playwright：`document-accounts.spec.ts` 的 `lists and revokes other browser sessions`。
-- 截图：`sessions-390.png`、`sessions-320-200.png`。
+- 截图：`sessions-390.png`、`sessions-320-200.png`、`sessions-1440.png`（公网实例）。
