@@ -41,18 +41,38 @@ install -d -m 0700 /etc/librarian /var/backups/librarian
 install -d -m 0700 -o librarian -g librarian /var/lib/librarian
 ```
 
-SSH 只允许密钥和指定管理地址；修改前先保留一个已登录会话。
+SSH 只允许密钥和指定管理地址；先创建并验证一个非 root 部署用户，再禁用 root SSH。
+
+```bash
+# 在 root 会话中执行；使用你的 SSH 公钥。
+adduser --disabled-password --gecos "Librarian deploy" deploy
+install -d -m 0700 -o deploy -g deploy /home/deploy/.ssh
+install -m 0600 -o deploy -g deploy /root/.ssh/authorized_keys /home/deploy/.ssh/authorized_keys
+usermod -aG sudo deploy
+cat >/etc/sudoers.d/90-librarian-deploy <<'EOF'
+deploy ALL=(ALL:ALL) NOPASSWD: ALL
+EOF
+chmod 0440 /etc/sudoers.d/90-librarian-deploy
+visudo -cf /etc/sudoers.d/90-librarian-deploy
+```
+
+**先从新终端验证** `ssh deploy@<HOST> 'sudo -n id -u'` 返回 `0`，再改 SSH：
 
 ```bash
 cat >/etc/ssh/sshd_config.d/10-librarian.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-PermitRootLogin prohibit-password
+PermitRootLogin no
 EOF
 sshd -t && systemctl reload ssh
 ```
 
-保留 root 密钥登录；如果要完全禁止 root，先创建并验证一个带 sudo 的部署用户，再改成 `PermitRootLogin no`。修改前先保留一个已登录会话。
+- `deploy` 是人工部署/运维账户，拥有 sudo；`librarian` 和 `caddy` 是 nologin 运行时账户。
+- root SSH 关闭后，日常用 `ssh deploy@<HOST>`，需要 root shell 时用 `sudo -i`；Vultr 控制台保留为 break-glass。
+- 如果 Vultr 控制台不可用，先保留 `PermitRootLogin prohibit-password`；不要在没有恢复路径时禁用 root。
+- `host-setup.sh --harden-ssh` 只建立 root 密钥登录；禁用 root SSH 要按上面的 deploy 用户流程单独完成。
+- 当前主机的 UFW 只允许管理 IP 访问 22；管理 IP 变化时需要 Vultr 控制台。
+- `host-setup.sh` 会把管理 CIDR 写入 `/etc/fail2ban/jail.d/librarian.local` 的 `ignoreip`；禁用 root SSH 后不要用一次失败的 root 登录来验证，否则 fail2ban 可能把管理 IP 封掉。
 
 防火墙只放行 Cloudflare 的 80/443 和管理地址的 22。Cloudflare 段以 <https://www.cloudflare.com/ips/> 为准，定期核对；不要长期复制过期列表。
 
@@ -71,7 +91,7 @@ ufw enable
 以上步骤可以脚本化，脚本仍要求先核对管理 CIDR：
 
 ```bash
-bash deploy/librarian/host-setup.sh --admin-ssh-cidr <ADMIN_IP>/32 --harden-ssh
+bash deploy/librarian/host-setup.sh --admin-ssh-cidr <ADMIN_IP>/32
 bash deploy/librarian/install-caddy.sh
 ```
 
@@ -116,7 +136,7 @@ systemctl enable --now librarian
 curl -fsS http://127.0.0.1:8080/api/v1/health
 ```
 
-- 打开 `/root/librarian-admin-invite` 里的 URL；在邀请页设置自己的密码、绑定 TOTP、保存恢复码。接受后该账号以管理员身份创建，邀请立即失效。
+- 打开 `/root/librarian-admin-invite` 里的 URL；在邀请页设置自己的密码、扫描二维码（或手动输入密钥）绑定 TOTP、保存恢复码。接受后该账号以管理员身份创建，邀请立即失效。
 - 不要把密码、TOTP secret 或恢复码写到服务器文件；它们只在浏览器里生成/显示。接受后删除 `/root/librarian-admin-invite`。
 - 如果唯一管理员丢失 TOTP：停止 `librarian`，运行 `librarian admin-invite --data-root ... --username recovery-admin --public-url ...`，启动服务，用新管理员登录后重置/停用旧管理员。
 

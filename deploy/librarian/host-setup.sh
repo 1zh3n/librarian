@@ -55,6 +55,12 @@ systemctl disable --now systemd-timesyncd 2>/dev/null || true
 systemctl enable --now chrony
 systemctl enable --now unattended-upgrades
 systemctl enable --now fail2ban
+install -d -m 0755 /etc/fail2ban/jail.d
+cat >/etc/fail2ban/jail.d/librarian.local <<EOF
+[sshd]
+ignoreip = 127.0.0.1/8 ::1 $ADMIN_CIDR
+EOF
+systemctl restart fail2ban
 
 if ! id librarian >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /var/lib/librarian --shell /usr/sbin/nologin librarian
@@ -114,6 +120,7 @@ cat <<'EOF'
 Host baseline complete.
 
 Next:
+  0. Create a deploy user with a key and sudo, verify it, then disable root SSH.
   1. bash deploy/librarian/install-caddy.sh
   2. Install /opt/librarian/current and run `librarian init --admin-invite`.
   3. Install /etc/librarian/librarian.env and librarian.service.
