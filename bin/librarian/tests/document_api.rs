@@ -165,7 +165,7 @@ async fn workspace_search_is_scoped() {
                     .as_str()
                     .unwrap()
                     .ends_with("left-journal.md")
-                    && hit["document"]["title"] == "田野日记"
+                    && hit["document"]["title"] == "left-journal.md"
                     && hit["excerpt"].as_str().unwrap().contains("鸟鸣")
             }),
             "{hits:?}"

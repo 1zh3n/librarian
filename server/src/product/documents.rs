@@ -183,6 +183,40 @@ impl DocumentService {
         Ok(summary(state, workspace, id, path, title))
     }
 
+    /// Summaries for search results: file navigation uses the file name, so
+    /// search must not parse a content title or upsert an id per hit.
+    pub(super) fn summaries_for_search(
+        &self,
+        state: &ServerState,
+        workspace: &str,
+        paths: &[String],
+    ) -> Result<Vec<DocumentSummary>, ApiError> {
+        let ids = self.metadata.document_ids(workspace, paths)?;
+        let file_names = state
+            .space
+            .fetch_file_list()?
+            .into_iter()
+            .map(|file| file.name)
+            .collect::<BTreeSet<_>>();
+        paths
+            .iter()
+            .map(|path| {
+                let id = ids
+                    .get(path)
+                    .cloned()
+                    .ok_or_else(|| ApiError::internal("missing document id"))?;
+                let title = path.rsplit('/').next().map(str::to_owned);
+                Ok(summary_with_outline(
+                    workspace,
+                    id,
+                    path.clone(),
+                    title,
+                    file_names.contains(&outline_path(path)),
+                ))
+            })
+            .collect()
+    }
+
     pub(super) fn snapshot(
         &self,
         state: &ServerState,
