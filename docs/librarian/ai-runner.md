@@ -4,7 +4,7 @@
 
 Linux x86_64 发行包带有 Node 24、锁定的 DeepSeek Harness 依赖和用户级 systemd 服务安装程序。解包后保留该目录，服务启动命令引用其中的绝对路径。
 
-以拥有 Librarian 数据目录的服务账户操作。运行中的服务器也支持本地注册。首次安装先用 `./librarian init` 建立管理员账户。下面示例使用本机后端地址，HTTPS 反向代理部署也可传带前缀的服务地址。
+以拥有 Librarian 数据目录的服务账户操作。运行中的服务器也支持本地注册。首次安装先用 `./librarian init --admin-invite` 创建管理员邀请，接受后再运行执行器。下面示例使用本机后端地址，HTTPS 反向代理部署也可传带前缀的服务地址。
 
 ```bash
 ./install-managed-runner --data-root "$librarian_root" \

@@ -13,16 +13,13 @@ cd librarian-0.1.0-linux-x86_64
 
 librarian_root="$HOME/.local/share/librarian"
 install -d -m 700 "$librarian_root"
-read -r -s -p "首次管理员密码 " librarian_password
-printf '\n'
-printf '%s\n' "$librarian_password" |
-  ./librarian init --data-root "$librarian_root" --username admin
-unset librarian_password
+./librarian init --data-root "$librarian_root" --username admin \
+  --admin-invite --public-url http://127.0.0.1:8080 --expires-in-minutes 60
 
 ./librarian --data-root "$librarian_root" --listen 127.0.0.1:8080
 ```
 
-打开 [本机 Librarian](http://127.0.0.1:8080/)，登录后即可创建 Workspace。部署到其他设备时，把服务保留在回环地址，由可信 TLS 反向代理保留客户端使用的 Host 并设置 `X-Forwarded-Proto: https`。其他设备需要 HTTPS 安全上下文才能使用离线保存。将数据目录和部署凭证限制给服务账户，并使用同一账户管理目标配置。
+打开终端里打印的一次性邀请 URL，在浏览器里设置自己的密码、绑定 TOTP 并保存恢复码。接受后回到 [本机 Librarian](http://127.0.0.1:8080/)，用“密码 + TOTP”登录并创建 Workspace。部署到其他设备时，把服务保留在回环地址，由可信 TLS 反向代理保留客户端使用的 Host 并设置 `X-Forwarded-Proto: https`。其他设备需要 HTTPS 安全上下文才能使用离线保存。将数据目录和部署凭证限制给服务账户，并使用同一账户管理目标配置。
 
 - [Git 备份](git-backup.md)
 - [账号和工作区成员](accounts.md)

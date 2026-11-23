@@ -2888,6 +2888,7 @@ export interface components {
     };
     InvitePreview: {
       username: string;
+      admin: boolean;
       expiresAt: number;
       workspaces: components["schemas"]["InviteWorkspace"][];
     };

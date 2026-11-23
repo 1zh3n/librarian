@@ -625,6 +625,7 @@ struct InviteSummary {
 #[serde(rename_all = "camelCase")]
 struct InvitePreview {
     username: String,
+    admin: bool,
     expires_at: i64,
     workspaces: Vec<InviteWorkspace>,
 }
@@ -773,6 +774,7 @@ async fn invite_preview(
         let invite = invites::find_by_token(&service.metadata, &token, now)?;
         Ok(Json(InvitePreview {
             username: invite.username.clone(),
+            admin: invite.admin,
             expires_at: invite.expires_at,
             workspaces: invite_workspaces(&service, &invite.workspace_ids),
         }))

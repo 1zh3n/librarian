@@ -88,12 +88,7 @@ tar -xzf librarian-0.1.0-linux-x86_64.tar.gz \
 ln -sfn /opt/librarian/releases/librarian-0.1.0 /opt/librarian/current
 chown -R root:root /opt/librarian
 
-# 初始化管理员；密码只从终端输入，不进入 shell 历史。
 install -m 0600 deploy/librarian/librarian.env.example /etc/librarian/librarian.env
-read -r -s -p "首次管理员密码 " admin_password; printf '\n'
-printf '%s\n' "$admin_password" | sudo -u librarian /opt/librarian/current/librarian \
-  init --data-root /var/lib/librarian/data --username admin
-unset admin_password
 
 # MCP 和资产回执使用公网 Reader 地址；写入后下次启动生效。
 install -d -m 0700 -o librarian -g librarian /var/lib/librarian/data/.librarian
@@ -102,11 +97,28 @@ printf '%s\n' '{"publicReaderUrl":"https://app.example.com"}' \
 chown librarian:librarian /var/lib/librarian/data/.librarian/server.json
 chmod 600 /var/lib/librarian/data/.librarian/server.json
 
+# 顶部 server.json 在启动时打开 MCP；公网首版需要。
+printf '%s\n' '{"mcp":true}' > /var/lib/librarian/data/server.json
+chown librarian:librarian /var/lib/librarian/data/server.json
+chmod 600 /var/lib/librarian/data/server.json
+
+# 首个管理员通过一次性邀请创建；不生成服务器密码或 TOTP 文件。
+# 有效期给 Caddy/Cloudflare 配置留出时间，接受后立即失效。
+runuser -u librarian -- /opt/librarian/current/librarian init \
+  --data-root /var/lib/librarian/data --username admin \
+  --admin-invite --public-url https://app.example.com --expires-in-minutes 1440 \
+  | tee /root/librarian-admin-invite
+chmod 600 /root/librarian-admin-invite
+
 install -m 0644 deploy/librarian/librarian.service /etc/systemd/system/librarian.service
 systemctl daemon-reload
 systemctl enable --now librarian
 curl -fsS http://127.0.0.1:8080/api/v1/health
 ```
+
+- 打开 `/root/librarian-admin-invite` 里的 URL；在邀请页设置自己的密码、绑定 TOTP、保存恢复码。接受后该账号以管理员身份创建，邀请立即失效。
+- 不要把密码、TOTP secret 或恢复码写到服务器文件；它们只在浏览器里生成/显示。接受后删除 `/root/librarian-admin-invite`。
+- 如果唯一管理员丢失 TOTP：停止 `librarian`，运行 `librarian admin-invite --data-root ... --username recovery-admin --public-url ...`，启动服务，用新管理员登录后重置/停用旧管理员。
 
 - `publicReaderUrl` 必须是应用实际对外地址，且不含查询串或片段；未配置时 MCP/资产回执会返回 `reader_url_unavailable`。
 - MCP 由 `SB_MCP=1` 允许，但还需要管理员在 Reader 的 MCP 设置里打开，或调用 `PUT /api/v1/mcp/settings` 传 `{"enabled":true}`。公网首版应打开。

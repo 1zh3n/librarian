@@ -11403,12 +11403,16 @@
         "type": "object",
         "required": [
           "username",
+          "admin",
           "expiresAt",
           "workspaces"
         ],
         "properties": {
           "username": {
             "type": "string"
+          },
+          "admin": {
+            "type": "boolean"
           },
           "expiresAt": {
             "type": "integer",

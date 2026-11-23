@@ -115,7 +115,7 @@ Host baseline complete.
 
 Next:
   1. bash deploy/librarian/install-caddy.sh
-  2. Install /opt/librarian/current and run `librarian init`.
+  2. Install /opt/librarian/current and run `librarian init --admin-invite`.
   3. Install /etc/librarian/librarian.env and librarian.service.
   4. Copy public.Caddyfile to /etc/caddy/Caddyfile and write caddy.env.
   5. systemctl enable --now librarian caddy

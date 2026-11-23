@@ -100,3 +100,24 @@ test("creates an invite from the administrator account page", async ({ page }) =
   await expect(section.getByText(/\/\.auth\/librarian\/invite\?token=/u)).toBeVisible();
   await expect(section.getByText("invite-ui-user").first()).toBeVisible();
 });
+
+test("labels an administrator invitation before acceptance", async ({ page }) => {
+  await page.goto("/.auth/librarian/login");
+  const origin = new URL(page.url()).origin;
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const response = await page.request.post("/api/v1/invites", {
+    headers: { origin },
+    data: {
+      username: "bootstrap-admin-ui",
+      admin: true,
+      role: "write",
+      workspaceIds: [],
+      expiresInDays: 1,
+    },
+  });
+  expect(response.status()).toBe(201);
+  const invite = (await response.json()) as { token: string };
+  await page.goto(`/.auth/librarian/invite?token=${invite.token}`);
+  await expect(page.getByText("管理员邀请", { exact: false })).toBeVisible();
+  await expect(page.getByText("服务器管理员权限", { exact: false })).toBeVisible();
+});

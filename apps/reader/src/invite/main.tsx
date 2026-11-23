@@ -136,10 +136,16 @@ function Invite({ token }: { token: string }) {
           !error && <Feedback>正在读取邀请…</Feedback>
         ) : (
           <>
-            <p className={login.totpHint}>
-              为「{preview.username}」设置密码。可加入：
-              {preview.workspaces.map((workspace) => workspace.name).join("、") || "（暂无空间）"}
-            </p>
+            {preview.admin ? (
+              <p className={login.totpHint}>
+                管理员邀请：为「{preview.username}」设置密码。接受后该账号拥有服务器管理员权限。
+              </p>
+            ) : (
+              <p className={login.totpHint}>
+                为「{preview.username}」设置密码。可加入：
+                {preview.workspaces.map((workspace) => workspace.name).join("、") || "（暂无空间）"}
+              </p>
+            )}
             <p className={login.totpHint}>
               在验证器应用中手动输入密钥：<code>{secret}</code>
             </p>
