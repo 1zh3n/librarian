@@ -94,6 +94,7 @@ curl: (55) OpenSSL SSL_read: ... tlsv13 alert certificate required
 - `public-settings-1440.png`：空间设置和安全等级能力摘要。
 - `../session-list-2026-11-24/`：登录设备列表和撤销。
 - `../audit-log-2026-11-24/`：管理员审计查询和 CSV 导出。
+- `../clean-rebuild-2026-11-24/`：清空演练数据后的 1C1G 生产实例。
 
 ## 未完成
 
