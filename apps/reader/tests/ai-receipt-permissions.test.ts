@@ -12,6 +12,15 @@ const target: Workspace = {
   origin: "native",
   revisionMode: "managed",
   expiresAt: null,
+  securityLevel: "internal",
+  capabilities: {
+    externalAi: true,
+    externalMcp: true,
+    anonymousShare: true,
+    publication: false,
+    offline: true,
+    remoteBackup: true,
+  },
   defaults: { outlineEnabled: true },
 };
 const source = { ...target, id: "source", name: "田野", canManage: true };

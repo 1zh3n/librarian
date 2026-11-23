@@ -32,6 +32,7 @@ use super::{
         product_write, run, state, too_large, DocumentService,
     },
     mutations::{self, FileChange, FileEdit, MutationContext, MutationReceipt},
+    security_levels::SecurityLevel,
 };
 
 pub(super) fn migrate(tx: &Transaction<'_>) -> rusqlite::Result<()> {
@@ -52,6 +53,13 @@ pub(super) fn migrate(tx: &Transaction<'_>) -> rusqlite::Result<()> {
            plan TEXT NOT NULL,
            commit_id TEXT
          );",
+    )
+}
+
+pub(super) fn migrate_security(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        "ALTER TABLE workspaces ADD COLUMN security_level TEXT NOT NULL DEFAULT 'internal'
+           CHECK (security_level IN ('public', 'internal', 'confidential', 'secret'));",
     )
 }
 
@@ -94,13 +102,15 @@ pub(super) struct WorkspaceInfo {
     pub origin: Origin,
     pub retention: Retention,
     pub expires_at: Option<i64>,
+    pub security_level: SecurityLevel,
 }
 
 pub(super) fn info(metadata: &Metadata, workspace: &str) -> Result<WorkspaceInfo, ApiError> {
-    let (owner, origin, retention, expires_at) = metadata
+    let (owner, origin, retention, expires_at, security_level) = metadata
         .connection()?
         .query_row(
-            "SELECT owner, origin, retention, expires_at FROM workspaces WHERE id = ?1",
+            "SELECT owner, origin, retention, expires_at, security_level
+             FROM workspaces WHERE id = ?1",
             [workspace],
             |row| {
                 Ok((
@@ -108,6 +118,7 @@ pub(super) fn info(metadata: &Metadata, workspace: &str) -> Result<WorkspaceInfo
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             },
         )
@@ -126,6 +137,8 @@ pub(super) fn info(metadata: &Metadata, workspace: &str) -> Result<WorkspaceInfo
             _ => return Err(ApiError::internal("Invalid workspace retention")),
         },
         expires_at,
+        security_level: SecurityLevel::from_db(&security_level)
+            .ok_or_else(|| ApiError::internal("Invalid workspace security level"))?,
     })
 }
 
@@ -179,6 +192,8 @@ pub(super) fn describe(
         revision_mode: super::revisions::mode(instance.revisions.as_deref()),
         can_write: actor.level == AccessLevel::Write,
         can_manage: can_manage(service, account, &details),
+        security_level: details.security_level.as_str(),
+        capabilities: details.security_level.capabilities(),
         defaults: WorkspaceDefaults {
             outline_enabled: false,
         },
@@ -194,6 +209,8 @@ pub(super) struct Create {
     #[serde(default)]
     retention: Retention,
     expires_at: Option<i64>,
+    #[serde(default)]
+    security_level: SecurityLevel,
 }
 
 impl Create {
@@ -203,6 +220,7 @@ impl Create {
             origin: Origin::Native,
             retention: Retention::Persistent,
             expires_at: None,
+            security_level: SecurityLevel::Internal,
         }
     }
 }
@@ -214,6 +232,9 @@ struct Update {
     retention: Option<Retention>,
     #[serde(default, deserialize_with = "present_expiry")]
     expires_at: Option<Option<i64>>,
+    security_level: Option<SecurityLevel>,
+    #[serde(default)]
+    confirm_security_downgrade: bool,
 }
 
 fn present_expiry<'de, D: Deserializer<'de>>(value: D) -> Result<Option<Option<i64>>, D::Error> {
@@ -497,6 +518,7 @@ pub(super) fn create_under_guard(
         input.origin,
         input.retention,
         expires_at,
+        input.security_level,
     ) {
         if let Err(rollback) = manager.delete(&space_id) {
             tracing::error!(%space_id, ?rollback, "Could not revert workspace setup");
@@ -526,6 +548,7 @@ pub(super) fn recover_creation_under_guard(
         Origin::Native,
         Retention::Persistent,
         None,
+        SecurityLevel::Internal,
     )?;
     Ok(Some(service.metadata.workspace_id(&instance.id)?))
 }
@@ -537,6 +560,7 @@ fn register_created(
     origin: Origin,
     retention: Retention,
     expires_at: Option<i64>,
+    security_level: SecurityLevel,
 ) -> Result<(), ApiError> {
     if super::revisions::mode(instance.revisions.as_deref()) != "managed" {
         return Err(ApiError::internal(
@@ -544,12 +568,21 @@ fn register_created(
         ));
     }
     service.metadata.connection()?.execute(
-        "INSERT INTO workspaces (id, space_id, owner, origin, retention, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "INSERT INTO workspaces
+           (id, space_id, owner, origin, retention, expires_at, security_level)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(space_id) DO UPDATE SET owner = excluded.owner, origin = excluded.origin,
-           retention = excluded.retention, expires_at = excluded.expires_at WHERE workspaces.owner IS NULL",
-        params![format!("ws_{}", uuid::Uuid::new_v4().simple()), instance.id, owner,
-            origin.as_str(), retention.as_str(), expires_at],
+           retention = excluded.retention, expires_at = excluded.expires_at,
+           security_level = excluded.security_level WHERE workspaces.owner IS NULL",
+        params![
+            format!("ws_{}", uuid::Uuid::new_v4().simple()),
+            instance.id,
+            owner,
+            origin.as_str(),
+            retention.as_str(),
+            expires_at,
+            security_level.as_str()
+        ],
     )?;
     Ok(())
 }
@@ -601,6 +634,8 @@ pub(super) fn rename_under_guard(
             name: Some(new_name),
             retention: None,
             expires_at: None,
+            security_level: None,
+            confirm_security_downgrade: false,
         },
         Some(operation_id),
     )
@@ -644,6 +679,42 @@ fn update_under_guard(
             "UPDATE workspaces SET retention = ?2, expires_at = ?3 WHERE id = ?1",
             params![workspace, retention.as_str(), expires_at],
         )?;
+    }
+    let security_level = input.security_level.unwrap_or(details.security_level);
+    if security_level != details.security_level {
+        if security_level.rank() < details.security_level.rank()
+            && !input.confirm_security_downgrade
+        {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "security_downgrade_confirmation_required",
+                "Lowering the workspace security level requires confirmation",
+            ));
+        }
+        let mut connection = service.metadata.connection()?;
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "UPDATE workspaces SET security_level = ?2 WHERE id = ?1",
+            params![workspace, security_level.as_str()],
+        )?;
+        let audit_metadata = serde_json::json!({
+            "from": details.security_level.as_str(),
+            "to": security_level.as_str(),
+        });
+        super::audit::record_in(
+            &transaction,
+            super::audit::Event {
+                actor: Some(account.username()),
+                workspace: Some(workspace),
+                action: "workspace.security_level.change",
+                target: Some("security_level"),
+                result: "ok",
+                rule_id: None,
+                request_id: operation_id,
+                metadata: Some(&audit_metadata),
+            },
+        )?;
+        transaction.commit()?;
     }
     let (instance, actor) = service.scope(account, workspace, false)?;
     describe(service, account, &instance, &actor)

@@ -6591,7 +6591,9 @@
           "defaults",
           "canWrite",
           "expiresAt",
-          "canManage"
+          "canManage",
+          "securityLevel",
+          "capabilities"
         ],
         "properties": {
           "id": {
@@ -6648,6 +6650,46 @@
           },
           "canManage": {
             "type": "boolean"
+          },
+          "securityLevel": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "secret"
+            ]
+          },
+          "capabilities": {
+            "type": "object",
+            "required": [
+              "externalAi",
+              "externalMcp",
+              "anonymousShare",
+              "publication",
+              "offline",
+              "remoteBackup"
+            ],
+            "properties": {
+              "externalAi": {
+                "type": "boolean"
+              },
+              "externalMcp": {
+                "type": "boolean"
+              },
+              "anonymousShare": {
+                "type": "boolean"
+              },
+              "publication": {
+                "type": "boolean"
+              },
+              "offline": {
+                "type": "boolean"
+              },
+              "remoteBackup": {
+                "type": "boolean"
+              }
+            }
           }
         }
       },
@@ -7611,6 +7653,15 @@
               "null"
             ],
             "minimum": 0
+          },
+          "securityLevel": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "secret"
+            ]
           }
         }
       },
@@ -7634,6 +7685,19 @@
               "null"
             ],
             "minimum": 0
+          },
+          "securityLevel": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "secret"
+            ]
+          },
+          "confirmSecurityDowngrade": {
+            "type": "boolean",
+            "description": "Set to true to lower the workspace security level."
           }
         }
       },

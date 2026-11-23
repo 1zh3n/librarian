@@ -1638,6 +1638,16 @@ export interface components {
       canWrite: boolean;
       expiresAt: number | null;
       canManage: boolean;
+      /** @enum {string} */
+      securityLevel: "public" | "internal" | "confidential" | "secret";
+      capabilities: {
+        externalAi: boolean;
+        externalMcp: boolean;
+        anonymousShare: boolean;
+        publication: boolean;
+        offline: boolean;
+        remoteBackup: boolean;
+      };
     };
     DocumentSummary: {
       id: string;
@@ -1872,12 +1882,18 @@ export interface components {
       /** @enum {string} */
       retention?: "persistent" | "temporary";
       expiresAt?: number | null;
+      /** @enum {string} */
+      securityLevel?: "public" | "internal" | "confidential" | "secret";
     };
     UpdateWorkspace: {
       name?: string;
       /** @enum {string} */
       retention?: "persistent" | "temporary";
       expiresAt?: number | null;
+      /** @enum {string} */
+      securityLevel?: "public" | "internal" | "confidential" | "secret";
+      /** @description Set to true to lower the workspace security level. */
+      confirmSecurityDowngrade?: boolean;
     };
     RenameWorkspacePaths: {
       operationId: string;

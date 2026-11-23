@@ -573,5 +573,212 @@ async fn startup_finishes_quarantined_workspace_cleanup_without_touching_reused_
         .is_none());
 }
 
+#[tokio::test]
+async fn workspace_security_defaults_to_internal_and_exposes_capabilities() {
+    let f = Fixture::open();
+    let (status, created) = f
+        .request(&f.alice, "POST", "/workspaces", json!({"name":"安全默认"}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert_eq!(created["securityLevel"], "internal");
+    assert_eq!(created["capabilities"]["externalAi"], true);
+    assert_eq!(created["capabilities"]["externalMcp"], true);
+    assert_eq!(created["capabilities"]["anonymousShare"], true);
+    assert_eq!(created["capabilities"]["publication"], false);
+    assert_eq!(created["capabilities"]["offline"], true);
+    assert_eq!(created["capabilities"]["remoteBackup"], true);
+
+    let (status, legacy) = f.request(&f.alice, "GET", "/workspaces", Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    let legacy = legacy
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "Legacy")
+        .unwrap();
+    assert_eq!(legacy["securityLevel"], "internal");
+}
+
+#[tokio::test]
+async fn workspace_security_level_change_requires_management() {
+    let f = Fixture::open();
+    let (status, created) = f
+        .request(&f.alice, "POST", "/workspaces", json!({"name":"等级管理"}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap().to_owned();
+    let path = format!("/workspaces/{id}");
+
+    let (denied, _) = f
+        .request(
+            &f.bob,
+            "PATCH",
+            &path,
+            json!({"securityLevel":"confidential"}),
+        )
+        .await;
+    assert!(!denied.is_success(), "a non-member changed the level");
+
+    let (status, updated) = f
+        .request(
+            &f.alice,
+            "PATCH",
+            &path,
+            json!({"securityLevel":"confidential"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["securityLevel"], "confidential");
+    assert_eq!(updated["capabilities"]["externalAi"], false);
+    assert_eq!(updated["capabilities"]["externalMcp"], false);
+    assert_eq!(updated["capabilities"]["anonymousShare"], false);
+    assert_eq!(updated["capabilities"]["publication"], false);
+    assert_eq!(updated["capabilities"]["offline"], false);
+    assert_eq!(updated["capabilities"]["remoteBackup"], true);
+}
+
+#[tokio::test]
+async fn workspace_security_downgrade_requires_confirmation_and_is_audited() {
+    let f = Fixture::open();
+    let (status, created) = f
+        .request(&f.alice, "POST", "/workspaces", json!({"name":"等级回退"}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap().to_owned();
+    let path = format!("/workspaces/{id}");
+
+    let (status, raised) = f
+        .request(
+            &f.alice,
+            "PATCH",
+            &path,
+            json!({"securityLevel":"confidential"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{raised}");
+
+    let (status, error) = f
+        .request(
+            &f.alice,
+            "PATCH",
+            &path,
+            json!({"securityLevel":"internal"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    assert_eq!(error["code"], "security_downgrade_confirmation_required");
+
+    let (status, lowered) = f
+        .request(
+            &f.alice,
+            "PATCH",
+            &path,
+            json!({"securityLevel":"internal","confirmSecurityDowngrade":true}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{lowered}");
+    assert_eq!(lowered["securityLevel"], "internal");
+
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    let (actor, action, result, metadata): (String, String, String, String) = db
+        .query_row(
+            "SELECT actor, action, result, metadata FROM product_audit
+             WHERE workspace_id = ?1 AND action = 'workspace.security_level.change'
+             ORDER BY id DESC LIMIT 1",
+            [&id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(actor, "alice");
+    assert_eq!(action, "workspace.security_level.change");
+    assert_eq!(result, "ok");
+    let metadata: Value = serde_json::from_str(&metadata).unwrap();
+    assert_eq!(metadata["from"], "confidential");
+    assert_eq!(metadata["to"], "internal");
+}
+
+#[tokio::test]
+async fn workspace_security_creation_accepts_public_and_secret_levels() {
+    let f = Fixture::open();
+    let (status, public) = f
+        .request(
+            &f.alice,
+            "POST",
+            "/workspaces",
+            json!({"name":"公开空间","securityLevel":"public"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{public}");
+    assert_eq!(public["securityLevel"], "public");
+    assert_eq!(public["capabilities"]["publication"], true);
+    assert_eq!(public["capabilities"]["anonymousShare"], true);
+    assert_eq!(public["capabilities"]["externalAi"], true);
+
+    let (status, secret) = f
+        .request(
+            &f.alice,
+            "POST",
+            "/workspaces",
+            json!({"name":"高敏空间","securityLevel":"secret"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{secret}");
+    assert_eq!(secret["securityLevel"], "secret");
+    for capability in [
+        "externalAi",
+        "externalMcp",
+        "anonymousShare",
+        "publication",
+        "offline",
+        "remoteBackup",
+    ] {
+        assert_eq!(secret["capabilities"][capability], false, "{capability}");
+    }
+}
+
+#[tokio::test]
+async fn workspace_security_rejects_unknown_level() {
+    let f = Fixture::open();
+    let (status, created) = f
+        .request(&f.alice, "POST", "/workspaces", json!({"name":"非法等级"}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let path = format!("/workspaces/{}", created["id"].as_str().unwrap());
+    let (status, _) = f
+        .request(
+            &f.alice,
+            "PATCH",
+            &path,
+            json!({"securityLevel":"top-secret"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn v10_workspace_gains_internal_level_on_upgrade() {
+    let mut f = Fixture::open();
+    f.app = Router::new();
+    let db = rusqlite::Connection::open(f.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute_batch(
+        "ALTER TABLE workspaces DROP COLUMN security_level;
+         PRAGMA user_version=10;",
+    )
+    .unwrap();
+    drop(db);
+
+    f.restart();
+    let (status, workspaces) = f.request(&f.alice, "GET", "/workspaces", Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{workspaces}");
+    let legacy = workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "Legacy")
+        .unwrap();
+    assert_eq!(legacy["securityLevel"], "internal");
+    assert_eq!(legacy["capabilities"]["publication"], false);
+}
+
 #[path = "workspaces/file_action_storage.rs"]
 mod file_action_storage;

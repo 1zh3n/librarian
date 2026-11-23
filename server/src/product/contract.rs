@@ -6,6 +6,8 @@ use axum::{
 use serde::{Deserialize, Deserializer, Serialize};
 use silverbullet_server_common::SpaceError;
 
+use super::security_levels::SecurityCapabilities;
+
 #[derive(Debug)]
 pub(crate) struct ApiError {
     status: StatusCode,
@@ -123,6 +125,8 @@ pub(crate) struct Workspace {
     pub revision_mode: &'static str,
     pub can_write: bool,
     pub can_manage: bool,
+    pub security_level: &'static str,
+    pub capabilities: SecurityCapabilities,
     pub defaults: WorkspaceDefaults,
 }
 

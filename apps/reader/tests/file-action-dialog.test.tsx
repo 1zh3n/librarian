@@ -20,6 +20,15 @@ const workspace: Workspace = {
   canWrite: true,
   canManage: true,
   expiresAt: null,
+  securityLevel: "internal",
+  capabilities: {
+    externalAi: true,
+    externalMcp: true,
+    anonymousShare: true,
+    publication: false,
+    offline: true,
+    remoteBackup: true,
+  },
 };
 const counts = { gainedRead: 0, gainedWrite: 0, lost: 0, upgraded: 0, downgraded: 0 };
 
