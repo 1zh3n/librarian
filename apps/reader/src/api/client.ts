@@ -94,6 +94,32 @@ export type TotpStatus = { enabled: boolean; recoveryRemaining: number };
 export type TotpStart = { secret: string; uri: string };
 export type TotpEnabled = { recoveryCodes: string[] };
 export type TotpVerifyInput = { secret: string; code: string };
+export type InviteWorkspace = { id: string; name: string };
+export type InvitePreview = {
+  username: string;
+  expiresAt: number;
+  workspaces: InviteWorkspace[];
+};
+export type InviteSummary = {
+  id: string;
+  username: string;
+  admin: boolean;
+  role: "read" | "write";
+  workspaceIds: string[];
+  workspaces: InviteWorkspace[];
+  createdBy: string;
+  createdAt: number;
+  expiresAt: number;
+  acceptedAt: number | null;
+  revoked: boolean;
+};
+export type CreatedInvite = {
+  id: string;
+  username: string;
+  token: string;
+  url: string;
+  expiresAt: number;
+};
 export type WorkspaceMember = components["schemas"]["WorkspaceMember"];
 type SetWorkspaceMember = components["schemas"]["SetWorkspaceMember"];
 
@@ -169,6 +195,14 @@ async function request<T>(
       | ChangeOwnPassword
       | TotpVerifyInput
       | { code: string }
+      | {
+          username: string;
+          admin: boolean;
+          role: "read" | "write";
+          workspaceIds: string[];
+          expiresInDays: number;
+        }
+      | { password: string; totpSecret: string; code: string }
       | SetWorkspaceMember
       | components["schemas"]["FileActionUndo"];
   },
@@ -444,6 +478,31 @@ export const api = {
   },
   resetTotp(username: string) {
     return request<void>(`${accountPath(username)}/totp/reset`, undefined, { method: "POST" });
+  },
+  listInvites(signal?: AbortSignal) {
+    return request<InviteSummary[]>("/invites", signal);
+  },
+  createInvite(body: {
+    username: string;
+    admin: boolean;
+    role: "read" | "write";
+    workspaceIds: string[];
+    expiresInDays: number;
+  }) {
+    return request<CreatedInvite>("/invites", undefined, { method: "POST", body });
+  },
+  revokeInvite(id: string) {
+    return request<void>(`/invites/${encodeURIComponent(id)}`, undefined, { method: "DELETE" });
+  },
+  getInvite(token: string, signal?: AbortSignal) {
+    return request<InvitePreview>(`/invites/${encodeURIComponent(token)}`, signal);
+  },
+  acceptInvite(token: string, body: { password: string; totpSecret: string; code: string }) {
+    return request<{ recoveryCodes: string[] }>(
+      `/invites/${encodeURIComponent(token)}/accept`,
+      undefined,
+      { method: "POST", body },
+    );
   },
   listWorkspaceMembers(workspace: string, signal?: AbortSignal) {
     return request<WorkspaceMember[]>(membersPath(workspace), signal);

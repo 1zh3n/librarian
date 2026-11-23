@@ -35,6 +35,7 @@ use silverbullet_server_mcp::{
 
 const LOGIN_PATH: &str = "/.auth/librarian/login";
 const TOTP_PATH: &str = "/.auth/librarian/totp";
+const INVITE_PATH: &str = "/.auth/librarian/invite";
 const CONSENT_STYLES_PATH: &str = "/.auth/librarian/consent.css";
 const CONSENT_PATH: &str = "/.auth/mcp/authorize";
 type McpEnabled = Arc<dyn Fn() -> bool + Send + Sync>;
@@ -103,6 +104,7 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
                 .post(totp_submit)
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
+        .route(INVITE_PATH, get(invite_page))
         .with_state(LoginState {
             manager: login,
             mcp_enabled: enabled.clone(),
@@ -379,6 +381,24 @@ async fn login_page(State(login): State<LoginState>, Query(query): Query<LoginQu
         return StatusCode::BAD_REQUEST.into_response();
     }
     sign_in_page(StatusCode::OK, "")
+}
+
+async fn invite_page() -> Response {
+    let Some(page) = reader_asset("invite.html") else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    (
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::REFERRER_POLICY, "no-referrer"),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; script-src 'self'; style-src 'self' 'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='; form-action 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+            ),
+        ],
+        Html(page.bytes),
+    )
+        .into_response()
 }
 
 fn sign_in_page(status: StatusCode, username: &str) -> Response {

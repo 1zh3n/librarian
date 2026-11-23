@@ -222,7 +222,7 @@ impl Metadata {
         }
         if version <= 8 {
             transaction.pragma_update(None, "user_version", 9)?;
-        } else if version > 11 {
+        } else if version > 12 {
             return Err(rusqlite::Error::InvalidQuery);
         }
         super::file_actions::storage::migrate(&transaction)?;
@@ -262,6 +262,10 @@ impl Metadata {
             super::workspace::migrate_security(&transaction)?;
             super::audit::migrate(&transaction)?;
             transaction.pragma_update(None, "user_version", 11)?;
+        }
+        if version < 12 {
+            super::invites::migrate(&transaction)?;
+            transaction.pragma_update(None, "user_version", 12)?;
         }
         transaction.commit()?;
         connection.pragma_update(None, "foreign_keys", true)?;

@@ -36,6 +36,7 @@ export default defineConfig({
       input: {
         reader: fileURLToPath(new URL("./index.html", import.meta.url)),
         login: fileURLToPath(new URL("./login.html", import.meta.url)),
+        invite: fileURLToPath(new URL("./invite.html", import.meta.url)),
       },
       output: {
         codeSplitting: {

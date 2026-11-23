@@ -18,6 +18,7 @@ use super::{
     auth::Account,
     contract::ApiError,
     documents::{body, run, DocumentService},
+    invites,
     password_limits::{valid_password, PASSWORD_REQUIREMENTS},
     workspace,
 };
@@ -38,6 +39,12 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
         .route("/session/totp/verify", post(totp_verify))
         .route("/session/totp/disable", post(totp_disable))
         .route("/accounts/{username}/totp/reset", post(reset_totp))
+        .route("/invites", get(list_invites).post(create_invite))
+        .route(
+            "/invites/{token}",
+            get(invite_preview).delete(revoke_invite),
+        )
+        .route("/invites/{token}/accept", post(accept_invite))
         .route("/workspaces/{workspace}/members", get(list_members))
         .route(
             "/workspaces/{workspace}/members/{username}",
@@ -483,6 +490,357 @@ async fn reset_totp(
             },
         )?;
         Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreateInvite {
+    username: String,
+    #[serde(default)]
+    admin: bool,
+    role: MemberRole,
+    #[serde(default)]
+    workspace_ids: Vec<String>,
+    #[serde(default)]
+    expires_in_days: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatedInvite {
+    id: String,
+    username: String,
+    token: String,
+    url: String,
+    expires_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InviteWorkspace {
+    id: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InviteSummary {
+    id: String,
+    username: String,
+    admin: bool,
+    role: MemberRole,
+    workspace_ids: Vec<String>,
+    workspaces: Vec<InviteWorkspace>,
+    created_by: String,
+    created_at: i64,
+    expires_at: i64,
+    accepted_at: Option<i64>,
+    revoked: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InvitePreview {
+    username: String,
+    expires_at: i64,
+    workspaces: Vec<InviteWorkspace>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AcceptInvite {
+    password: String,
+    totp_secret: String,
+    code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcceptedInvite {
+    recovery_codes: Vec<String>,
+}
+
+fn invite_workspaces(service: &DocumentService, ids: &[String]) -> Vec<InviteWorkspace> {
+    ids.iter()
+        .filter_map(|id| {
+            let space = service.metadata.space_id(id).ok()?;
+            let instance = service.spaces.manager.instance(&space)?;
+            Some(InviteWorkspace {
+                id: id.clone(),
+                name: instance.config.name.clone(),
+            })
+        })
+        .collect()
+}
+
+fn resolve_invite_spaces(
+    service: &DocumentService,
+    ids: &[String],
+) -> Result<Vec<(String, String)>, ApiError> {
+    ids.iter()
+        .map(|id| {
+            let space = service.metadata.space_id(id)?;
+            service
+                .spaces
+                .manager
+                .instance(&space)
+                .map(|instance| (id.clone(), instance.id.clone()))
+                .ok_or_else(|| ApiError::invalid("Invite workspace is unavailable"))
+        })
+        .collect()
+}
+
+async fn list_invites(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<InviteSummary>>, ApiError> {
+    administrator(&service, &headers, false)?;
+    run(move || {
+        let list = invites::list(&service.metadata)?;
+        Ok(Json(
+            list.into_iter()
+                .map(|invite| InviteSummary {
+                    workspaces: invite_workspaces(&service, &invite.workspace_ids),
+                    id: invite.id,
+                    username: invite.username,
+                    admin: invite.admin,
+                    role: invite.role,
+                    workspace_ids: invite.workspace_ids,
+                    created_by: invite.created_by,
+                    created_at: invite.created_at,
+                    expires_at: invite.expires_at,
+                    accepted_at: invite.accepted_at,
+                    revoked: invite.revoked,
+                })
+                .collect(),
+        ))
+    })
+    .await
+}
+
+async fn create_invite(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+    input: Result<Json<CreateInvite>, JsonRejection>,
+) -> Result<(StatusCode, Json<CreatedInvite>), ApiError> {
+    let administrator = administrator(&service, &headers, true)?;
+    let input = body(input)?;
+    let username = input.username.trim().to_owned();
+    if username.is_empty() || username.contains([':', '/']) {
+        return Err(ApiError::invalid("Expected a valid username"));
+    }
+    if service.spaces.users.user_exists(&username) {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "account_exists",
+            "The username is in use",
+        ));
+    }
+    let days = if input.expires_in_days == 0 {
+        7
+    } else {
+        input.expires_in_days.clamp(1, 30)
+    };
+    run(move || {
+        resolve_invite_spaces(&service, &input.workspace_ids)?;
+        let (token, invite) = invites::create(
+            &service.metadata,
+            invites::NewInvite {
+                username,
+                admin: input.admin,
+                role: input.role,
+                workspace_ids: input.workspace_ids,
+                created_by: administrator.username().to_owned(),
+                expires_at: chrono::Utc::now().timestamp() + i64::from(days) * 86_400,
+            },
+        )?;
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(administrator.username()),
+                workspace: None,
+                action: "account.invite.create",
+                target: Some(&invite.username),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
+        Ok((
+            StatusCode::CREATED,
+            Json(CreatedInvite {
+                url: format!("/.auth/librarian/invite?token={token}"),
+                id: invite.id,
+                username: invite.username,
+                token,
+                expires_at: invite.expires_at,
+            }),
+        ))
+    })
+    .await
+}
+
+async fn invite_preview(
+    State(service): State<Arc<DocumentService>>,
+    Path(token): Path<String>,
+) -> Result<Json<InvitePreview>, ApiError> {
+    run(move || {
+        let now = chrono::Utc::now().timestamp();
+        let invite = invites::find_by_token(&service.metadata, &token, now)?;
+        Ok(Json(InvitePreview {
+            username: invite.username.clone(),
+            expires_at: invite.expires_at,
+            workspaces: invite_workspaces(&service, &invite.workspace_ids),
+        }))
+    })
+    .await
+}
+
+async fn revoke_invite(
+    State(service): State<Arc<DocumentService>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let administrator = administrator(&service, &headers, true)?;
+    run(move || {
+        invites::revoke(&service.metadata, &id)?;
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(administrator.username()),
+                workspace: None,
+                action: "account.invite.revoke",
+                target: Some(&id),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
+        Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+async fn accept_invite(
+    State(service): State<Arc<DocumentService>>,
+    Path(token): Path<String>,
+    input: Result<Json<AcceptInvite>, JsonRejection>,
+) -> Result<Json<AcceptedInvite>, ApiError> {
+    let input = body(input)?;
+    password(&input.password)?;
+    run(move || {
+        let now = chrono::Utc::now().timestamp();
+        let invite = invites::find_by_token(&service.metadata, &token, now)?;
+        if service.spaces.users.user_exists(&invite.username) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "account_exists",
+                "The username is in use",
+            ));
+        }
+        if totp::verify(&input.totp_secret, &input.code, now as u64).is_none() {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "invalid_totp_code",
+                "The verification code is not valid",
+            ));
+        }
+        let spaces = resolve_invite_spaces(&service, &invite.workspace_ids)?;
+        let mut previous = Vec::with_capacity(spaces.len());
+        for (_, space) in &spaces {
+            let instance = service
+                .spaces
+                .manager
+                .instance(space)
+                .ok_or_else(|| ApiError::invalid("Invite workspace is unavailable"))?;
+            previous.push((space.clone(), instance.config.clone()));
+        }
+        service
+            .spaces
+            .users
+            .create_user(
+                &invite.username,
+                &input.password,
+                invite.admin,
+                Profile::default(),
+            )
+            .map_err(account_error)?;
+        service
+            .spaces
+            .manager
+            .set_known_users(service.spaces.users.usernames());
+        let rollback = |service: &DocumentService| {
+            service
+                .spaces
+                .users
+                .delete_user(&invite.username)
+                .map_err(ApiError::internal)?;
+            for (space, config) in &previous {
+                service
+                    .spaces
+                    .manager
+                    .update(space, config.clone())
+                    .map_err(workspace::native_error)?;
+            }
+            Ok::<(), ApiError>(())
+        };
+        for (_, space) in &spaces {
+            let Some(instance) = service.spaces.manager.instance(space) else {
+                rollback(&service)?;
+                return Err(ApiError::invalid("Invite workspace is unavailable"));
+            };
+            let mut config = instance.config.clone();
+            config.members.insert(
+                invite.username.clone(),
+                MemberEntry {
+                    role: invite.role,
+                    runtime_api: false,
+                    ..MemberEntry::default()
+                },
+            );
+            if let Err(error) = service.spaces.manager.update(space, config) {
+                rollback(&service)?;
+                return Err(workspace::native_error(error));
+            }
+        }
+        let (plain, hashed) = totp::generate_recovery_codes(10);
+        if service
+            .spaces
+            .users
+            .enable_totp(&invite.username, &input.totp_secret, hashed)
+            .is_err()
+        {
+            rollback(&service)?;
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "totp_already_enabled",
+                "Two-factor authentication is already enabled",
+            ));
+        }
+        if let Err(error) = invites::accept(&service.metadata, &invite.id, now) {
+            rollback(&service)?;
+            return Err(error);
+        }
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(&invite.username),
+                workspace: None,
+                action: "account.invite.accept",
+                target: Some(&invite.username),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
+        Ok(Json(AcceptedInvite {
+            recovery_codes: plain,
+        }))
     })
     .await
 }

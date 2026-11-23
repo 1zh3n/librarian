@@ -144,6 +144,30 @@ impl Fixture {
             .await
     }
 
+    async fn public(&self, method: &str, path: &str, input: Value) -> (StatusCode, Value) {
+        let response = self
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(format!("/api/v1{path}"))
+                    .header(header::HOST, HOST)
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(input.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (parts, body) = response.into_parts();
+        let bytes = to_bytes(body, 65536).await.unwrap();
+        (
+            parts.status,
+            serde_json::from_slice(&bytes).unwrap_or_default(),
+        )
+    }
+
     async fn with_token(&self, path: &str, token: &str) -> StatusCode {
         self.send(
             "GET",
@@ -568,4 +592,120 @@ async fn administrator_resets_two_factor_and_revokes_sessions() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(status_body["enabled"], false);
+}
+
+#[tokio::test]
+async fn invites_are_one_time_and_create_a_totp_account() {
+    let f = Fixture::new();
+    let admin = f.login("admin", ORIGINAL).await;
+    let (status, workspace) = f
+        .request("POST", "/workspaces", &admin, json!({"name":"邀请空间"}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{workspace}");
+    let workspace_id = workspace["id"].as_str().unwrap().to_owned();
+
+    let (status, created) = f
+        .request(
+            "POST",
+            "/invites",
+            &admin,
+            json!({
+                "username":"invited-reader",
+                "admin":false,
+                "role":"write",
+                "workspaceIds":[workspace_id],
+                "expiresInDays":7
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let token = created["token"].as_str().unwrap().to_owned();
+    let invite_id = created["id"].as_str().unwrap().to_owned();
+
+    let (status, preview) = f
+        .public("GET", &format!("/invites/{token}"), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["username"], "invited-reader");
+    assert_eq!(preview["workspaces"][0]["id"], workspace_id);
+
+    let secret = totp::generate_secret();
+    let code = totp::current_code(&secret, now()).unwrap();
+    let (status, accepted) = f
+        .public(
+            "POST",
+            &format!("/invites/{token}/accept"),
+            json!({"password":"invited-reader-password","totpSecret":secret,"code":code}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+    assert_eq!(accepted["recoveryCodes"].as_array().unwrap().len(), 10);
+
+    let (status, _) = f
+        .public(
+            "POST",
+            &format!("/invites/{token}/accept"),
+            json!({"password":"another-long-password","totpSecret":secret,"code":code}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let challenge = f
+        .password_challenge("invited-reader", "invited-reader-password")
+        .await;
+    let response = f
+        .totp_submit(
+            &challenge,
+            &totp::current_code(&secret, now()).unwrap(),
+            "/",
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let session = session_cookie(&response);
+    let (status, workspaces) = f.request("GET", "/workspaces", &session, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(workspaces
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|workspace| workspace["id"] == workspace_id));
+
+    let (status, invites) = f.request("GET", "/invites", &admin, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(invites
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|invite| invite["id"] == invite_id && invite["acceptedAt"].is_number()));
+
+    let (status, created) = f
+        .request(
+            "POST",
+            "/invites",
+            &admin,
+            json!({
+                "username":"revoked-reader",
+                "admin":false,
+                "role":"read",
+                "workspaceIds":[workspace_id],
+                "expiresInDays":7
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let revoked_token = created["token"].as_str().unwrap();
+    let revoked_id = created["id"].as_str().unwrap();
+    let (status, _) = f
+        .request(
+            "DELETE",
+            &format!("/invites/{revoked_id}"),
+            &admin,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = f
+        .public("GET", &format!("/invites/{revoked_token}"), Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

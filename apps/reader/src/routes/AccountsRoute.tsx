@@ -8,6 +8,7 @@ import { api, ApiError } from "../api/client";
 import type { AccountSummary } from "../api/client";
 import { sessionQuery } from "../api/queries";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
+import { InviteAdmin } from "../features/settings/InviteAdmin";
 import { TwoFactor } from "../features/settings/TwoFactor";
 import styles from "../features/workspace/Management.module.css";
 
@@ -303,6 +304,10 @@ function AdminAccounts({ current }: { current: string }) {
       <section aria-label="新建账号" className={styles.section}>
         <h2>新建账号</h2>
         <NewAccount onCreated={refresh} />
+      </section>
+      <section aria-label="邀请新成员" className={styles.section}>
+        <h2>邀请新成员</h2>
+        <InviteAdmin />
       </section>
       <section aria-label="已有账号" className={styles.section}>
         <h2>已有账号</h2>

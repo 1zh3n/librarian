@@ -24,6 +24,7 @@ mod documents;
 mod file_actions;
 mod image_policy;
 mod imports;
+mod invites;
 pub mod mcp_bridge;
 mod mcp_operations;
 mod mcp_settings;
