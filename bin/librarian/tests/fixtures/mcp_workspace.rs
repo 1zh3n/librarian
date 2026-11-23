@@ -139,7 +139,10 @@ async fn mcp_reorganization_requires_live_original_grant() {
     assert_ne!(preview["isError"], true, "{preview}");
     let receipt = &preview["structuredContent"];
     assert_eq!(receipt["status"], "needs_confirmation");
-    assert!(receipt["readerPath"].as_str().unwrap().contains(OP));
+    assert!(
+        receipt["readerPath"].as_str().unwrap().contains(OP),
+        "{preview}"
+    );
     server
         .client
         .post(format!("{}/.auth/revoke", server.url))

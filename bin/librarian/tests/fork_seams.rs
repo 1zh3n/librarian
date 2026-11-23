@@ -306,6 +306,16 @@ impl Server {
         response["result"].clone()
     }
 
+    fn set_level(&self, workspace: &str, level: &str) {
+        let db = rusqlite::Connection::open(self.root.path().join(".librarian/metadata.sqlite3"))
+            .unwrap();
+        db.execute(
+            "UPDATE workspaces SET security_level = ?1 WHERE id = ?2",
+            rusqlite::params![level, workspace],
+        )
+        .unwrap();
+    }
+
     async fn product_get(&self, session: &Session, path: &str) -> Value {
         let response = self
             .client
@@ -972,6 +982,7 @@ async fn mcp_workspace_publish_reuses_the_product_delivery_receipt() {
     let workspace = workspaces["structuredContent"]["workspaces"][0]["id"]
         .as_str()
         .unwrap();
+    server.set_level(workspace, "public");
     let args = json!({
         "workspaceId":workspace,
         "delivery":{
@@ -2506,4 +2517,146 @@ async fn static_reading_pages_serve_private_documents_and_share_snapshots() {
     );
     let html = after.text().await.unwrap();
     assert!(html.contains("阅读地址不可用"), "{html}");
+}
+
+#[tokio::test]
+async fn restricted_workspaces_are_hidden_and_blocked_for_mcp() {
+    let server = Server::boot().await;
+    let alice = server.connect("alice", "left").await;
+    let list = server.tool(&alice, "workspace_list", json!({})).await;
+    let workspace = list["structuredContent"]["workspaces"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let docs = server
+        .tool(&alice, "document_list", json!({"workspaceId": workspace}))
+        .await;
+    let document = docs["structuredContent"]["documents"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    server.set_level(&workspace, "confidential");
+
+    let hidden = server.tool(&alice, "workspace_list", json!({})).await;
+    assert_eq!(
+        hidden["structuredContent"]["workspaces"],
+        json!([]),
+        "{hidden}"
+    );
+    let read = server
+        .tool(&alice, "document_read", json!({"documentId": document}))
+        .await;
+    assert_eq!(read["isError"], true, "{read}");
+    assert_eq!(read["structuredContent"]["code"], "policy_blocked");
+    assert_eq!(read["structuredContent"]["ruleId"], "external_mcp_disabled");
+}
+
+#[tokio::test]
+async fn mcp_redacts_reads_and_blocks_secret_writes() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let caller = server.caller(&session);
+    let list = server.tool(&session, "workspace_list", json!({})).await;
+    let workspace = list["structuredContent"]["workspaces"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let created = server
+        .write(
+            &caller,
+            "Sensitive.md",
+            "联系 alice@example.com。\n",
+            (header::IF_NONE_MATCH, "*".into()),
+        )
+        .await;
+    assert!(created.status.is_success());
+    let docs = server
+        .tool(&session, "document_list", json!({"workspaceId": workspace}))
+        .await;
+    let document = docs["structuredContent"]["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|document| document["path"] == "Sensitive.md")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let read = server
+        .tool(&session, "document_read", json!({"documentId": document}))
+        .await;
+    let markdown = read["structuredContent"]["markdown"].as_str().unwrap();
+    assert!(markdown.contains("[REDACTED:email]"), "{markdown}");
+    assert!(!markdown.contains("alice@example.com"), "{markdown}");
+
+    let update = server
+        .tool(
+            &session,
+            "document_update",
+            json!({
+                "documentId": document,
+                "operationId": "8d1c0f0b-6a6f-4c5b-9a7e-000000000001",
+                "baseRevision": read["structuredContent"]["revision"],
+                "markdown": "仍然包含 alice@example.com。\n"
+            }),
+        )
+        .await;
+    assert_eq!(update["isError"], true, "{update}");
+    assert_eq!(update["structuredContent"]["code"], "policy_blocked");
+    assert_eq!(update["structuredContent"]["ruleId"], "email");
+
+    let created = server
+        .write(
+            &caller,
+            "Private.md",
+            "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\n",
+            (header::IF_NONE_MATCH, "*".into()),
+        )
+        .await;
+    assert!(created.status.is_success());
+    let docs = server
+        .tool(&session, "document_list", json!({"workspaceId": workspace}))
+        .await;
+    let private = docs["structuredContent"]["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|document| document["path"] == "Private.md")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let read = server
+        .tool(&session, "document_read", json!({"documentId": private}))
+        .await;
+    assert_eq!(read["isError"], true, "{read}");
+    assert_eq!(read["structuredContent"]["code"], "policy_blocked");
+    assert_eq!(read["structuredContent"]["ruleId"], "private_key");
+}
+
+#[tokio::test]
+async fn mcp_publish_requires_a_public_workspace() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let list = server.tool(&session, "workspace_list", json!({})).await;
+    let workspace = list["structuredContent"]["workspaces"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    server.set_level(&workspace, "internal");
+
+    let result = server
+        .tool(
+            &session,
+            "workspace_publish",
+            json!({"workspaceId": workspace, "delivery": {}}),
+        )
+        .await;
+    assert_eq!(result["isError"], true, "{result}");
+    assert_eq!(result["structuredContent"]["code"], "policy_blocked");
+    assert_eq!(
+        result["structuredContent"]["ruleId"],
+        "publication_requires_public_workspace"
+    );
 }

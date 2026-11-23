@@ -182,6 +182,14 @@ impl Fixture {
     fn db(&self) -> Connection {
         Connection::open(self.root.path().join(".librarian/metadata.sqlite3")).unwrap()
     }
+    fn set_level(&self, level: &str) {
+        self.db()
+            .execute(
+                "UPDATE workspaces SET security_level = ?1 WHERE id = ?2",
+                rusqlite::params![level, self.ws],
+            )
+            .unwrap();
+    }
     fn reopen(&mut self) {
         self.app = Router::new();
         self.app = librarian::Product::open(self.root.path(), 0)
@@ -1237,4 +1245,87 @@ async fn disabled_global_author_does_not_block_another_accounts_claim() {
             .unwrap(),
         "canceled"
     );
+}
+
+#[tokio::test]
+async fn confidential_workspace_blocks_ai_sources() {
+    let f = Fixture::open().await;
+    let c = f.conversation(&f.user, Some(&f.doc)).await;
+    let _ = f.send(&c, "confidential", "chat", "read").await;
+    let lease = field(&f.claim().await, "leaseId");
+    f.set_level("confidential");
+
+    let (status, error) = f
+        .req(
+            RUNNER,
+            "POST",
+            &format!("/ai/runner/claims/{lease}/sources"),
+            json!({"documentId":f.doc}),
+        )
+        .await;
+    assert_eq!(status, 403, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "external_ai_disabled");
+}
+
+#[tokio::test]
+async fn ai_chat_redacts_pii_but_edit_sources_are_blocked() {
+    let f = Fixture::open().await;
+    fs::write(f.note(), "联系 alice@example.com。\n").unwrap();
+
+    let c = f.conversation(&f.user, Some(&f.doc)).await;
+    let _ = f.send(&c, "chat-redact", "chat", "read").await;
+    let lease = field(&f.claim().await, "leaseId");
+    let read = f
+        .ok(
+            RUNNER,
+            "POST",
+            &format!("/ai/runner/claims/{lease}/sources"),
+            json!({"documentId":f.doc}),
+        )
+        .await;
+    let markdown = read["markdown"].as_str().unwrap();
+    assert!(markdown.contains("[REDACTED:email]"), "{markdown}");
+    assert!(!markdown.contains("alice@example.com"), "{markdown}");
+    assert_eq!(f.submit(&lease, json!({"answer":"ok"})).await.0, 200);
+
+    let c = f.conversation(&f.user, Some(&f.doc)).await;
+    let _ = f.send(&c, "edit-block", "edit", "rewrite").await;
+    let lease = field(&f.claim().await, "leaseId");
+    let (status, error) = f
+        .req(
+            RUNNER,
+            "POST",
+            &format!("/ai/runner/claims/{lease}/sources"),
+            json!({"documentId":f.doc}),
+        )
+        .await;
+    assert_eq!(status, 403, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "external_ai_redacted_edit");
+}
+
+#[tokio::test]
+async fn ai_sources_block_high_confidence_credentials() {
+    let f = Fixture::open().await;
+    fs::write(
+        f.note(),
+        "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\n",
+    )
+    .unwrap();
+    let c = f.conversation(&f.user, Some(&f.doc)).await;
+    let _ = f.send(&c, "credential", "chat", "read").await;
+    let lease = field(&f.claim().await, "leaseId");
+
+    let (status, error) = f
+        .req(
+            RUNNER,
+            "POST",
+            &format!("/ai/runner/claims/{lease}/sources"),
+            json!({"documentId":f.doc}),
+        )
+        .await;
+    assert_eq!(status, 403, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "private_key");
 }

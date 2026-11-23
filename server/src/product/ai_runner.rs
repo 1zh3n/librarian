@@ -23,10 +23,14 @@ use super::{
     },
     ai_managed::{self, Protocol},
     ai_probes::{self, ProbeAction},
+    audit,
+    content_policy::{self, Action},
     contract::{content_precondition, present_revision, ApiError, DocumentSummary},
     db::Metadata,
     documents::{body, run, DocumentList, DocumentService},
     mutations::{self, MutationEdit},
+    security_levels::SecurityLevel,
+    workspace,
 };
 
 const LEASE_SECS: i64 = 180;
@@ -589,6 +593,49 @@ async fn source(
             }
         } else {
             (markdown, None, None, None)
+        };
+        let level = workspace::info(&service.metadata, &workspace)?.security_level;
+        if matches!(level, SecurityLevel::Confidential | SecurityLevel::Secret) {
+            audit::policy_block(
+                &service.metadata,
+                Some(account.username()),
+                &workspace,
+                "ai",
+                "external_ai_disabled",
+            )?;
+            return Err(ApiError::policy_blocked("external_ai_disabled"));
+        }
+        let inspection = content_policy::inspect(&markdown, level);
+        let markdown = match inspection.action {
+            Action::Allow => markdown,
+            Action::Deny => {
+                let rule = inspection.blocking_rule.unwrap_or("content_policy");
+                audit::policy_block(
+                    &service.metadata,
+                    Some(account.username()),
+                    &workspace,
+                    "ai",
+                    rule,
+                )?;
+                return Err(ApiError::policy_blocked(rule));
+            }
+            Action::Redact => {
+                if op
+                    .input
+                    .as_ref()
+                    .is_some_and(|input| input.mode == Mode::Edit)
+                {
+                    audit::policy_block(
+                        &service.metadata,
+                        Some(account.username()),
+                        &workspace,
+                        "ai",
+                        "external_ai_redacted_edit",
+                    )?;
+                    return Err(ApiError::policy_blocked("external_ai_redacted_edit"));
+                }
+                inspection.redacted
+            }
         };
         if let Some(source) = op.delivered.iter().find(|source| {
             source.document_id == request.document_id

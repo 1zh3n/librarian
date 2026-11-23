@@ -16,7 +16,6 @@ mod assets;
 mod audit;
 mod auth;
 mod backup;
-#[allow(dead_code)] // Wired into the AI, MCP, share, and publish egresses in the next slice.
 mod content_policy;
 mod contract;
 pub(crate) mod db;

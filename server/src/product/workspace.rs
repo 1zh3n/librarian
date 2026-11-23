@@ -57,10 +57,18 @@ pub(super) fn migrate(tx: &Transaction<'_>) -> rusqlite::Result<()> {
 }
 
 pub(super) fn migrate_security(tx: &Transaction<'_>) -> rusqlite::Result<()> {
-    tx.execute_batch(
-        "ALTER TABLE workspaces ADD COLUMN security_level TEXT NOT NULL DEFAULT 'internal'
-           CHECK (security_level IN ('public', 'internal', 'confidential', 'secret'));",
-    )
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('workspaces') WHERE name = 'security_level')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        tx.execute_batch(
+            "ALTER TABLE workspaces ADD COLUMN security_level TEXT NOT NULL DEFAULT 'internal'
+               CHECK (security_level IN ('public', 'internal', 'confidential', 'secret'));",
+        )?;
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]

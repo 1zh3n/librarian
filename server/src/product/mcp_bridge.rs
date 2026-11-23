@@ -5,7 +5,9 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::{
+    audit,
     auth::Account,
+    content_policy::{self, Action},
     contract::{content_precondition, present_revision, ApiError},
     documents::{
         check_file_path, is_document_path, outline_path, run, state, DocumentList, DocumentService,
@@ -13,7 +15,9 @@ use super::{
     mutations::{MutationContext, MutationEdit, MutationReceipt},
     revisions::{self, HistoryQuery},
     search,
+    security_levels::SecurityLevel,
     space_adapter::NativeSpaces,
+    workspace,
 };
 
 /// Product tool adapter for the Librarian MCP server. The caller supplies the
@@ -42,6 +46,83 @@ impl McpBridge {
     }
 
     async fn dispatch(
+        &self,
+        username: &str,
+        grant_id: &str,
+        name: &str,
+        arguments: Value,
+    ) -> Result<Value, ApiError> {
+        // Authenticate before revealing whether a workspace is restricted.
+        let grant = super::mcp_operations::live_grant(&self.0, username, grant_id)?;
+        Account::from_bound_identity(
+            self.spaces(),
+            username,
+            grant.credential_version.as_deref(),
+            grant.spaces.iter().cloned().collect(),
+        )?;
+        let service = self.0.clone();
+
+        if name == "workspace_list" {
+            let mut result = self
+                .dispatch_inner(username, grant_id, name, arguments)
+                .await?;
+            filter_workspace_list(&mut result);
+            return Ok(result);
+        }
+
+        let Some(workspace) = tool_workspace(&service, name, &arguments)? else {
+            return self
+                .dispatch_inner(username, grant_id, name, arguments)
+                .await;
+        };
+        let level = workspace::info(&service.metadata, &workspace)?.security_level;
+        if matches!(level, SecurityLevel::Confidential | SecurityLevel::Secret) {
+            audit::policy_block(
+                &service.metadata,
+                Some(username),
+                &workspace,
+                "mcp",
+                "external_mcp_disabled",
+            )?;
+            return Err(ApiError::policy_blocked("external_mcp_disabled"));
+        }
+        if name == "workspace_publish" && level != SecurityLevel::Public {
+            audit::policy_block(
+                &service.metadata,
+                Some(username),
+                &workspace,
+                "mcp",
+                "publication_requires_public_workspace",
+            )?;
+            return Err(ApiError::policy_blocked(
+                "publication_requires_public_workspace",
+            ));
+        }
+
+        let arguments = if read_tool(name) {
+            arguments
+        } else {
+            let mut scanned = arguments;
+            if let Some(rule) = scan_value(&mut scanned, level, false) {
+                audit::policy_block(&service.metadata, Some(username), &workspace, "mcp", rule)?;
+                return Err(ApiError::policy_blocked(rule));
+            }
+            scanned
+        };
+
+        let mut result = self
+            .dispatch_inner(username, grant_id, name, arguments)
+            .await?;
+        if !skip_scan_tool(name) {
+            if let Some(rule) = scan_value(&mut result, level, true) {
+                audit::policy_block(&service.metadata, Some(username), &workspace, "mcp", rule)?;
+                return Err(ApiError::policy_blocked(rule));
+            }
+        }
+        Ok(result)
+    }
+
+    async fn dispatch_inner(
         &self,
         username: &str,
         grant_id: &str,
@@ -101,6 +182,128 @@ impl McpBridge {
 
 fn arguments_as<T: DeserializeOwned>(arguments: Value) -> Result<T, ApiError> {
     serde_json::from_value(arguments).map_err(|_| ApiError::invalid("Invalid tool arguments"))
+}
+
+fn tool_workspace(
+    service: &DocumentService,
+    name: &str,
+    arguments: &Value,
+) -> Result<Option<String>, ApiError> {
+    if name == "workspace_list" {
+        return Ok(None);
+    }
+    if let Some(workspace) = arguments.get("workspaceId").and_then(Value::as_str) {
+        return Ok(Some(workspace.to_owned()));
+    }
+    if let Some(document) = arguments.get("documentId").and_then(Value::as_str) {
+        return Ok(Some(service.metadata.document_path(document)?.0));
+    }
+    Ok(None)
+}
+
+fn read_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "workspace_read_asset"
+            | "workspace_list_assets"
+            | "workspace_get_operation"
+            | "workspace_list"
+            | "document_list"
+            | "document_read"
+            | "document_search"
+            | "document_outline_read"
+            | "revision_list"
+            | "revision_diff"
+    )
+}
+
+fn skip_scan_tool(name: &str) -> bool {
+    matches!(name, "workspace_read_asset" | "workspace_list_assets")
+}
+
+fn binary_key(key: &str) -> bool {
+    matches!(
+        key,
+        "contentBase64" | "imageBase64" | "data" | "base64" | "bytes"
+    )
+}
+
+fn content_key(key: &str) -> bool {
+    matches!(
+        key,
+        "markdown"
+            | "answer"
+            | "excerpt"
+            | "text"
+            | "content"
+            | "body"
+            | "snippet"
+            | "title"
+            | "name"
+            | "diff"
+    )
+}
+
+fn scan_value(value: &mut Value, level: SecurityLevel, redact: bool) -> Option<&'static str> {
+    scan_strings(value, level, redact, true)
+}
+
+fn scan_strings(
+    value: &mut Value,
+    level: SecurityLevel,
+    redact: bool,
+    scan: bool,
+) -> Option<&'static str> {
+    match value {
+        Value::Object(map) => {
+            for (key, item) in map.iter_mut() {
+                if binary_key(key) {
+                    continue;
+                }
+                if let Some(rule) = scan_strings(item, level, redact, content_key(key)) {
+                    return Some(rule);
+                }
+            }
+            None
+        }
+        Value::Array(items) => {
+            for item in items {
+                if let Some(rule) = scan_strings(item, level, redact, scan) {
+                    return Some(rule);
+                }
+            }
+            None
+        }
+        Value::String(text) if scan => {
+            let inspection = content_policy::inspect(text, level);
+            match inspection.action {
+                Action::Allow => None,
+                Action::Deny => Some(inspection.blocking_rule.unwrap_or("content_policy")),
+                Action::Redact if redact => {
+                    *text = inspection.redacted;
+                    None
+                }
+                Action::Redact => inspection
+                    .findings
+                    .first()
+                    .map(|finding| finding.rule)
+                    .or(Some("content_policy")),
+            }
+        }
+        _ => None,
+    }
+}
+
+fn filter_workspace_list(result: &mut Value) {
+    let Some(workspaces) = result.get_mut("workspaces").and_then(Value::as_array_mut) else {
+        return;
+    };
+    workspaces.retain(|workspace| {
+        workspace
+            .get("securityLevel")
+            .and_then(Value::as_str)
+            .is_none_or(|level| matches!(level, "public" | "internal"))
+    });
 }
 
 fn encode(value: impl Serialize) -> Result<Value, ApiError> {
