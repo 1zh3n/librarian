@@ -153,20 +153,13 @@ impl DocumentService {
         files
             .into_iter()
             .map(|file| {
-                let size = usize::try_from(file.size).unwrap_or(0).min(METADATA_LIMIT);
-                let title = if size == 0 {
-                    None
-                } else {
-                    state
-                        .space
-                        .read_file_range(&file.name, 0, size)
-                        .ok()
-                        .and_then(|(prefix, _)| title_from_markdown(&prefix))
-                };
                 let id = ids
                     .get(&file.name)
                     .cloned()
                     .ok_or_else(|| ApiError::internal("missing document id"))?;
+                // File navigation shows the file name. Content titles are resolved by
+                // the document/snapshot paths; listing must not read every file prefix.
+                let title = file.name.rsplit('/').next().map(str::to_owned);
                 Ok(summary_with_outline(
                     workspace,
                     id,

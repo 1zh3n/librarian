@@ -555,6 +555,28 @@ async fn create_refuses_existing_path() {
 }
 
 #[tokio::test]
+async fn document_list_uses_file_names_for_navigation() {
+    let f = Fixture::new(false);
+    let workspace = f.workspace("Left").await;
+    let (status, list) = f
+        .request(
+            "GET",
+            &format!("/workspaces/{workspace}/documents"),
+            Some(&f.editor),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let row = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["path"] == "Note.md")
+        .expect("fixture document");
+    assert_eq!(row["title"], "Note.md");
+}
+
+#[tokio::test]
 async fn openapi_describes_live_document_responses() {
     let f = Fixture::new(false);
     let specification: Value =

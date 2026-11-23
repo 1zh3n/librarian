@@ -20,6 +20,7 @@ import { documentsQuery, sessionQuery, workspaceKeys, workspacesQuery } from "..
 import { securityLevelLabel } from "../features/workspace/securityLabels";
 import { RenameDocumentDialog } from "../features/document/RenameDocumentDialog";
 import { CreateDocumentDialog } from "../features/document/CreateDocumentDialog";
+import { fileName } from "../features/navigation/fileName";
 import { rememberRecentDocument } from "../features/navigation/recentDocuments";
 import {
   handleWorkspaceMenu,
@@ -208,7 +209,7 @@ export function WorkspaceShell() {
       pendingCreation.current = undefined;
       clearCreatedDocument();
       listCreatedDocument(created);
-      setCreationNotice(`已新建「${created.title}」。可在目录中打开。`);
+      setCreationNotice(`已新建「${fileName(created.path)}」。可在目录中打开。`);
     },
     [clearCreatedDocument, listCreatedDocument],
   );
@@ -430,7 +431,7 @@ export function WorkspaceShell() {
           <div className={styles.breadcrumb} title={active?.path}>
             {activeFolder && <span className={styles.breadcrumbFolder}>{activeFolder} / </span>}
             <span className={styles.breadcrumbTitle}>
-              {active?.path.split("/").at(-1) ?? workspace?.name}
+              {active ? fileName(active.path) : workspace?.name}
             </span>
             {!navigationVisible && workspace && workspace.securityLevel !== "internal" && (
               <span
