@@ -344,3 +344,69 @@ test("keyboard focus marks the import or publish control and a directly focused 
     expect.soft(outlinedAncestors, label).toEqual([]);
   }
 });
+
+test("lists and revokes other browser sessions", async ({ page, browser }, testInfo) => {
+  const username = `reader-${randomUUID()}`;
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const origin = new URL(page.url()).origin;
+  const created = await page.request.post("/api/v1/accounts", {
+    headers: { origin },
+    data: { username, password: firstPassword },
+  });
+  expect(created.status()).toBe(201);
+
+  await signIn(page, username, firstPassword);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/accounts");
+  const section = page.getByRole("region", { name: "登录设备" });
+  await expect(section.getByText("当前设备")).toBeVisible();
+  await expect(section.getByRole("list", { name: "登录设备列表" })).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("sessions-390.png"), fullPage: true });
+
+  const secondContext = await browser.newContext({ baseURL: origin });
+  const thirdContext = await browser.newContext({ baseURL: origin });
+  try {
+    const second = await secondContext.newPage();
+    await signIn(second, username, firstPassword);
+    const third = await thirdContext.newPage();
+    await signIn(third, username, firstPassword);
+
+    await page.reload();
+    const list = section.getByRole("list", { name: "登录设备列表" });
+    await expect(list.getByRole("listitem")).toHaveCount(3);
+    const other = list.getByRole("listitem").filter({ hasNotText: "当前设备" }).first();
+    await other.getByRole("button", { name: "撤销" }).click();
+    const dialog = page.getByRole("dialog", { name: "撤销登录设备" });
+    await dialog.getByRole("button", { name: "撤销" }).click();
+    await expect(section.getByText("已撤销该设备")).toBeVisible();
+    const remaining = [
+      (await second.request.get("/api/v1/session")).status(),
+      (await third.request.get("/api/v1/session")).status(),
+    ].sort();
+    expect(remaining).toEqual([200, 401]);
+    expect((await page.request.get("/api/v1/session")).status()).toBe(200);
+
+    await page.reload();
+    await expect(list.getByRole("listitem")).toHaveCount(2);
+    await section.getByRole("button", { name: "撤销其他设备" }).click();
+    const others = page.getByRole("dialog", { name: "撤销其他设备" });
+    await others.getByRole("button", { name: "撤销其他设备" }).click();
+    await expect(section.getByText("已撤销 1 个其他设备")).toBeVisible();
+    expect((await second.request.get("/api/v1/session")).status()).toBe(401);
+    expect((await third.request.get("/api/v1/session")).status()).toBe(401);
+    expect((await page.request.get("/api/v1/session")).status()).toBe(200);
+
+    await page.setViewportSize({ width: 320, height: 760 });
+    await page.addStyleTag({ content: "html { font-size: 200% }" });
+    await page.reload();
+    await expect(section).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      320,
+    );
+    await page.screenshot({ path: testInfo.outputPath("sessions-320-200.png"), fullPage: true });
+  } finally {
+    await secondContext.close();
+    await thirdContext.close();
+  }
+});

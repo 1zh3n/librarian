@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
+use serde::Serialize;
 use serde_json::{json, Value};
 use silverbullet_server_common::revision::sha256_hex;
 
@@ -16,12 +17,145 @@ use crate::auth::{
 };
 use crate::multi::access::signed_in_user;
 
-use super::{contract::ApiError, documents::DocumentService};
+use super::{accounts, audit, contract::ApiError, documents::DocumentService};
 
 pub(super) fn routes() -> Router<Arc<DocumentService>> {
     Router::new()
         .route("/session", get(identity))
         .route("/session/logout", post(logout))
+        .route("/session/sessions", get(list_sessions))
+        .route("/session/sessions/revoke-others", post(revoke_others))
+        .route("/session/sessions/{session}", delete(revoke_session))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionView {
+    id: String,
+    provider: Option<String>,
+    created_at: u64,
+    expires_at: u64,
+    shared: bool,
+    current: bool,
+}
+
+#[derive(Serialize)]
+struct SessionList {
+    sessions: Vec<SessionView>,
+}
+
+#[derive(Serialize)]
+struct RevokedSessions {
+    revoked: usize,
+}
+
+fn current_session_id(service: &DocumentService, headers: &HeaderMap) -> Option<String> {
+    let name = scoped_auth_cookie_name(&request_host(headers), "");
+    let token = cookie_value(headers, &name)?;
+    service
+        .spaces
+        .authenticator
+        .verify_browser_jwt(&token)
+        .ok()?
+        .session_id
+}
+
+async fn list_sessions(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+) -> Result<Json<SessionList>, ApiError> {
+    let account = accounts::browser(&service, &headers, false)?;
+    let current = current_session_id(&service, &headers);
+    let sessions = service
+        .spaces
+        .authenticator
+        .browser_sessions()
+        .ok_or_else(|| ApiError::internal("Browser session store is unavailable"))?
+        .list(account.username())
+        .map_err(ApiError::internal)?;
+    Ok(Json(SessionList {
+        sessions: sessions
+            .into_iter()
+            .map(|session| SessionView {
+                current: current.as_deref() == Some(session.id.as_str()),
+                id: session.id,
+                provider: session.provider,
+                created_at: session.created_at,
+                expires_at: session.expires_at,
+                shared: session.shared,
+            })
+            .collect(),
+    }))
+}
+
+async fn revoke_session(
+    State(service): State<Arc<DocumentService>>,
+    Path(session): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let account = accounts::browser(&service, &headers, true)?;
+    if current_session_id(&service, &headers).as_deref() == Some(session.as_str()) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "current_session",
+            "Sign out to end the current session",
+        ));
+    }
+    let revoked = service
+        .spaces
+        .authenticator
+        .browser_sessions()
+        .ok_or_else(|| ApiError::internal("Browser session store is unavailable"))?
+        .revoke_for_user(&session, account.username())
+        .map_err(ApiError::internal)?;
+    if !revoked {
+        return Err(ApiError::not_found());
+    }
+    audit::record(
+        &service.metadata,
+        audit::Event {
+            actor: Some(account.username()),
+            workspace: None,
+            action: "account.session.revoke",
+            target: Some("browser"),
+            result: "ok",
+            rule_id: None,
+            request_id: None,
+            metadata: None,
+        },
+    )?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn revoke_others(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+) -> Result<Json<RevokedSessions>, ApiError> {
+    let account = accounts::browser(&service, &headers, true)?;
+    let current = current_session_id(&service, &headers)
+        .ok_or_else(|| ApiError::internal("Current browser session is unavailable"))?;
+    let revoked = service
+        .spaces
+        .authenticator
+        .browser_sessions()
+        .ok_or_else(|| ApiError::internal("Browser session store is unavailable"))?
+        .revoke_others(account.username(), &current)
+        .map_err(ApiError::internal)?;
+    let metadata = json!({ "revoked": revoked });
+    audit::record(
+        &service.metadata,
+        audit::Event {
+            actor: Some(account.username()),
+            workspace: None,
+            action: "account.session.revoke_others",
+            target: Some("browser"),
+            result: "ok",
+            rule_id: None,
+            request_id: None,
+            metadata: Some(&metadata),
+        },
+    )?;
+    Ok(Json(RevokedSessions { revoked }))
 }
 
 async fn identity(

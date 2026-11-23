@@ -34,6 +34,15 @@ pub struct SessionInfo {
     pub shared: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct SessionSummary {
+    pub id: String,
+    pub provider: Option<String>,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub shared: bool,
+}
+
 /// Longest a session goes without being extended: a tenth of its idle
 /// window, at most a day, so active sessions write the store about once a
 /// day.
@@ -111,6 +120,61 @@ impl BrowserSessions {
 
     pub fn is_active(&self, id: &str, username: &str) -> bool {
         self.info(id, username).is_some()
+    }
+
+    pub fn list(&self, username: &str) -> io::Result<Vec<SessionSummary>> {
+        let guard = self
+            .sessions
+            .lock()
+            .map_err(|_| io::Error::other("browser session store unavailable"))?;
+        let sessions = guard
+            .as_ref()
+            .ok_or_else(|| io::Error::other("browser session store unavailable"))?;
+        let now = now_secs();
+        let mut list: Vec<_> = sessions
+            .iter()
+            .filter(|(_, session)| session.username == username && session.expires_at > now)
+            .map(|(id, session)| SessionSummary {
+                id: id.clone(),
+                provider: session.provider.clone(),
+                created_at: session.created_at,
+                expires_at: session.expires_at,
+                shared: session.shared,
+            })
+            .collect();
+        list.sort_by(|left, right| {
+            right
+                .created_at
+                .cmp(&left.created_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(list)
+    }
+
+    pub fn revoke_for_user(&self, id: &str, username: &str) -> io::Result<bool> {
+        let mut revoked = false;
+        self.mutate(|sessions| {
+            if sessions
+                .get(id)
+                .is_some_and(|session| session.username == username)
+            {
+                sessions.remove(id);
+                revoked = true;
+            }
+            Ok(())
+        })?;
+        Ok(revoked)
+    }
+
+    pub fn revoke_others(&self, username: &str, keep: &str) -> io::Result<usize> {
+        let mut revoked = 0;
+        self.mutate(|sessions| {
+            let before = sessions.len();
+            sessions.retain(|id, session| session.username != username || id == keep);
+            revoked = before - sessions.len();
+            Ok(())
+        })?;
+        Ok(revoked)
     }
 
     pub fn info(&self, id: &str, username: &str) -> Option<SessionInfo> {
@@ -557,6 +621,49 @@ mod tests {
         std::fs::create_dir(dir.path().join(FILE_NAME)).unwrap();
         assert!(sessions.renew(&id, "river", IDLE).is_err());
         assert_eq!(sessions.info(&id, "river").unwrap().expires_at, before);
+        assert!(sessions.is_active(&other, "cloud"));
+    }
+
+    #[test]
+    fn lists_only_active_sessions_for_the_owner() {
+        let sessions = BrowserSessions::in_memory();
+        let first = sessions.issue("river", None, 3600, false).unwrap();
+        let second = sessions.issue("river", Some("work"), 7200, true).unwrap();
+        let other = sessions.issue("cloud", None, 3600, false).unwrap();
+        let list = sessions.list("river").unwrap();
+        assert_eq!(list.len(), 2);
+        let first_entry = list.iter().find(|entry| entry.id == first).unwrap();
+        assert_eq!(first_entry.provider, None);
+        assert!(!first_entry.shared);
+        let second_entry = list.iter().find(|entry| entry.id == second).unwrap();
+        assert_eq!(second_entry.provider.as_deref(), Some("work"));
+        assert!(second_entry.shared);
+        assert!(second_entry.expires_at > first_entry.expires_at);
+        assert!(list.iter().all(|entry| entry.id != other));
+        assert!(sessions.list("nobody").unwrap().is_empty());
+    }
+
+    #[test]
+    fn revoke_for_user_checks_the_owner_and_reports_not_found() {
+        let sessions = BrowserSessions::in_memory();
+        let id = sessions.issue("river", None, 3600, false).unwrap();
+        assert!(!sessions.revoke_for_user("missing", "river").unwrap());
+        assert!(!sessions.revoke_for_user(&id, "cloud").unwrap());
+        assert!(sessions.is_active(&id, "river"));
+        assert!(sessions.revoke_for_user(&id, "river").unwrap());
+        assert!(!sessions.is_active(&id, "river"));
+        assert!(sessions.list("river").unwrap().is_empty());
+    }
+
+    #[test]
+    fn revoke_others_keeps_the_named_session_and_other_users() {
+        let sessions = BrowserSessions::in_memory();
+        let keep = sessions.issue("river", None, 3600, false).unwrap();
+        let remove = sessions.issue("river", None, 3600, false).unwrap();
+        let other = sessions.issue("cloud", None, 3600, false).unwrap();
+        assert_eq!(sessions.revoke_others("river", &keep).unwrap(), 1);
+        assert!(sessions.is_active(&keep, "river"));
+        assert!(!sessions.is_active(&remove, "river"));
         assert!(sessions.is_active(&other, "cloud"));
     }
 

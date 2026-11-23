@@ -923,3 +923,70 @@ async fn totp_step_up_is_required_for_publications() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn lists_and_revokes_browser_sessions() {
+    let f = Fixture::new();
+    let first = f.login("member", ORIGINAL).await;
+    let second = f.login("member", ORIGINAL).await;
+
+    let (status, list) = f
+        .request("GET", "/session/sessions", &first, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let sessions = list["sessions"].as_array().unwrap();
+    assert!(sessions.len() >= 2);
+    let current = sessions
+        .iter()
+        .find(|session| session["current"] == true)
+        .expect("one current session");
+    let current_id = current["id"].as_str().unwrap().to_owned();
+    let other = sessions
+        .iter()
+        .find(|session| session["current"] == false)
+        .expect("one other session")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let (status, _) = f
+        .request(
+            "DELETE",
+            &format!("/session/sessions/{other}"),
+            &first,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = f.request("GET", "/session", &second, Value::Null).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = f.request("GET", "/session", &first, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, error) = f
+        .request(
+            "DELETE",
+            &format!("/session/sessions/{current_id}"),
+            &first,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    assert_eq!(error["code"], "current_session");
+
+    let third = f.login("member", ORIGINAL).await;
+    let (status, revoked) = f
+        .request(
+            "POST",
+            "/session/sessions/revoke-others",
+            &first,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{revoked}");
+    assert!(revoked["revoked"].as_u64().unwrap() >= 1);
+    let (status, _) = f.request("GET", "/session", &third, Value::Null).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = f.request("GET", "/session", &first, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+}

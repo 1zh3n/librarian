@@ -85,6 +85,9 @@ type RestoreRevision = operations["restoreDocument"]["requestBody"]["content"]["
 type ErrorBody = components["schemas"]["ApiError"];
 type BrowserSession = components["schemas"]["BrowserSession"];
 export type AccountSummary = components["schemas"]["AccountSummary"];
+export type AccountSession = components["schemas"]["AccountSession"];
+type AccountSessionList = components["schemas"]["AccountSessionList"];
+type RevokedSessions = components["schemas"]["RevokedSessions"];
 export type McpSettings = components["schemas"]["McpSettings"];
 export type McpGrant = components["schemas"]["McpGrant"];
 type CreateAccount = components["schemas"]["CreateAccount"];
@@ -463,6 +466,19 @@ export const api = {
   },
   revokeAccountSessions(username: string) {
     return request<void>(`${accountPath(username)}/sessions/revoke`, undefined, { method: "POST" });
+  },
+  listAccountSessions(signal?: AbortSignal) {
+    return request<AccountSessionList>("/session/sessions", signal);
+  },
+  revokeAccountSession(id: string) {
+    return request<void>(`/session/sessions/${encodeURIComponent(id)}`, undefined, {
+      method: "DELETE",
+    });
+  },
+  revokeOtherAccountSessions() {
+    return request<RevokedSessions>("/session/sessions/revoke-others", undefined, {
+      method: "POST",
+    });
   },
   changeOwnPassword(body: ChangeOwnPassword) {
     return request<void>("/session/password", undefined, { method: "PUT", body });

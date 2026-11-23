@@ -9,6 +9,7 @@ import type { AccountSummary } from "../api/client";
 import { sessionQuery } from "../api/queries";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
 import { InviteAdmin } from "../features/settings/InviteAdmin";
+import { Sessions } from "../features/settings/Sessions";
 import { TwoFactor } from "../features/settings/TwoFactor";
 import styles from "../features/workspace/Management.module.css";
 
@@ -361,6 +362,7 @@ export function AccountsRoute() {
             <h2>两步验证</h2>
             <TwoFactor />
           </section>
+          <Sessions />
           {session.data.isAdmin && <AdminAccounts current={session.data.username} />}
         </>
       )}
