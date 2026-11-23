@@ -48,6 +48,13 @@ async function workspaceAsAdmin(page: Page, name = "田野笔记") {
   const workspaces = (await (await page.request.get("/api/v1/workspaces")).json()) as Workspace[];
   const workspace = workspaces.find((space) => space.name === name);
   if (!workspace || !workspace.canManage) throw new Error("Missing managed release fixture");
+  if (workspace.securityLevel !== "public") {
+    const raised = await page.request.patch(`/api/v1/workspaces/${workspace.id}`, {
+      headers: { origin: new URL(page.url()).origin },
+      data: { securityLevel: "public", confirmSecurityDowngrade: true },
+    });
+    expect(raised.status(), await raised.text()).toBe(200);
+  }
   return workspace;
 }
 
