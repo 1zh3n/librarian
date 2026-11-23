@@ -21,7 +21,12 @@
 }
 
 {$LIBRARIAN_DOMAIN} {
-	tls {$LIBRARIAN_ORIGIN_CERT} {$LIBRARIAN_ORIGIN_KEY}
+	tls {$LIBRARIAN_ORIGIN_CERT} {$LIBRARIAN_ORIGIN_KEY} {
+		client_auth {
+			mode require_and_verify
+			trust_pool file {$LIBRARIAN_ORIGIN_PULL_CA:/etc/caddy/origin-pull-ca.pem}
+		}
+	}
 
 	header {
 		Strict-Transport-Security "max-age=86400; includeSubDomains"

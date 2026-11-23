@@ -49,11 +49,12 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates chrony curl git jq sqlite3 ufw unattended-upgrades
+  ca-certificates chrony curl fail2ban git jq sqlite3 ufw unattended-upgrades
 
 systemctl disable --now systemd-timesyncd 2>/dev/null || true
 systemctl enable --now chrony
 systemctl enable --now unattended-upgrades
+systemctl enable --now fail2ban
 
 if ! id librarian >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /var/lib/librarian --shell /usr/sbin/nologin librarian
@@ -85,14 +86,19 @@ EOF
 systemctl restart systemd-journald
 
 if [[ "$HARDEN_SSH" -eq 1 ]]; then
+  if [[ ! -s /root/.ssh/authorized_keys ]]; then
+    echo "Refusing to enable key-only SSH without /root/.ssh/authorized_keys" >&2
+    exit 1
+  fi
   install -d -m 0755 /etc/ssh/sshd_config.d
   cat >/etc/ssh/sshd_config.d/10-librarian.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-PermitRootLogin no
+PermitRootLogin prohibit-password
 EOF
   sshd -t
   systemctl reload ssh
+  echo "SSH now requires a key. Verify a second root key session before closing this one."
 fi
 
 # Fetch Cloudflare ranges, write the Caddy environment, and add firewall rules.

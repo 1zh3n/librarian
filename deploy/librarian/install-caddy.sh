@@ -6,6 +6,8 @@ umask 077
 
 VERSION="2.11.9"
 SHA256="5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb"
+AOP_URL="https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem"
+AOP_SHA256="c14fed0ce5210db0719fea11d1f10b33750dc17d609aeaf47c75e9eff0d7b843"
 ARCH="${CADDY_ARCH:-amd64}"
 URL="https://github.com/caddyserver/caddy/releases/download/v${VERSION}/caddy_${VERSION}_linux_${ARCH}.tar.gz"
 
@@ -30,9 +32,13 @@ printf '%s  %s\n' "$SHA256" "$tmp/caddy.tar.gz" | sha256sum -c -
 tar -xzf "$tmp/caddy.tar.gz" -C "$tmp" caddy
 install -m 0755 "$tmp/caddy" /usr/local/bin/caddy
 
+curl -fsSL --retry 3 -o "$tmp/origin-pull-ca.pem" "$AOP_URL"
+printf '%s  %s\n' "$AOP_SHA256" "$tmp/origin-pull-ca.pem" | sha256sum -c -
+install -m 0644 -o caddy -g caddy "$tmp/origin-pull-ca.pem" /etc/caddy/origin-pull-ca.pem
+
 install -m 0644 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/caddy.service" /etc/systemd/system/caddy.service
 
 systemctl daemon-reload
-echo "Installed Caddy ${VERSION}."
+echo "Installed Caddy ${VERSION} and the Cloudflare origin-pull CA."
 echo "Next: write /etc/librarian/caddy.env and /etc/caddy/Caddyfile, then:"
 echo "  systemctl enable --now caddy"

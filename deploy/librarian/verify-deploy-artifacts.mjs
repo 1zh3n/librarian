@@ -35,6 +35,7 @@ for (const script of [
   "restore.sh",
   "deploy.sh",
   "smoke.sh",
+  "monitor.sh",
   "host-setup.sh",
   "install-caddy.sh",
   "cloudflare-ips.sh",
@@ -76,6 +77,16 @@ expectAll("install-caddy.sh", caddyInstall, [
   'VERSION="2.11.9"',
   'SHA256="5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb"',
   "sha256sum -c -",
+  "origin-pull-ca.pem",
+]);
+
+const caddyfile = read(join(here, "public.Caddyfile"));
+expectAll("public.Caddyfile", caddyfile, [
+  "client_auth",
+  "mode require_and_verify",
+  "trust_pool file {$LIBRARIAN_ORIGIN_PULL_CA:/etc/caddy/origin-pull-ca.pem}",
+  "trusted_proxies_strict",
+  "client_ip_headers CF-Connecting-IP X-Forwarded-For",
 ]);
 
 const backupUnit = read(join(here, "librarian-backup.service"));
@@ -85,8 +96,26 @@ expectAll("librarian-backup.service", backupUnit, [
   "ExecStart=/bin/bash /opt/librarian/current/deploy/librarian/backup.sh",
 ]);
 
-const timer = read(join(here, "librarian-backup.timer"));
-expectAll("librarian-backup.timer", timer, ["OnCalendar=", "Persistent=true", "WantedBy=timers.target"]);
+const backupTimer = read(join(here, "librarian-backup.timer"));
+expectAll("librarian-backup.timer", backupTimer, ["OnCalendar=", "Persistent=true", "WantedBy=timers.target"]);
+
+const monitorUnit = read(join(here, "librarian-monitor.service"));
+expectAll("librarian-monitor.service", monitorUnit, [
+  "Type=oneshot",
+  "EnvironmentFile=-/etc/librarian/alert.env",
+  "ExecStart=/bin/bash /opt/librarian/current/deploy/librarian/monitor.sh",
+]);
+
+const monitorTimer = read(join(here, "librarian-monitor.timer"));
+expectAll("librarian-monitor.timer", monitorTimer, ["OnUnitActiveSec=5min", "WantedBy=timers.target"]);
+
+const hostSetup = read(join(here, "host-setup.sh"));
+expectAll("host-setup.sh", hostSetup, [
+  "fail2ban",
+  "PermitRootLogin prohibit-password",
+  "PasswordAuthentication no",
+  "/root/.ssh/authorized_keys",
+]);
 
 const staging = read(join(root, "scripts", "stage-librarian-release-files.mjs"));
 for (const file of [
@@ -100,6 +129,10 @@ for (const file of [
   "deploy/librarian/librarian-backup.service",
   "deploy/librarian/librarian-backup.timer",
   "deploy/librarian/backup.env.example",
+  "deploy/librarian/monitor.sh",
+  "deploy/librarian/librarian-monitor.service",
+  "deploy/librarian/librarian-monitor.timer",
+  "deploy/librarian/alert.env.example",
   "deploy/librarian/host-setup.sh",
   "deploy/librarian/install-caddy.sh",
   "deploy/librarian/caddy.service",
