@@ -14,12 +14,14 @@ use crate::multi::{
 };
 
 use super::{
+    audit,
     auth::Account,
     contract::ApiError,
     documents::{body, run, DocumentService},
     password_limits::{valid_password, PASSWORD_REQUIREMENTS},
     workspace,
 };
+use crate::auth::totp;
 
 pub(super) fn routes() -> Router<Arc<DocumentService>> {
     Router::new()
@@ -31,6 +33,11 @@ pub(super) fn routes() -> Router<Arc<DocumentService>> {
             post(revoke_sessions),
         )
         .route("/session/password", put(change_password))
+        .route("/session/totp", get(totp_status))
+        .route("/session/totp/start", post(totp_start))
+        .route("/session/totp/verify", post(totp_verify))
+        .route("/session/totp/disable", post(totp_disable))
+        .route("/accounts/{username}/totp/reset", post(reset_totp))
         .route("/workspaces/{workspace}/members", get(list_members))
         .route(
             "/workspaces/{workspace}/members/{username}",
@@ -100,6 +107,18 @@ fn account_error(error: String) -> ApiError {
         )
     } else if error == "SSO accounts do not have local passwords" {
         ApiError::invalid("This account uses an external identity provider")
+    } else if error == "two-factor is already enabled" {
+        ApiError::new(
+            StatusCode::CONFLICT,
+            "totp_already_enabled",
+            "Two-factor authentication is already enabled",
+        )
+    } else if error == "two-factor is not enabled" {
+        ApiError::new(
+            StatusCode::CONFLICT,
+            "totp_not_enabled",
+            "Two-factor authentication is not enabled",
+        )
     } else {
         ApiError::internal(error)
     }
@@ -275,6 +294,194 @@ async fn change_password(
             .set_password_and_revoke_tokens(name, &input.password, Some(&version))
             .map_err(account_error)?;
         attempt.succeeded();
+        Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TotpStatus {
+    enabled: bool,
+    recovery_remaining: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TotpStart {
+    secret: String,
+    uri: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TotpVerify {
+    secret: String,
+    code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TotpEnabled {
+    recovery_codes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TotpDisable {
+    code: String,
+}
+
+async fn totp_status(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+) -> Result<Json<TotpStatus>, ApiError> {
+    let account = browser(&service, &headers, false)?;
+    run(move || {
+        let users = &service.spaces.users;
+        Ok(Json(TotpStatus {
+            enabled: users.totp_enabled(account.username()),
+            recovery_remaining: users.recovery_remaining(account.username()),
+        }))
+    })
+    .await
+}
+
+async fn totp_start(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+) -> Result<Json<TotpStart>, ApiError> {
+    let account = browser(&service, &headers, false)?;
+    run(move || {
+        if service.spaces.users.totp_enabled(account.username()) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "totp_already_enabled",
+                "Two-factor authentication is already enabled",
+            ));
+        }
+        let secret = totp::generate_secret();
+        Ok(Json(TotpStart {
+            uri: totp::otpauth_uri("Librarian", account.username(), &secret),
+            secret,
+        }))
+    })
+    .await
+}
+
+async fn totp_verify(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+    input: Result<Json<TotpVerify>, JsonRejection>,
+) -> Result<Json<TotpEnabled>, ApiError> {
+    let account = browser(&service, &headers, true)?;
+    let input = body(input)?;
+    run(move || {
+        let users = &service.spaces.users;
+        if users.totp_enabled(account.username()) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "totp_already_enabled",
+                "Two-factor authentication is already enabled",
+            ));
+        }
+        let now = chrono::Utc::now().timestamp() as u64;
+        if totp::verify(&input.secret, &input.code, now).is_none() {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "invalid_totp_code",
+                "The verification code is not valid",
+            ));
+        }
+        let (plain, hashed) = totp::generate_recovery_codes(10);
+        users
+            .enable_totp(account.username(), &input.secret, hashed)
+            .map_err(account_error)?;
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(account.username()),
+                workspace: None,
+                action: "account.totp.enable",
+                target: Some(account.username()),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
+        Ok(Json(TotpEnabled {
+            recovery_codes: plain,
+        }))
+    })
+    .await
+}
+
+async fn totp_disable(
+    State(service): State<Arc<DocumentService>>,
+    headers: HeaderMap,
+    input: Result<Json<TotpDisable>, JsonRejection>,
+) -> Result<StatusCode, ApiError> {
+    let account = browser(&service, &headers, true)?;
+    let input = body(input)?;
+    run(move || {
+        let users = &service.spaces.users;
+        let now = chrono::Utc::now().timestamp() as u64;
+        if !users.verify_totp(account.username(), &input.code, now)
+            && !users.verify_recovery_code(account.username(), &input.code)
+        {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "invalid_totp_code",
+                "The verification code is not valid",
+            ));
+        }
+        users
+            .disable_totp(account.username())
+            .map_err(account_error)?;
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(account.username()),
+                workspace: None,
+                action: "account.totp.disable",
+                target: Some(account.username()),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
+        Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+async fn reset_totp(
+    State(service): State<Arc<DocumentService>>,
+    Path(username): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let administrator = administrator(&service, &headers, true)?;
+    run(move || {
+        service
+            .spaces
+            .users
+            .reset_totp(&username)
+            .map_err(account_error)?;
+        audit::record(
+            &service.metadata,
+            audit::Event {
+                actor: Some(administrator.username()),
+                workspace: None,
+                action: "account.totp.reset",
+                target: Some(&username),
+                result: "ok",
+                rule_id: None,
+                request_id: None,
+                metadata: None,
+            },
+        )?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await

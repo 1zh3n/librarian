@@ -4,7 +4,10 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
-use silverbullet_server::multi::users::{Profile, UserStore};
+use silverbullet_server::{
+    auth::{scoped_auth_cookie_name, totp},
+    multi::users::{Profile, UserStore},
+};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -69,13 +72,34 @@ impl Fixture {
     async fn login(&self, username: &str, password: &str) -> String {
         let response = self.login_response(username, password).await;
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
-        response.headers()[header::SET_COOKIE]
-            .to_str()
+        session_cookie(&response)
+    }
+
+    async fn password_challenge(&self, username: &str, password: &str) -> String {
+        let response = self.login_response(username, password).await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        cookie(&response, "totp")
+    }
+
+    async fn totp_submit(
+        &self,
+        challenge: &str,
+        code: &str,
+        next: &str,
+    ) -> axum::response::Response {
+        self.app
+            .clone()
+            .oneshot(
+                Request::post(format!("/.auth/librarian/totp?next={next}"))
+                    .header(header::HOST, HOST)
+                    .header(header::ORIGIN, ORIGIN)
+                    .header(header::COOKIE, challenge)
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(format!("code={code}")))
+                    .unwrap(),
+            )
+            .await
             .unwrap()
-            .split(';')
-            .next()
-            .unwrap()
-            .to_owned()
     }
 
     async fn send(
@@ -429,4 +453,119 @@ async fn workspace_owner_grants_downgrades_and_removes_live_access() {
         f.request("GET", &documents, &member, Value::Null).await.0,
         StatusCode::NOT_FOUND
     );
+}
+
+fn cookie(response: &axum::response::Response, suffix: &str) -> String {
+    let name = scoped_auth_cookie_name(HOST, suffix);
+    for value in response.headers().get_all(header::SET_COOKIE) {
+        let value = value.to_str().unwrap();
+        if value.starts_with(&format!("{name}=")) {
+            return value.split(';').next().unwrap().to_owned();
+        }
+    }
+    panic!("missing {suffix} cookie");
+}
+
+fn session_cookie(response: &axum::response::Response) -> String {
+    let name = scoped_auth_cookie_name(HOST, "");
+    for value in response.headers().get_all(header::SET_COOKIE) {
+        let value = value.to_str().unwrap();
+        if value.starts_with(&format!("{name}=")) {
+            return value.split(';').next().unwrap().to_owned();
+        }
+    }
+    panic!("missing session cookie");
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[tokio::test]
+async fn totp_enrollment_login_wrong_code_and_recovery() {
+    let f = Fixture::new();
+    let cookie = f.login("member", ORIGINAL).await;
+    let (status, start) = f
+        .request("POST", "/session/totp/start", &cookie, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{start}");
+    let secret = start["secret"].as_str().unwrap().to_owned();
+    assert!(start["uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("otpauth://totp/"));
+
+    let code = totp::current_code(&secret, now()).unwrap();
+    let (status, enabled) = f
+        .request(
+            "POST",
+            "/session/totp/verify",
+            &cookie,
+            json!({"secret": secret, "code": code}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{enabled}");
+    let recovery = enabled["recoveryCodes"][0].as_str().unwrap().to_owned();
+    let (status, status_body) = f
+        .request("GET", "/session/totp", &cookie, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status_body["enabled"], true);
+    assert_eq!(status_body["recoveryRemaining"], 10);
+
+    let challenge = f.password_challenge("member", ORIGINAL).await;
+    let response = f.totp_submit(&challenge, &code, "/").await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let session = session_cookie(&response);
+    let (status, _) = f.request("GET", "/session", &session, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let challenge = f.password_challenge("member", ORIGINAL).await;
+    let response = f.totp_submit(&challenge, "not-a-code", "/").await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let challenge = f.password_challenge("member", ORIGINAL).await;
+    let response = f.totp_submit(&challenge, &recovery, "/").await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let challenge = f.password_challenge("member", ORIGINAL).await;
+    let response = f.totp_submit(&challenge, &recovery, "/").await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn administrator_resets_two_factor_and_revokes_sessions() {
+    let f = Fixture::new();
+    let cookie = f.login("member", ORIGINAL).await;
+    let (_, start) = f
+        .request("POST", "/session/totp/start", &cookie, Value::Null)
+        .await;
+    let secret = start["secret"].as_str().unwrap();
+    let code = totp::current_code(secret, now()).unwrap();
+    let (status, _) = f
+        .request(
+            "POST",
+            "/session/totp/verify",
+            &cookie,
+            json!({"secret": secret, "code": code}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let admin = f.login("admin", ORIGINAL).await;
+    let (status, body) = f
+        .request("POST", "/accounts/member/totp/reset", &admin, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, _) = f.request("GET", "/session", &cookie, Value::Null).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let session = f.login("member", ORIGINAL).await;
+    let (status, status_body) = f
+        .request("GET", "/session/totp", &session, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status_body["enabled"], false);
 }

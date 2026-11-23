@@ -149,6 +149,7 @@ pub(crate) fn first_admin(
             account_generation: Some(uuid::Uuid::new_v4().to_string()),
             last_login: None,
             extra: Default::default(),
+            ..Default::default()
         },
     );
     Ok(users)

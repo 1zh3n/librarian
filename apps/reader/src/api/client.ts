@@ -90,6 +90,10 @@ type CreateAccount = components["schemas"]["CreateAccount"];
 type UpdateAccount = components["schemas"]["UpdateAccount"];
 type ReplaceAccountPassword = components["schemas"]["ReplaceAccountPassword"];
 type ChangeOwnPassword = components["schemas"]["ChangeOwnPassword"];
+export type TotpStatus = { enabled: boolean; recoveryRemaining: number };
+export type TotpStart = { secret: string; uri: string };
+export type TotpEnabled = { recoveryCodes: string[] };
+export type TotpVerifyInput = { secret: string; code: string };
 export type WorkspaceMember = components["schemas"]["WorkspaceMember"];
 type SetWorkspaceMember = components["schemas"]["SetWorkspaceMember"];
 
@@ -163,6 +167,8 @@ async function request<T>(
       | UpdateAccount
       | ReplaceAccountPassword
       | ChangeOwnPassword
+      | TotpVerifyInput
+      | { code: string }
       | SetWorkspaceMember
       | components["schemas"]["FileActionUndo"];
   },
@@ -423,6 +429,21 @@ export const api = {
   },
   changeOwnPassword(body: ChangeOwnPassword) {
     return request<void>("/session/password", undefined, { method: "PUT", body });
+  },
+  getTotpStatus(signal?: AbortSignal) {
+    return request<TotpStatus>("/session/totp", signal);
+  },
+  startTotp() {
+    return request<TotpStart>("/session/totp/start", undefined, { method: "POST" });
+  },
+  verifyTotp(body: TotpVerifyInput) {
+    return request<TotpEnabled>("/session/totp/verify", undefined, { method: "POST", body });
+  },
+  disableTotp(body: { code: string }) {
+    return request<void>("/session/totp/disable", undefined, { method: "POST", body });
+  },
+  resetTotp(username: string) {
+    return request<void>(`${accountPath(username)}/totp/reset`, undefined, { method: "POST" });
   },
   listWorkspaceMembers(workspace: string, signal?: AbortSignal) {
     return request<WorkspaceMember[]>(membersPath(workspace), signal);

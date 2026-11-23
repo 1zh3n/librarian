@@ -137,6 +137,34 @@ impl Authenticator {
         self.issue_browser_jwt_for_session(username, credential_version, &id, u64::MAX)
     }
 
+    /// A short-lived token proving the password step succeeded. It is not a
+    /// browser session and `verify_browser_jwt` rejects it.
+    pub fn issue_totp_challenge(
+        &self,
+        username: &str,
+        credential_version: Option<String>,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
+        let claims = Claims {
+            username: username.into(),
+            session_id: None,
+            credential_version,
+            token_use: Some("totp".into()),
+            space: None,
+            aud: None,
+            exp: now_secs().saturating_add(300) as usize,
+        };
+        encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(&self.secret)?,
+        )
+    }
+
+    pub fn verify_totp_challenge(&self, token: &str) -> Option<Claims> {
+        let claims = self.verify_jwt(token).ok()?;
+        (claims.token_use.as_deref() == Some("totp")).then_some(claims)
+    }
+
     /// A JWT for an existing browser session, expiring with the session but
     /// no later than `expiry_secs` from now.
     pub fn issue_browser_jwt_for_session(

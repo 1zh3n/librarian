@@ -127,3 +127,18 @@
   font-size: 0.875rem;
   line-height: 1.5;
 }
+
+.totpHint {
+  margin: 1rem 0 0;
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.back {
+  display: inline-flex;
+  min-block-size: 2.75rem;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 600;
+}

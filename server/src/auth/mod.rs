@@ -21,6 +21,7 @@ pub mod mcp;
 pub mod oauth;
 pub mod oidc;
 pub mod password;
+pub mod totp;
 
 pub use access::{AccessLevel, AccessPolicy, AnonymousFallbackAuthorizer, AuthorizedPolicy};
 pub use authenticator::{Authenticator, RenewedSession, AUTH_FILE_NAME, MULTI_AUTH_FILE_NAME};

@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use silverbullet_server::{
     auth::{
-        cookie::set_cookie_value,
+        cookie::{cookie_value, set_cookie_value},
         is_secure_request,
         mcp::{cimd::CimdFetcher, clients::ClientRegistry, wall_clock, McpOAuthState},
         request_host, request_origin, scoped_auth_cookie_name, CodeStore, CookieOptions,
@@ -34,6 +34,7 @@ use silverbullet_server_mcp::{
 };
 
 const LOGIN_PATH: &str = "/.auth/librarian/login";
+const TOTP_PATH: &str = "/.auth/librarian/totp";
 const CONSENT_STYLES_PATH: &str = "/.auth/librarian/consent.css";
 const CONSENT_PATH: &str = "/.auth/mcp/authorize";
 type McpEnabled = Arc<dyn Fn() -> bool + Send + Sync>;
@@ -94,6 +95,12 @@ pub fn build(root: &Path, bridge: McpBridge) -> Result<(Arc<MultiHost>, Router),
             LOGIN_PATH,
             get(login_page)
                 .post(login_submit)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            TOTP_PATH,
+            get(totp_page_handler)
+                .post(totp_submit)
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
         .with_state(LoginState {
@@ -375,17 +382,21 @@ async fn login_page(State(login): State<LoginState>, Query(query): Query<LoginQu
 }
 
 fn sign_in_page(status: StatusCode, username: &str) -> Response {
-    let Some(page) = reader_asset("login.html") else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    };
-    let Ok(document) = std::str::from_utf8(&page.bytes) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    };
     let state = match status {
         StatusCode::OK => "ready",
         StatusCode::UNAUTHORIZED => "incorrect",
         StatusCode::TOO_MANY_REQUESTS => "limited",
         _ => "unavailable",
+    };
+    auth_page(status, state, username)
+}
+
+fn auth_page(status: StatusCode, state: &str, username: &str) -> Response {
+    let Some(page) = reader_asset("login.html") else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let Ok(document) = std::str::from_utf8(&page.bytes) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let username = username
         .replace('&', "&amp;")
@@ -421,6 +432,11 @@ fn sign_in_page(status: StatusCode, username: &str) -> Response {
 struct Credentials {
     username: String,
     password: String,
+}
+
+enum LoginNext {
+    Session(String),
+    Totp,
 }
 
 async fn login_submit(
@@ -468,6 +484,10 @@ async fn login_submit(
         if !verifier.authorize(&credentials.username, &credentials.password) || version.is_none() {
             return Err(StatusCode::UNAUTHORIZED);
         }
+        if users.totp_enabled(&credentials.username) {
+            attempt.succeeded();
+            return Ok(LoginNext::Totp);
+        }
         let jwt = verifier
             .issue_session(&credentials.username, false)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -476,11 +496,37 @@ async fn login_submit(
             return Err(StatusCode::UNAUTHORIZED);
         }
         attempt.succeeded();
-        Ok(jwt)
+        Ok(LoginNext::Session(jwt))
     })
     .await;
     let token = match token {
-        Ok(Ok(token)) => token,
+        Ok(Ok(LoginNext::Session(token))) => token,
+        Ok(Ok(LoginNext::Totp)) => {
+            let Ok(challenge) = login.manager.issue_totp_challenge(&submitted_username) else {
+                return sign_in_page(StatusCode::INTERNAL_SERVER_ERROR, &submitted_username);
+            };
+            let options = CookieOptions {
+                path: "/.auth/librarian".into(),
+                max_age_secs: Some(300),
+                http_only: true,
+                secure: is_secure_request(&headers),
+                same_site: "Lax",
+            };
+            let cookie = set_cookie_value(
+                &scoped_auth_cookie_name(&request_host(&headers), "totp"),
+                &challenge,
+                &options,
+            );
+            let Ok(cookie) = HeaderValue::from_str(&cookie) else {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            };
+            let mut response = Redirect::to(&format!("{TOTP_PATH}?next={target}")).into_response();
+            response.headers_mut().insert(header::SET_COOKIE, cookie);
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            return response;
+        }
         Ok(Err(status)) => return sign_in_page(status, &submitted_username),
         Err(_) => return sign_in_page(StatusCode::INTERNAL_SERVER_ERROR, &submitted_username),
     };
@@ -505,6 +551,166 @@ async fn login_submit(
     };
     let mut response = Redirect::to(target).into_response();
     response.headers_mut().insert(header::SET_COOKIE, cookie);
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+#[derive(Deserialize)]
+struct TotpCode {
+    code: String,
+}
+
+async fn totp_page_handler(
+    State(login): State<LoginState>,
+    Query(query): Query<LoginQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if query.target(&*login.mcp_enabled).is_none() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let host = request_host(&headers);
+    let Some(challenge) = cookie_value(&headers, &scoped_auth_cookie_name(&host, "totp")) else {
+        return auth_page(StatusCode::UNAUTHORIZED, "totp-expired", "");
+    };
+    let Some(claims) = login.manager.verify_totp_challenge(&challenge) else {
+        return auth_page(StatusCode::UNAUTHORIZED, "totp-expired", "");
+    };
+    if login.users.credential_version(&claims.username).as_deref()
+        != claims.credential_version.as_deref()
+    {
+        return auth_page(StatusCode::UNAUTHORIZED, "totp-expired", "");
+    }
+    auth_page(StatusCode::OK, "totp", &claims.username)
+}
+
+async fn totp_submit(
+    State(login): State<LoginState>,
+    Query(query): Query<LoginQuery>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Form(input): Form<TotpCode>,
+) -> Response {
+    let Some(target) = query.target(&*login.mcp_enabled) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let origin = request_origin(&headers);
+    if headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        != Some(origin.as_str())
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let host = request_host(&headers);
+    let cookie_name = scoped_auth_cookie_name(&host, "totp");
+    let Some(challenge) = cookie_value(&headers, &cookie_name) else {
+        return auth_page(StatusCode::UNAUTHORIZED, "totp-expired", "");
+    };
+    let Some(claims) = login.manager.verify_totp_challenge(&challenge) else {
+        return auth_page(StatusCode::UNAUTHORIZED, "totp-expired", "");
+    };
+    if login.users.credential_version(&claims.username).as_deref()
+        != claims.credential_version.as_deref()
+    {
+        return auth_page(StatusCode::UNAUTHORIZED, "totp-expired", "");
+    }
+    let source = client_address(
+        peer.map(|Extension(ConnectInfo(peer))| peer.ip()),
+        login.trust_loopback_proxy,
+        headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok()),
+        headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok()),
+    );
+    let Some(attempt) = login
+        .password_limits
+        .reserve_login(&claims.username, source)
+        .await
+    else {
+        return auth_page(
+            StatusCode::TOO_MANY_REQUESTS,
+            "totp-limited",
+            &claims.username,
+        );
+    };
+    let username = claims.username.clone();
+    let verify_user = username.clone();
+    let code = input.code;
+    let verifier = login.manager.clone();
+    let users = login.users.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let version = users.credential_version(&verify_user);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        if !users.verify_totp(&verify_user, &code, now)
+            && !users.verify_recovery_code(&verify_user, &code)
+        {
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        let jwt = verifier
+            .issue_session(&verify_user, false)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if users.credential_version(&verify_user) != version {
+            let _ = verifier.revoke_browser_session(&jwt);
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        attempt.succeeded();
+        Ok(jwt)
+    })
+    .await;
+    let token = match result {
+        Ok(Ok(token)) => token,
+        Ok(Err(StatusCode::UNAUTHORIZED)) => {
+            return auth_page(StatusCode::UNAUTHORIZED, "totp-incorrect", &username)
+        }
+        Ok(Err(status)) => return auth_page(status, "totp-unavailable", &username),
+        Err(_) => {
+            return auth_page(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "totp-unavailable",
+                &username,
+            )
+        }
+    };
+    let session = CookieOptions {
+        path: "/".into(),
+        max_age_secs: login
+            .manager
+            .cookie_max_age(&token)
+            .and_then(|age| i64::try_from(age).ok()),
+        http_only: true,
+        secure: is_secure_request(&headers),
+        same_site: "Lax",
+    };
+    let session_cookie = set_cookie_value(&scoped_auth_cookie_name(&host, ""), &token, &session);
+    let cleared = set_cookie_value(
+        &cookie_name,
+        "",
+        &CookieOptions {
+            path: "/.auth/librarian".into(),
+            max_age_secs: Some(0),
+            http_only: true,
+            secure: is_secure_request(&headers),
+            same_site: "Lax",
+        },
+    );
+    let (Ok(session_cookie), Ok(cleared)) = (
+        HeaderValue::from_str(&session_cookie),
+        HeaderValue::from_str(&cleared),
+    ) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut response = Redirect::to(target).into_response();
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, session_cookie);
+    response.headers_mut().append(header::SET_COOKIE, cleared);
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

@@ -67,7 +67,7 @@ pub enum SsoAdmissionError {
     Store(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,6 +86,14 @@ pub struct UserEntry {
     pub tokens: BTreeMap<String, TokenEntry>,
     #[serde(default)]
     pub session_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub totp_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub totp_last_step: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recovery_codes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub totp_enrolled_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_generation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -403,6 +411,128 @@ impl UserStore {
         }
     }
 
+    pub fn totp_enabled(&self, username: &str) -> bool {
+        self.read()
+            .users
+            .get(username)
+            .is_some_and(|user| !user.disabled && user.totp_secret.is_some())
+    }
+
+    pub fn enable_totp(
+        &self,
+        username: &str,
+        secret: &str,
+        recovery_hashes: Vec<String>,
+    ) -> Result<(), String> {
+        self.mutate(|config| {
+            let user = config
+                .users
+                .get_mut(username)
+                .filter(|user| !user.disabled)
+                .ok_or_else(|| "Account is unavailable".to_string())?;
+            if user.totp_secret.is_some() {
+                return Err("two-factor is already enabled".into());
+            }
+            user.totp_secret = Some(secret.to_owned());
+            user.totp_last_step = None;
+            user.recovery_codes = recovery_hashes;
+            user.totp_enrolled_at = Some(chrono::Utc::now().timestamp());
+            Ok(())
+        })
+    }
+
+    /// Accepts a TOTP code and records its step so the same code cannot be
+    /// replayed. Wrong or replayed codes leave the user unchanged.
+    pub fn verify_totp(&self, username: &str, code: &str, now: u64) -> bool {
+        let (secret, last_step) = {
+            let guard = self.read();
+            let Some(user) = guard.users.get(username).filter(|user| !user.disabled) else {
+                return false;
+            };
+            let Some(secret) = user.totp_secret.clone() else {
+                return false;
+            };
+            (secret, user.totp_last_step)
+        };
+        let Some(step) = crate::auth::totp::verify(&secret, code, now) else {
+            return false;
+        };
+        if last_step.is_some_and(|last| step <= last) {
+            return false;
+        }
+        self.mutate(|config| {
+            let user = config
+                .users
+                .get_mut(username)
+                .filter(|user| !user.disabled)
+                .ok_or_else(|| "Account is unavailable".to_string())?;
+            user.totp_last_step = Some(step);
+            Ok(())
+        })
+        .is_ok()
+    }
+
+    pub fn verify_recovery_code(&self, username: &str, code: &str) -> bool {
+        let hash = crate::auth::totp::recovery_hash(code);
+        self.mutate(|config| {
+            let user = config
+                .users
+                .get_mut(username)
+                .filter(|user| !user.disabled)
+                .ok_or_else(|| "Account is unavailable".to_string())?;
+            let Some(index) = user.recovery_codes.iter().position(|saved| saved == &hash) else {
+                return Err("recovery code is not available".into());
+            };
+            user.recovery_codes.remove(index);
+            Ok(())
+        })
+        .is_ok()
+    }
+
+    pub fn recovery_remaining(&self, username: &str) -> usize {
+        self.read()
+            .users
+            .get(username)
+            .map_or(0, |user| user.recovery_codes.len())
+    }
+
+    /// Removes two-factor state and invalidates every session and API token.
+    pub fn reset_totp(&self, username: &str) -> Result<(), String> {
+        self.mutate(|config| {
+            let user = config
+                .users
+                .get_mut(username)
+                .ok_or_else(|| format!("no such user {username}"))?;
+            user.totp_secret = None;
+            user.totp_last_step = None;
+            user.recovery_codes.clear();
+            user.totp_enrolled_at = None;
+            user.session_epoch = user.session_epoch.saturating_add(1);
+            user.tokens.clear();
+            Ok(())
+        })
+    }
+
+    /// Self-service disable keeps the current browser session; other sessions
+    /// remain valid until their normal expiry.
+    pub fn disable_totp(&self, username: &str) -> Result<(), String> {
+        self.mutate(|config| {
+            let user = config
+                .users
+                .get_mut(username)
+                .filter(|user| !user.disabled)
+                .ok_or_else(|| "Account is unavailable".to_string())?;
+            if user.totp_secret.is_none() {
+                return Err("two-factor is not enabled".into());
+            }
+            user.totp_secret = None;
+            user.totp_last_step = None;
+            user.recovery_codes.clear();
+            user.totp_enrolled_at = None;
+            Ok(())
+        })
+    }
+
     pub fn record_login(&self, username: &str) -> Result<(), String> {
         self.mutate(|config| {
             let user = config
@@ -539,6 +669,7 @@ impl UserStore {
                     account_generation: Some(uuid::Uuid::new_v4().to_string()),
                     last_login: None,
                     extra: Default::default(),
+                    ..Default::default()
                 },
             );
             Ok(())
@@ -593,6 +724,7 @@ impl UserStore {
                     account_generation: Some(uuid::Uuid::new_v4().to_string()),
                     last_login: None,
                     extra: Default::default(),
+                    ..Default::default()
                 },
             );
             Ok(())

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = ".silverbullet.browser-sessions.json";
 const MAX_SESSIONS: usize = 10_000;
+const ABSOLUTE_SESSION_SECS: u64 = 30 * 24 * 3600;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct BrowserSession {
@@ -96,7 +97,9 @@ impl BrowserSessions {
                     username: username.into(),
                     provider: provider.map(str::to_string),
                     created_at: now,
-                    expires_at: now.saturating_add(idle_secs),
+                    expires_at: now
+                        .saturating_add(idle_secs)
+                        .min(now.saturating_add(ABSOLUTE_SESSION_SECS)),
                     idle_secs,
                     shared,
                 },
@@ -148,7 +151,9 @@ impl BrowserSessions {
         let session = updated
             .get_mut(id)
             .ok_or_else(|| io::Error::other("browser session vanished"))?;
-        session.expires_at = now.saturating_add(idle);
+        session.expires_at = now
+            .saturating_add(idle)
+            .min(session.created_at.saturating_add(ABSOLUTE_SESSION_SECS));
         session.idle_secs = idle;
         let renewed = SessionInfo {
             expires_at: session.expires_at,
@@ -484,10 +489,11 @@ mod tests {
     #[test]
     fn legacy_records_without_idle_fields_load_and_renew_with_the_default() {
         let dir = tempdir().unwrap();
+        let created = now_secs() - 1;
         std::fs::write(
             dir.path().join(FILE_NAME),
             format!(
-                r#"{{"legacy":{{"username":"river","provider":null,"created_at":1,"expires_at":{}}}}}"#,
+                r#"{{"legacy":{{"username":"river","provider":null,"created_at":{created},"expires_at":{}}}}}"#,
                 now_secs() + 3 * DAY
             ),
         )
@@ -498,6 +504,24 @@ mod tests {
         let renewed = sessions.renew("legacy", "river", IDLE).unwrap().unwrap();
         assert!(renewed.expires_at.abs_diff(now_secs() + IDLE) <= 2);
         assert_eq!(renewed.idle_secs, IDLE);
+    }
+
+    #[test]
+    fn renewal_cannot_pass_thirty_days_from_creation() {
+        let dir = tempdir().unwrap();
+        let now = now_secs();
+        let created = now - 29 * DAY;
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            format!(
+                r#"{{"old":{{"username":"river","provider":null,"created_at":{created},"expires_at":{},"idle_secs":{IDLE}}}}}"#,
+                now + DAY
+            ),
+        )
+        .unwrap();
+        let sessions = BrowserSessions::load(dir.path()).unwrap();
+        let renewed = sessions.renew("old", "river", IDLE).unwrap().unwrap();
+        assert!(renewed.expires_at.abs_diff(created + 30 * DAY) <= 2);
     }
 
     #[test]

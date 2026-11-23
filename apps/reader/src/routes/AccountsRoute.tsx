@@ -1,4 +1,5 @@
 import { Button } from "../ui/Button";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Feedback } from "../ui/Feedback";
 import { Form, Field } from "../ui/Forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,6 +8,7 @@ import { api, ApiError } from "../api/client";
 import type { AccountSummary } from "../api/client";
 import { sessionQuery } from "../api/queries";
 import { purgeOfflineReader } from "../features/offline/readerOffline";
+import { TwoFactor } from "../features/settings/TwoFactor";
 import styles from "../features/workspace/Management.module.css";
 
 const accountListKey = ["accounts"] as const;
@@ -164,8 +166,17 @@ function AccountRow({
   onChanged: () => void;
 }) {
   const [resetting, setResetting] = useState(false);
+  const [resettingTotp, setResettingTotp] = useState(false);
   const [notice, setNotice] = useState("");
   const self = account.username === current;
+  const resetTotp = useMutation({
+    mutationFn: () => api.resetTotp(account.username),
+    onSuccess: () => {
+      setNotice("已重置两步验证");
+      setResettingTotp(false);
+      onChanged();
+    },
+  });
   const action = useMutation({
     mutationFn: async (next: "revoke" | "toggle") => {
       if (next === "revoke") {
@@ -218,6 +229,18 @@ function AccountRow({
             >
               {resetting ? "取消重置" : "重置密码"}
             </Button>
+            <Button
+              variant="outline"
+              className={styles.formAction}
+              isDisabled={action.isPending || resetTotp.isPending}
+              onPress={() => {
+                resetTotp.reset();
+                setNotice("");
+                setResettingTotp(true);
+              }}
+            >
+              重置两步验证
+            </Button>
           </>
         )}
         <Button
@@ -239,6 +262,20 @@ function AccountRow({
             }}
           />
         </div>
+      )}
+      {resettingTotp && (
+        <ConfirmDialog
+          title="重置两步验证？"
+          confirmLabel="重置"
+          destructive
+          busy={resetTotp.isPending}
+          error={resetTotp.isError ? "无法重置两步验证。" : undefined}
+          onConfirm={() => resetTotp.mutate()}
+          onCancel={() => setResettingTotp(false)}
+        >
+          账号 {account.username} 的两步验证会被移除，所有会话和 API
+          令牌会被撤销。下次登录只需要密码。
+        </ConfirmDialog>
       )}
       {notice && (
         <Feedback tone="success" className={styles.status}>
@@ -314,6 +351,10 @@ export function AccountsRoute() {
                 await signInAgain();
               }}
             />
+          </section>
+          <section aria-label="两步验证" className={styles.section}>
+            <h2>两步验证</h2>
+            <TwoFactor />
           </section>
           {session.data.isAdmin && <AdminAccounts current={session.data.username} />}
         </>

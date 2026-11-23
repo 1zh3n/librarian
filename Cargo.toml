@@ -48,6 +48,8 @@ axum = "0.8"
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "sync"] }
 jsonwebtoken = { version = "12", default-features = false, features = ["rust_crypto"] }
 sha2 = "0.10"
+sha1 = "0.10"
+data-encoding = "2"
 getrandom = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess", "include-exclude"] }

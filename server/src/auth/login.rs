@@ -154,6 +154,21 @@ impl LoginManager {
         self.issue_session_with_provider(username, shared, Some(provider))
     }
 
+    pub fn issue_totp_challenge(
+        &self,
+        username: &str,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
+        let version = self
+            .credential_version
+            .as_ref()
+            .map(|provider| provider(username));
+        self.authenticator.issue_totp_challenge(username, version)
+    }
+
+    pub fn verify_totp_challenge(&self, token: &str) -> Option<crate::auth::authenticator::Claims> {
+        self.authenticator.verify_totp_challenge(token)
+    }
+
     /// `Max-Age` for the cookie carrying a browser JWT this manager issued:
     /// `None` (ends with the browser) for shared sessions.
     pub fn cookie_max_age(&self, jwt: &str) -> Option<u64> {

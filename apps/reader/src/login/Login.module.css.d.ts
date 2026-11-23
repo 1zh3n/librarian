@@ -10,6 +10,8 @@ declare const styles: {
   readonly reveal: string;
   readonly submit: string;
   readonly error: string;
+  readonly totpHint: string;
+  readonly back: string;
 };
 
 export default styles;
