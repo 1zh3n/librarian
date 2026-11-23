@@ -30,6 +30,12 @@ unset librarian_password
 - [外部项目投递和 docs CLI](delivery.md)
 - [独立 AI 执行器](ai-runner.md)
 - [内网 HTTPS 预发布](lan-pre-release.md)
+- [公网部署运行手册](public-deployment.md)
+- [事故响应](incident-response.md)
+
+## 公网部署
+
+公网入口、Cloudflare、systemd、备份和回滚见[公网部署运行手册](public-deployment.md)；账号、入口或数据事故见[事故响应](incident-response.md)。公网放行前必须完成安全等级、敏感信息扫描、MCP 治理和身份加固。
 
 ## 阅读离线副本
 

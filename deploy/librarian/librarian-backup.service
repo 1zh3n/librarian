@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up Librarian data
+After=librarian.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/librarian/backup.env
+ExecStart=/bin/bash /opt/librarian/current/deploy/librarian/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
