@@ -363,6 +363,18 @@ export function AccountsRoute() {
             <h2>两步验证</h2>
             <TwoFactor />
           </section>
+          <section aria-label="授权设备" className={styles.section}>
+            <h2>授权设备</h2>
+            <p className={styles.status}>
+              在手机或墨水屏上选择「在电脑或手机上授权」，然后在这里输入设备码。
+            </p>
+            <Button
+              variant="primary"
+              onPress={() => window.location.assign("/.auth/device")}
+            >
+              打开设备授权页
+            </Button>
+          </section>
           <Sessions />
           {session.data.isAdmin && <AdminAccounts current={session.data.username} />}
           {session.data.isAdmin && <AuditLog />}

@@ -10,14 +10,23 @@ use super::oauth::OAuthError;
 /// The desktop app. Its refresh tokens keep the legacy bare `"refresh"` use.
 pub const APP: &str = "silverbullet-app";
 
+/// The e-ink reader app. Refresh tokens are namespaced to this client.
+pub const READER: &str = "librarian-reader";
+
 /// The only client ids the legacy flows accept.
-pub const LEGACY_CLIENTS: &[&str] = &["silverbullet-app", "silverbullet-cli", "silverbullet-share"];
+pub const LEGACY_CLIENTS: &[&str] = &[
+    "silverbullet-app",
+    "silverbullet-cli",
+    "silverbullet-share",
+    READER,
+];
 
 /// Names shown on the consent page for SilverBullet's own clients
 const KNOWN: &[(&str, &str)] = &[
     (APP, "SilverBullet Desktop"),
     ("silverbullet-cli", "SilverBullet CLI"),
     ("silverbullet-share", "SilverBullet Share"),
+    (READER, "Librarian Reader"),
 ];
 
 /// One of `LEGACY_CLIENTS`.
@@ -100,5 +109,9 @@ mod tests {
         assert_eq!(name("silverbullet-cli"), Some("SilverBullet CLI"));
         assert_eq!(name("silverbullet-app"), Some("SilverBullet Desktop"));
         assert_eq!(name("silverbullet-share"), Some("SilverBullet Share"));
+        assert_eq!(
+            name(crate::auth::client_id::READER),
+            Some("Librarian Reader")
+        );
     }
 }

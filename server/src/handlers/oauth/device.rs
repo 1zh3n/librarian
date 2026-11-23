@@ -183,6 +183,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reader_client_can_issue_device_code() {
+        let (state, _) = login_state();
+        let response = device_post(
+            state,
+            "/.auth/device/code",
+            "client_id=librarian-reader&device_name=Max2".into(),
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(body["user_code"].as_str().unwrap().contains('-'));
+    }
+
+    #[tokio::test]
     async fn device_code_endpoint_rejects_invalid_client_id() {
         let (state, _) = login_state();
         let response = device_post(
