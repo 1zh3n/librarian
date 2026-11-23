@@ -364,3 +364,55 @@ test("starts a long shared collection in the article and focuses the chosen chap
   await expect(heading).toBeInViewport();
   await expect(directory).toHaveAttribute("aria-expanded", "false");
 });
+
+test("requires a TOTP step-up code before publishing", async ({ page }) => {
+  const workspace = await workspaceAsAdmin(page);
+  const { note, commitId } = await deliver(page, workspace.id, "browser-step-up");
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/session/totp", (route) =>
+    route.fulfill({ json: { enabled: true, recoveryRemaining: 10 } }),
+  );
+  await page.route("**/api/v1/session/step-up", (route) =>
+    route.fulfill({ json: { token: "step-up-token", expiresIn: 300 } }),
+  );
+  await page.route("**/api/v1/publications", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 201,
+      json: {
+        id: randomUUID(),
+        workspaceId: workspace.id,
+        targetId: "fixture-zola",
+        documentIds: [note.id],
+        status: "published",
+        sourceCommitId: commitId,
+        publishedCommitId: commitId,
+        url: "https://example.test/step-up-report/",
+        message: null,
+      },
+    });
+  });
+
+  await page.goto(`/workspaces/${workspace.id}/manage`);
+  await page.getByRole("tab", { name: "备份与发布" }).click();
+  await page.getByRole("tab", { name: "站点发布", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Zola 发布" });
+  await expect(panel.getByLabel("验证码或恢复码")).toBeVisible();
+  await panel.getByRole("button", { name: /发布目标/ }).click();
+  await page.getByRole("option", { name: "本地博客" }).click();
+  await panel.getByRole("textbox", { name: "Git 提交 ID" }).fill(commitId);
+  await panel.getByText(note.path, { exact: true }).click();
+
+  await panel.getByRole("button", { name: "确认并发布" }).click();
+  await expect(panel.getByText("请输入验证码或恢复码。")).toBeVisible();
+  expect(submitted).toBeUndefined();
+
+  await panel.getByLabel("验证码或恢复码").fill("123456");
+  await panel.getByRole("button", { name: "确认并发布" }).click();
+  await expect.poll(() => submitted?.stepUpToken).toBe("step-up-token");
+  expect(submitted).toMatchObject({ confirm: true, stepUpToken: "step-up-token" });
+});

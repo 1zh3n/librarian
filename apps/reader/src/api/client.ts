@@ -75,6 +75,7 @@ export type PublicationList =
   operations["listPublications"]["responses"][200]["content"]["application/json"];
 export type CreatePublication = components["schemas"]["CreatePublication"];
 export type Publication = components["schemas"]["Publication"];
+type ConfirmPublication = components["schemas"]["ConfirmPublication"];
 
 type ListOptions = NonNullable<operations["listDocuments"]["parameters"]["query"]>;
 type CreateDocument = operations["createDocument"]["requestBody"]["content"]["application/json"];
@@ -190,6 +191,7 @@ async function request<T>(
       | CreateSnapshot
       | SaveBackupSettings
       | CreatePublication
+      | ConfirmPublication
       | CreateAccount
       | UpdateAccount
       | ReplaceAccountPassword
@@ -652,9 +654,10 @@ export const api = {
   createPublication(body: CreatePublication) {
     return request<Publication>("/publications", undefined, { method: "POST", body });
   },
-  confirmPublication(id: string) {
+  confirmPublication(id: string, stepUpToken?: string) {
     return request<Publication>(`/publications/${encodeURIComponent(id)}/confirm`, undefined, {
       method: "POST",
+      body: stepUpToken ? { stepUpToken } : {},
     });
   },
   listSnapshots(workspace: string, signal?: AbortSignal) {

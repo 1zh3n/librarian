@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { api } from "../../api/client";
+import { api, ApiError } from "../../api/client";
 import type {
   CreatePublication,
   DocumentSummary,
@@ -32,6 +32,13 @@ export function PublicationPanel({
     queryKey: key,
     queryFn: ({ signal }) => api.listPublications(workspace, signal),
   });
+  const totp = useQuery({
+    queryKey: ["totp", "status"],
+    queryFn: ({ signal }) => api.getTotpStatus(signal),
+  });
+  const totpEnabled = totp.data?.enabled ?? false;
+  const [stepUpCode, setStepUpCode] = useState("");
+  const [stepUpError, setStepUpError] = useState("");
   const [targetId, setTargetId] = useState("");
   const [commit, setCommit] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -52,27 +59,63 @@ export function PublicationPanel({
   }
 
   const publish = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      let stepUpToken: string | undefined;
+      if (totpEnabled) {
+        stepUpToken = (await api.stepUp(stepUpCode)).token;
+      }
       const input = {
         workspaceId: workspace,
         targetId,
         commitId: commit.trim(),
         documentIds,
         confirm: true,
-      } satisfies Omit<CreatePublication, "operationId">;
+      } satisfies Omit<CreatePublication, "operationId" | "stepUpToken">;
       const signature = JSON.stringify(input);
       const id = previous.current?.signature === signature ? previous.current.id : operationId();
       previous.current = { signature, id };
-      return api.createPublication({ ...input, operationId: id });
+      return api.createPublication({
+        ...input,
+        operationId: id,
+        ...(stepUpToken ? { stepUpToken } : {}),
+      });
     },
     onSuccess: (result) => {
+      setStepUpCode("");
+      setStepUpError("");
       if (result.status === "published") previous.current = undefined;
       remember(result);
     },
+    onError: (error) => {
+      if (
+        error instanceof ApiError &&
+        (error.code === "invalid_totp_code" || error.code === "totp_required")
+      ) {
+        setStepUpError(error.message);
+      }
+    },
   });
   const confirm = useMutation({
-    mutationFn: (id: string) => api.confirmPublication(id),
-    onSuccess: remember,
+    mutationFn: async (id: string) => {
+      let stepUpToken: string | undefined;
+      if (totpEnabled) {
+        stepUpToken = (await api.stepUp(stepUpCode)).token;
+      }
+      return api.confirmPublication(id, stepUpToken);
+    },
+    onSuccess: (result) => {
+      setStepUpCode("");
+      setStepUpError("");
+      remember(result);
+    },
+    onError: (error) => {
+      if (
+        error instanceof ApiError &&
+        (error.code === "invalid_totp_code" || error.code === "totp_required")
+      ) {
+        setStepUpError(error.message);
+      }
+    },
   });
 
   const choices = targets.data?.targets.map(({ id, label }) => ({ value: id, label })) ?? [];
@@ -85,9 +128,36 @@ export function PublicationPanel({
   const ready =
     choices.some((choice) => choice.value === targetId) && commit.trim() && documentIds.length > 0;
 
+  function requireStepUpCode() {
+    if (totpEnabled && !stepUpCode.trim()) {
+      setStepUpError("请输入验证码或恢复码。");
+      return false;
+    }
+    setStepUpError("");
+    return true;
+  }
+
   return (
     <section aria-label="Zola 发布" className={styles.section}>
       <h3>Zola 发布</h3>
+      {totpEnabled && (
+        <Field
+          className={styles.field}
+          inputClassName={styles.input}
+          label="验证码或恢复码"
+          value={stepUpCode}
+          onChange={(value) => {
+            setStepUpCode(value);
+            setStepUpError("");
+          }}
+          autoComplete="one-time-code"
+        />
+      )}
+      {stepUpError && (
+        <Feedback tone="error" className={styles.status}>
+          {stepUpError}
+        </Feedback>
+      )}
       {targets.isPending && <Feedback className={styles.status}>正在读取发布目标…</Feedback>}
       {targets.isError && (
         <Feedback tone="error" className={styles.status}>
@@ -106,7 +176,7 @@ export function PublicationPanel({
           aria-label="选择发布版本"
           onSubmit={(event) => {
             event.preventDefault();
-            if (ready && !busy) publish.mutate();
+            if (ready && !busy && requireStepUpCode()) publish.mutate();
           }}
         >
           <Select
@@ -183,7 +253,9 @@ export function PublicationPanel({
                     variant="outline"
                     className={styles.formAction}
                     isDisabled={busy}
-                    onPress={() => confirm.mutate(result.id)}
+                    onPress={() => {
+                      if (requireStepUpCode()) confirm.mutate(result.id);
+                    }}
                   >
                     {confirm.isPending && confirm.variables === result.id
                       ? "正在发布…"

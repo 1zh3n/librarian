@@ -871,7 +871,17 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPublication"
+              }
+            }
+          }
+        }
       }
     },
     "/health": {
@@ -6514,6 +6524,10 @@
           "confirm": {
             "type": "boolean",
             "default": false
+          },
+          "stepUpToken": {
+            "type": "string",
+            "description": "Short-lived step-up token when TOTP is enabled."
           }
         }
       },
@@ -10460,6 +10474,15 @@
           },
           "commitId": {
             "type": "string"
+          }
+        }
+      },
+      "ConfirmPublication": {
+        "type": "object",
+        "properties": {
+          "stepUpToken": {
+            "type": "string",
+            "description": "Short-lived step-up token when TOTP is enabled."
           }
         }
       }

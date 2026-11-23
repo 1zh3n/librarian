@@ -857,3 +857,69 @@ async fn totp_step_up_is_required_for_anonymous_shares() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
 }
+
+#[tokio::test]
+async fn totp_step_up_is_required_for_publications() {
+    let f = Fixture::new();
+    let admin = f.login("admin", ORIGINAL).await;
+    let (_, start) = f
+        .request("POST", "/session/totp/start", &admin, Value::Null)
+        .await;
+    let secret = start["secret"].as_str().unwrap().to_owned();
+    let (status, _) = f
+        .request(
+            "POST",
+            "/session/totp/verify",
+            &admin,
+            json!({"secret": secret, "code": totp::current_code(&secret, now()).unwrap()}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let operation = "72a6f960-2014-4093-9be1-5de2bafc78dc";
+    let body = json!({
+        "workspaceId":"missing",
+        "targetId":"missing",
+        "commitId":"0123456789abcdef0123456789abcdef01234567",
+        "documentIds":["missing"],
+        "operationId":operation,
+        "confirm":true
+    });
+    let (status, error) = f
+        .request("POST", "/publications", &admin, body.clone())
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "step_up_required");
+
+    let (status, error) = f
+        .request("POST", "/publications/missing/confirm", &admin, json!({}))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "step_up_required");
+
+    let (_, step) = f
+        .request(
+            "POST",
+            "/session/step-up",
+            &admin,
+            json!({"code": totp::current_code(&secret, now()).unwrap()}),
+        )
+        .await;
+    let token = step["token"].as_str().unwrap();
+
+    let mut confirmed = body;
+    confirmed["stepUpToken"] = json!(token);
+    let (status, error) = f.request("POST", "/publications", &admin, confirmed).await;
+    assert_ne!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_ne!(error["code"], "step_up_required");
+
+    let (status, _) = f
+        .request(
+            "POST",
+            "/publications/missing/confirm",
+            &admin,
+            json!({"stepUpToken":token}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

@@ -1608,6 +1608,8 @@ export interface components {
       operationId: string;
       /** @default false */
       confirm: boolean;
+      /** @description Short-lived step-up token when TOTP is enabled. */
+      stepUpToken?: string;
     };
     Publication: {
       /** Format: uuid */
@@ -2599,6 +2601,10 @@ export interface components {
       operationId: string;
       commitId: string;
     };
+    ConfirmPublication: {
+      /** @description Short-lived step-up token when TOTP is enabled. */
+      stepUpToken?: string;
+    };
   };
   responses: {
     /** @description Sign-in required */
@@ -3265,7 +3271,11 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConfirmPublication"];
+      };
+    };
     responses: {
       /** @description Success */
       200: {

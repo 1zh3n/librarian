@@ -67,6 +67,8 @@ pub(super) struct PublicationRequest {
     pub(super) operation_id: String,
     #[serde(default)]
     pub(super) confirm: bool,
+    #[serde(default, skip_serializing)]
+    pub(super) step_up_token: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -198,6 +200,13 @@ async fn create(
 ) -> Result<(StatusCode, Json<PublicationView>), ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, true)?;
     let request = body(request)?;
+    if request.confirm {
+        super::auth::require_step_up_if_enrolled(
+            &service.spaces,
+            &account,
+            request.step_up_token.as_deref(),
+        )?;
+    }
     run(move || {
         let confirm = request.confirm;
         if confirm {
@@ -235,12 +244,33 @@ async fn read(
     .await
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ConfirmPublication {
+    #[serde(default)]
+    step_up_token: Option<String>,
+}
+
 async fn confirm(
     State(service): State<Arc<DocumentService>>,
     Path(id): Path<String>,
     headers: HeaderMap,
+    bytes: axum::body::Bytes,
 ) -> Result<Json<PublicationView>, ApiError> {
     let account = Account::authenticate(&service.spaces, &headers, true)?;
+    let input = if bytes.is_empty() || bytes.as_ref() == b"null" {
+        ConfirmPublication {
+            step_up_token: None,
+        }
+    } else {
+        serde_json::from_slice(&bytes)
+            .map_err(|_| ApiError::invalid("Expected a JSON confirmation body"))?
+    };
+    super::auth::require_step_up_if_enrolled(
+        &service.spaces,
+        &account,
+        input.step_up_token.as_deref(),
+    )?;
     run(move || {
         let _gate = PUBLICATION_GATE.lock().map_err(ApiError::internal)?;
         Ok(Json(execute(&service, &account, &id)?.view()))
@@ -287,6 +317,7 @@ fn propose(
 ) -> Result<(bool, Journal), ApiError> {
     validate(&request)?;
     request.confirm = false;
+    request.step_up_token = None;
     request.commit_id.make_ascii_lowercase();
     let (instance, _) = service.scope(account, &request.workspace_id, true)?;
     if let Some(journal) = Journal::read(&service.metadata, &request.operation_id)? {
