@@ -6837,6 +6837,11 @@
             "type": "string",
             "description": "Content policy rule that blocked the request."
           },
+          "retryAfter": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Seconds to wait before retrying a rate-limited request."
+          },
           "currentRevision": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"

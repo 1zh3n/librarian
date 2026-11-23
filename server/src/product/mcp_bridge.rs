@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use axum::http::{HeaderMap, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -20,17 +23,84 @@ use super::{
     workspace,
 };
 
+const MAX_RATE_KEYS: usize = 4096;
+const RATE_WINDOW_SECS: u64 = 60;
+const READ_LIMIT: u32 = 120;
+const WRITE_LIMIT: u32 = 30;
+const UPLOAD_LIMIT: u32 = 10;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum RateClass {
+    Read,
+    Write,
+    Upload,
+}
+
+impl RateClass {
+    fn limit(self) -> u32 {
+        match self {
+            Self::Read => READ_LIMIT,
+            Self::Write => WRITE_LIMIT,
+            Self::Upload => UPLOAD_LIMIT,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RateBucket {
+    window: u64,
+    count: u32,
+}
+
+#[derive(Default)]
+struct McpRateLimits {
+    buckets: Mutex<HashMap<(String, RateClass), RateBucket>>,
+}
+
+impl McpRateLimits {
+    fn check(&self, grant: &str, class: RateClass, now: u64) -> Option<u64> {
+        let Ok(mut buckets) = self.buckets.lock() else {
+            return Some(RATE_WINDOW_SECS);
+        };
+        let window = now / RATE_WINDOW_SECS;
+        if buckets.len() >= MAX_RATE_KEYS {
+            buckets.retain(|_, bucket| bucket.window == window);
+            if buckets.len() >= MAX_RATE_KEYS && !buckets.contains_key(&(grant.to_owned(), class)) {
+                return Some(RATE_WINDOW_SECS);
+            }
+        }
+        let bucket = buckets
+            .entry((grant.to_owned(), class))
+            .or_insert(RateBucket { window, count: 0 });
+        if bucket.window != window {
+            bucket.window = window;
+            bucket.count = 0;
+        }
+        if bucket.count >= class.limit() {
+            return Some(RATE_WINDOW_SECS - now % RATE_WINDOW_SECS);
+        }
+        bucket.count = bucket.count.saturating_add(1);
+        None
+    }
+}
+
 /// Product tool adapter for the Librarian MCP server. The caller supplies the
 /// identity and spaces from an OAuth grant validated for the current request.
-pub struct McpBridge(Arc<DocumentService>);
+pub struct McpBridge {
+    service: Arc<DocumentService>,
+    limits: McpRateLimits,
+}
 
 impl McpBridge {
     pub(super) fn new(service: Arc<DocumentService>) -> Self {
-        Self(service)
+        Self {
+            service,
+            limits: McpRateLimits::default(),
+        }
     }
 
     pub fn spaces(&self) -> &NativeSpaces {
-        &self.0.spaces
+        &self.service.spaces
     }
 
     pub async fn call(
@@ -40,9 +110,31 @@ impl McpBridge {
         name: &str,
         arguments: Value,
     ) -> Result<Value, Value> {
-        self.dispatch(username, grant_id, name, arguments)
-            .await
-            .map_err(ApiError::payload)
+        let workspace = tool_workspace(&self.service, name, &arguments)
+            .ok()
+            .flatten();
+        let result = self.dispatch(username, grant_id, name, arguments).await;
+        let (outcome, rule) = match &result {
+            Ok(_) => ("ok", None),
+            Err(error) => ("error", error.rule_id()),
+        };
+        let details = json!({ "grantId": grant_id });
+        if let Err(error) = audit::record(
+            &self.service.metadata,
+            audit::Event {
+                actor: Some(username),
+                workspace: workspace.as_deref(),
+                action: "mcp.tool.call",
+                target: Some(name),
+                result: outcome,
+                rule_id: rule,
+                request_id: None,
+                metadata: Some(&details),
+            },
+        ) {
+            tracing::warn!(?error, "could not record MCP tool call");
+        }
+        result.map_err(ApiError::payload)
     }
 
     async fn dispatch(
@@ -53,14 +145,25 @@ impl McpBridge {
         arguments: Value,
     ) -> Result<Value, ApiError> {
         // Authenticate before revealing whether a workspace is restricted.
-        let grant = super::mcp_operations::live_grant(&self.0, username, grant_id)?;
+        let grant = super::mcp_operations::live_grant(&self.service, username, grant_id)?;
         Account::from_bound_identity(
             self.spaces(),
             username,
             grant.credential_version.as_deref(),
             grant.spaces.iter().cloned().collect(),
         )?;
-        let service = self.0.clone();
+        let service = self.service.clone();
+        let target_workspace = tool_workspace(&service, name, &arguments).ok().flatten();
+        if let Some(retry) = self.limits.check(&grant.id, classify(name), now_secs()) {
+            audit::rate_limited(
+                &service.metadata,
+                Some(username),
+                target_workspace.as_deref(),
+                "mcp",
+                retry,
+            )?;
+            return Err(ApiError::rate_limited(retry));
+        }
 
         if name == "workspace_list" {
             let mut result = self
@@ -70,7 +173,7 @@ impl McpBridge {
             return Ok(result);
         }
 
-        let Some(workspace) = tool_workspace(&service, name, &arguments)? else {
+        let Some(workspace) = target_workspace else {
             return self
                 .dispatch_inner(username, grant_id, name, arguments)
                 .await;
@@ -129,14 +232,14 @@ impl McpBridge {
         name: &str,
         arguments: Value,
     ) -> Result<Value, ApiError> {
-        let grant = super::mcp_operations::live_grant(&self.0, username, grant_id)?;
+        let grant = super::mcp_operations::live_grant(&self.service, username, grant_id)?;
         let account = Account::from_bound_identity(
             self.spaces(),
             username,
             grant.credential_version.as_deref(),
             grant.spaces.iter().cloned().collect(),
         )?;
-        let service = self.0.clone();
+        let service = self.service.clone();
         if name == "workspace_read_asset" {
             let args: AssetReadArgs = arguments_as(arguments)?;
             return super::assets::read_asset(&service, &account, &args.workspace_id, &args.path);
@@ -215,6 +318,23 @@ fn read_tool(name: &str) -> bool {
             | "revision_list"
             | "revision_diff"
     )
+}
+
+fn classify(name: &str) -> RateClass {
+    if matches!(name, "workspace_upload_files" | "workspace_upload_image") {
+        RateClass::Upload
+    } else if read_tool(name) {
+        RateClass::Read
+    } else {
+        RateClass::Write
+    }
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 fn skip_scan_tool(name: &str) -> bool {
@@ -613,4 +733,54 @@ struct RestoreArgs {
     #[serde(default, deserialize_with = "present_revision")]
     base_revision: Option<Option<String>>,
     commit_id: String,
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::{classify, McpRateLimits, RateClass, RATE_WINDOW_SECS};
+
+    #[test]
+    fn read_bucket_blocks_after_its_limit_and_isolates_grants() {
+        let limits = McpRateLimits::default();
+        let now = 1_000_000;
+        for _ in 0..120 {
+            assert_eq!(limits.check("grant-a", RateClass::Read, now), None);
+        }
+        assert_eq!(
+            limits.check("grant-a", RateClass::Read, now),
+            Some(20),
+            "the window ends 20 seconds after the sample instant"
+        );
+        assert_eq!(limits.check("grant-b", RateClass::Read, now), None);
+        assert_eq!(limits.check("grant-a", RateClass::Write, now), None);
+        assert_eq!(
+            limits.check("grant-a", RateClass::Read, now + RATE_WINDOW_SECS),
+            None
+        );
+    }
+
+    #[test]
+    fn upload_bucket_has_its_own_smaller_limit() {
+        let limits = McpRateLimits::default();
+        let now = 60;
+        for _ in 0..10 {
+            assert_eq!(limits.check("grant", RateClass::Upload, now), None);
+        }
+        assert!(limits.check("grant", RateClass::Upload, now).is_some());
+    }
+
+    #[test]
+    fn tool_names_map_to_the_expected_bucket() {
+        assert!(matches!(classify("document_read"), RateClass::Read));
+        assert!(matches!(classify("workspace_list"), RateClass::Read));
+        assert!(matches!(
+            classify("workspace_upload_image"),
+            RateClass::Upload
+        ));
+        assert!(matches!(classify("document_update"), RateClass::Write));
+        assert!(matches!(
+            classify("workspace_request_reorganization"),
+            RateClass::Write
+        ));
+    }
 }

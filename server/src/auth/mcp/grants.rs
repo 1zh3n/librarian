@@ -17,7 +17,11 @@ const FILE_NAME: &str = ".silverbullet.mcp-grants.json";
 const MAX_GRANTS: usize = 10_000;
 /// Live grants one user may hold. `create` refuses past it with
 /// [`io::ErrorKind::QuotaExceeded`] rather than evicting an older app.
-pub const MAX_GRANTS_PER_USER: usize = 50;
+pub const MAX_GRANTS_PER_USER: usize = 20;
+/// A grant expires 90 days after creation no matter how often it is rotated.
+const ABSOLUTE_TTL_SECS: u64 = 90 * 24 * 3600;
+/// A grant with no use for 30 days is treated as abandoned.
+const IDLE_TTL_SECS: u64 = 30 * 24 * 3600;
 /// A client that lost the response to a refresh may retry with the token it
 /// still holds; within this window that is not treated as theft.
 const REUSE_GRACE_SECS: u64 = 30;
@@ -112,7 +116,7 @@ impl GrantStore {
             Err(error) => return Err(error),
         };
         let now = now_secs();
-        grants.retain(|_, grant| grant.expires_at > now);
+        grants.retain(|_, grant| is_live(grant, now));
         persist(&path, &grants)?;
         Ok(Self {
             path,
@@ -175,7 +179,7 @@ impl GrantStore {
     pub fn get_live(&self, id: &str, now: u64) -> Option<Grant> {
         let guard = self.state.lock().ok()?;
         let grant = guard.as_ref()?.grants.get(id)?;
-        (grant.expires_at > now).then(|| grant.clone())
+        is_live(grant, now).then(|| grant.clone())
     }
 
     /// Redeems refresh generation `presented_gen`. `Ok` carries the grant at
@@ -189,7 +193,8 @@ impl GrantStore {
                 grant.refresh_gen += 1;
                 grant.rotated_at = now;
                 grant.last_used_at = now;
-                grant.expires_at = now + REFRESH_TTL_SECS;
+                grant.expires_at = (now + REFRESH_TTL_SECS)
+                    .min(grant.created_at.saturating_add(ABSOLUTE_TTL_SECS));
                 return Ok((Ok(grant.clone()), true));
             }
             let previous = grant.refresh_gen.checked_sub(1) == Some(presented_gen);
@@ -266,7 +271,7 @@ impl GrantStore {
         state
             .grants
             .values()
-            .filter(|grant| grant.expires_at > now && keep(grant))
+            .filter(|grant| is_live(grant, now) && keep(grant))
             .cloned()
             .collect()
     }
@@ -287,7 +292,7 @@ impl GrantStore {
             .as_mut()
             .ok_or_else(|| io::Error::other("MCP grant store unavailable"))?;
         let mut updated = state.grants.clone();
-        updated.retain(|_, grant| grant.expires_at > now);
+        updated.retain(|_, grant| is_live(grant, now));
         let (result, dirty) = change(&mut updated)?;
         if dirty {
             if let Err(error) = persist(&self.path, &updated) {
@@ -308,6 +313,16 @@ impl GrantStore {
 
 fn same_app(a: &Grant, b: &Grant) -> bool {
     a.username == b.username && a.client_id == b.client_id && a.resource == b.resource
+}
+
+fn is_live(grant: &Grant, now: u64) -> bool {
+    grant.expires_at > now
+        && grant.created_at.saturating_add(ABSOLUTE_TTL_SECS) > now
+        && grant
+            .last_used_at
+            .max(grant.created_at)
+            .saturating_add(IDLE_TTL_SECS)
+            > now
 }
 
 fn user_grant_count(grants: &BTreeMap<String, Grant>, username: &str) -> usize {
@@ -412,7 +427,7 @@ mod tests {
         let rotated = store.rotate(&grant.id, 0, later).unwrap();
         assert_eq!(rotated.refresh_gen, 1);
         assert_eq!(rotated.rotated_at, later);
-        assert_eq!(rotated.expires_at, later + 7_776_000);
+        assert_eq!(rotated.expires_at, now + ABSOLUTE_TTL_SECS);
         let restored = GrantStore::load(dir.path()).unwrap();
         assert_eq!(restored.get_live(&grant.id, later).unwrap().refresh_gen, 1);
     }
@@ -483,6 +498,7 @@ mod tests {
         let store = GrantStore::load(dir.path()).unwrap();
         let now = now_secs();
         let grant = store.create(new_grant("river"), now).unwrap();
+        store.touch(&grant.id, grant.expires_at - 1);
         assert!(store.get_live(&grant.id, grant.expires_at - 1).is_some());
         assert!(store.get_live(&grant.id, grant.expires_at).is_none());
         assert!(!store.has_live_grant_for_client(&grant.client_id, grant.expires_at));
@@ -668,6 +684,32 @@ mod tests {
         let store = GrantStore::load(dir.path()).unwrap();
         assert!(store.create(new_grant("river"), now).is_err());
         assert!(store.get_live(&format!("{:032x}", 0), now).is_some());
+    }
+
+    #[test]
+    fn idle_grants_expire_after_thirty_days() {
+        let dir = tempdir().unwrap();
+        let store = GrantStore::load(dir.path()).unwrap();
+        let now = now_secs();
+        let grant = store.create(new_grant("river"), now).unwrap();
+        assert!(store.get_live(&grant.id, now + IDLE_TTL_SECS - 1).is_some());
+        assert!(store.get_live(&grant.id, now + IDLE_TTL_SECS).is_none());
+        store.touch(&grant.id, now + IDLE_TTL_SECS - 1);
+        assert!(store.get_live(&grant.id, now + IDLE_TTL_SECS + 1).is_some());
+    }
+
+    #[test]
+    fn rotation_cannot_extend_past_the_absolute_expiry() {
+        let dir = tempdir().unwrap();
+        let store = GrantStore::load(dir.path()).unwrap();
+        let now = now_secs();
+        let grant = store.create(new_grant("river"), now).unwrap();
+        store.touch(&grant.id, now + 80 * 24 * 3600);
+        let last_minute = now + ABSOLUTE_TTL_SECS - 1000;
+        let rotated = store.rotate(&grant.id, 0, last_minute).unwrap();
+        assert_eq!(rotated.expires_at, now + ABSOLUTE_TTL_SECS);
+        assert!(store.get_live(&grant.id, last_minute).is_some());
+        assert!(store.get_live(&grant.id, now + ABSOLUTE_TTL_SECS).is_none());
     }
 
     #[test]

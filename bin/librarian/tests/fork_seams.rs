@@ -2660,3 +2660,51 @@ async fn mcp_publish_requires_a_public_workspace() {
         "publication_requires_public_workspace"
     );
 }
+
+#[tokio::test]
+async fn mcp_tool_calls_are_audited_without_content() {
+    let server = Server::boot().await;
+    let session = server.connect("alice", "left").await;
+    let list = server.tool(&session, "workspace_list", json!({})).await;
+    let workspace = list["structuredContent"]["workspaces"][0]["id"]
+        .as_str()
+        .unwrap();
+    let documents = server
+        .tool(&session, "document_list", json!({"workspaceId": workspace}))
+        .await;
+    assert_ne!(documents["isError"], true, "{documents}");
+
+    let db =
+        rusqlite::Connection::open(server.root.path().join(".librarian/metadata.sqlite3")).unwrap();
+    let (actor, action, target, result, metadata): (
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+    ) = db
+        .query_row(
+            "SELECT actor, action, target, result, metadata FROM product_audit
+             WHERE action = 'mcp.tool.call' AND target = 'document_list'
+             ORDER BY id DESC LIMIT 1",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(actor, "alice");
+    assert_eq!(action, "mcp.tool.call");
+    assert_eq!(target, "document_list");
+    assert_eq!(result, "ok");
+    let metadata = metadata.unwrap();
+    assert!(metadata.contains("grantId"), "{metadata}");
+    assert!(!metadata.contains("Same.md"), "{metadata}");
+    assert!(!metadata.contains(LEFT.trim()), "{metadata}");
+}

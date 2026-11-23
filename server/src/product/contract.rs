@@ -22,6 +22,8 @@ struct ErrorBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     rule_id: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    retry_after: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     current_revision: Option<String>,
 }
 
@@ -58,6 +60,7 @@ impl ApiError {
                 code,
                 message,
                 rule_id: None,
+                retry_after: None,
                 current_revision: None,
             },
         }
@@ -70,6 +73,20 @@ impl ApiError {
                 code: "policy_blocked",
                 message: "Content policy blocked this action",
                 rule_id: Some(rule),
+                retry_after: None,
+                current_revision: None,
+            },
+        }
+    }
+
+    pub(crate) fn rate_limited(retry_after: u64) -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            body: ErrorBody {
+                code: "rate_limited",
+                message: "Too many requests; retry later",
+                rule_id: None,
+                retry_after: Some(retry_after),
                 current_revision: None,
             },
         }

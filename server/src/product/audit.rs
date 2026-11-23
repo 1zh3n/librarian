@@ -82,3 +82,26 @@ pub(crate) fn policy_block(
         },
     )
 }
+
+pub(crate) fn rate_limited(
+    metadata: &Metadata,
+    actor: Option<&str>,
+    workspace: Option<&str>,
+    channel: &str,
+    retry_after: u64,
+) -> Result<(), ApiError> {
+    let details = serde_json::json!({ "retryAfter": retry_after });
+    record(
+        metadata,
+        Event {
+            actor,
+            workspace,
+            action: "mcp.rate_limited",
+            target: Some(channel),
+            result: "denied",
+            rule_id: None,
+            request_id: None,
+            metadata: Some(&details),
+        },
+    )
+}

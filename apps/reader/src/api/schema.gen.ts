@@ -1686,6 +1686,8 @@ export interface components {
       message: string;
       /** @description Content policy rule that blocked the request. */
       ruleId?: string;
+      /** @description Seconds to wait before retrying a rate-limited request. */
+      retryAfter?: number;
       currentRevision?: string;
     };
     SearchHit: {
