@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { api } from "../../api/client";
 import type { DocumentSummary } from "../../api/client";
 import { workspaceKeys } from "../../api/queries";
+import { fileName } from "../navigation/fileName";
 import styles from "./DocumentPage.module.css";
 
 function ReferenceList({ title, items }: { title: string; items: readonly DocumentSummary[] }) {
@@ -21,7 +22,7 @@ function ReferenceList({ title, items }: { title: string; items: readonly Docume
                 params={{ workspaceId: item.workspaceId, documentId: item.id }}
                 title={item.path}
               >
-                {item.title}
+                {fileName(item.path)}
               </Link>
             </li>
           ))}

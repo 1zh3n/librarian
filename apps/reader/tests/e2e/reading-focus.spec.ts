@@ -154,7 +154,7 @@ test("selects layout previews and keeps the active tool when resizing the direct
   await createNote(page, "LayoutPresets.md", markdown);
   await page.getByRole("button", { name: "搜索文档" }).click();
   await page.getByRole("searchbox").fill("林间回声");
-  await page.getByRole("option", { name: /林间回声/ }).click();
+  await page.getByRole("option", { name: /02\.md/ }).click();
   const layout = page.getByRole("button", { name: "布局" });
   const directory = page.getByRole("treegrid", { name: "空间目录" });
 
@@ -209,7 +209,7 @@ test("focus layout follows navigation and the old semantic block clears", async 
   await expect(page.getByRole("group", { name: "语义聚焦" })).toBeVisible();
   await page.getByRole("button", { name: "搜索文档" }).click();
   await page.getByRole("searchbox", { name: "搜索文档" }).fill("河岸清晨");
-  await page.getByRole("option", { name: /河岸清晨/ }).click();
+  await page.getByRole("option", { name: /01\.md/ }).click();
   await expect(page.getByRole("heading", { name: "河岸清晨", level: 1 })).toBeVisible();
   await expect(page.getByRole("group", { name: "语义聚焦" })).toBeHidden();
   await expect(page.getByRole("treegrid", { name: "空间目录" })).toBeHidden();

@@ -191,7 +191,12 @@ pub(super) fn snapshot_static_page(
         .documents
         .iter()
         .map(|document| NavItem {
-            title: document.title.clone(),
+            title: document
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&document.path)
+                .to_owned(),
             url: append_query(
                 &format!(
                     "/r/{}/read?documentId={}",

@@ -86,7 +86,8 @@ pub(super) async fn find_documents(
         let state = state(&instance)?;
         let _mutation = product_read(state)?;
         let mut seen = HashSet::new();
-        let mut hits = Vec::new();
+        let mut found = Vec::new();
+        let mut paths = Vec::new();
         for hit in result.items {
             let path = format!("{}.md", hit.page);
             if !is_document_path(&path) || !seen.insert(hit.page) {
@@ -98,15 +99,18 @@ pub(super) async fn find_documents(
             if hit.source_revision.as_deref() != Some(sha256_hex(markdown.as_bytes()).as_str()) {
                 continue;
             }
-            hits.push(SearchHit {
-                document: service.summary_from_markdown(state, &workspace, path, &markdown)?,
-                excerpt: hit.excerpt,
-            });
-            if hits.len() == RESULT_LIMIT {
+            paths.push(path.clone());
+            found.push((path, hit.excerpt));
+            if found.len() == RESULT_LIMIT {
                 break;
             }
         }
-        Ok(hits)
+        let summaries = service.summaries_for_search(state, &workspace, &paths)?;
+        Ok(summaries
+            .into_iter()
+            .zip(found)
+            .map(|(document, (_, excerpt))| SearchHit { document, excerpt })
+            .collect())
     })
     .await
 }

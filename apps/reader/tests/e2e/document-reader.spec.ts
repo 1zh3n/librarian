@@ -56,7 +56,7 @@ test("opens a Chinese search result with the keyboard using the only search entr
   const prompt = page.getByRole("searchbox", { name: "搜索文档" });
   await expect(prompt).toBeFocused();
   await prompt.fill("鸟鸣");
-  await expect(page.getByRole("option", { name: /林间回声/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /02\.md/ })).toBeVisible();
   await expect(page.getByRole("option")).toHaveCount(1);
   await prompt.press("ArrowDown");
   await prompt.press("Enter");
@@ -69,7 +69,7 @@ test("groups recent documents and opens an authorized cross-Workspace result", a
   const search = page.getByRole("button", { name: "搜索文档" });
   await search.click();
   const recent = page.getByRole("group", { name: "最近打开" });
-  await expect(recent.getByRole("option", { name: /河岸清晨/ })).toBeVisible();
+  await expect(recent.getByRole("option", { name: /01\.md/ })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(search).toBeFocused();
 
@@ -77,7 +77,7 @@ test("groups recent documents and opens an authorized cross-Workspace result", a
   await page.getByRole("button", { name: "跨空间", exact: true }).click();
   const input = page.getByRole("searchbox", { name: "搜索文档" });
   await input.fill("另一份鸟鸣");
-  const match = page.getByRole("option", { name: /另一份鸟鸣/ });
+  const match = page.getByRole("option", { name: /01\.md.*另一空间/ });
   await expect(match).toContainText("另一空间");
   await match.click();
   await expect(page.getByRole("heading", { name: "另一份鸟鸣", level: 1 })).toBeVisible();
@@ -102,8 +102,8 @@ test("opens outgoing links and backlinks from the document tools", async ({ page
   }
   await openDocumentTool(page, "引用");
   const panel = page.getByRole("region", { name: "文档引用" });
-  await expect(panel.getByRole("link", { name: "引用本文的草稿" })).toBeVisible();
-  await panel.getByRole("link", { name: "被引资料" }).click();
+  await expect(panel.getByRole("link", { name: "reference-back.md" })).toBeVisible();
+  await panel.getByRole("link", { name: "reference-target.md" }).click();
   await expect(page.getByRole("heading", { name: "被引资料", level: 1 })).toBeVisible();
 });
 

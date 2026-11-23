@@ -4,6 +4,7 @@ import { Collection, Group, Tree, TreeItem, TreeItemContent } from "react-aria-c
 import { Button } from "../Button";
 import { Tooltip, type TooltipPlacement } from "../Tooltip";
 import type { DocumentSummary } from "../../api/client";
+import { fileName } from "../../features/navigation/fileName";
 import styles from "./DirectoryTree.module.css";
 
 type RevealRow = { path: string; mount: (item: HTMLDivElement | null) => (() => void) | undefined };
@@ -40,7 +41,8 @@ function entries(documents: readonly DocumentSummary[], folderPaths: readonly st
   }
   for (const document of documents) {
     const parts = document.path.split("/");
-    const filename = parts.pop() ?? document.path;
+    const filename = fileName(document.path);
+    parts.pop();
     addFolder(parts).push({
       id: document.id,
       name: filename,

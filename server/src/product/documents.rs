@@ -153,20 +153,13 @@ impl DocumentService {
         files
             .into_iter()
             .map(|file| {
-                let size = usize::try_from(file.size).unwrap_or(0).min(METADATA_LIMIT);
-                let title = if size == 0 {
-                    None
-                } else {
-                    state
-                        .space
-                        .read_file_range(&file.name, 0, size)
-                        .ok()
-                        .and_then(|(prefix, _)| title_from_markdown(&prefix))
-                };
                 let id = ids
                     .get(&file.name)
                     .cloned()
                     .ok_or_else(|| ApiError::internal("missing document id"))?;
+                // File navigation shows the file name. Content titles are resolved by
+                // the document/snapshot paths; listing must not read every file prefix.
+                let title = file.name.rsplit('/').next().map(str::to_owned);
                 Ok(summary_with_outline(
                     workspace,
                     id,
@@ -188,6 +181,40 @@ impl DocumentService {
         let id = self.metadata.document_id(workspace, &path)?;
         let title = title_from_markdown(markdown.as_bytes());
         Ok(summary(state, workspace, id, path, title))
+    }
+
+    /// Summaries for search results: file navigation uses the file name, so
+    /// search must not parse a content title or upsert an id per hit.
+    pub(super) fn summaries_for_search(
+        &self,
+        state: &ServerState,
+        workspace: &str,
+        paths: &[String],
+    ) -> Result<Vec<DocumentSummary>, ApiError> {
+        let ids = self.metadata.document_ids(workspace, paths)?;
+        let file_names = state
+            .space
+            .fetch_file_list()?
+            .into_iter()
+            .map(|file| file.name)
+            .collect::<BTreeSet<_>>();
+        paths
+            .iter()
+            .map(|path| {
+                let id = ids
+                    .get(path)
+                    .cloned()
+                    .ok_or_else(|| ApiError::internal("missing document id"))?;
+                let title = path.rsplit('/').next().map(str::to_owned);
+                Ok(summary_with_outline(
+                    workspace,
+                    id,
+                    path.clone(),
+                    title,
+                    file_names.contains(&outline_path(path)),
+                ))
+            })
+            .collect()
     }
 
     pub(super) fn snapshot(

@@ -165,7 +165,7 @@ async fn workspace_search_is_scoped() {
                     .as_str()
                     .unwrap()
                     .ends_with("left-journal.md")
-                    && hit["document"]["title"] == "田野日记"
+                    && hit["document"]["title"] == "left-journal.md"
                     && hit["excerpt"].as_str().unwrap().contains("鸟鸣")
             }),
             "{hits:?}"
@@ -552,6 +552,28 @@ async fn create_refuses_existing_path() {
         fs::read_to_string(f.root.path().join("spaces/left/新建.md")).unwrap(),
         "初稿"
     );
+}
+
+#[tokio::test]
+async fn document_list_uses_file_names_for_navigation() {
+    let f = Fixture::new(false);
+    let workspace = f.workspace("Left").await;
+    let (status, list) = f
+        .request(
+            "GET",
+            &format!("/workspaces/{workspace}/documents"),
+            Some(&f.editor),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let row = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["path"] == "Note.md")
+        .expect("fixture document");
+    assert_eq!(row["title"], "Note.md");
 }
 
 #[tokio::test]

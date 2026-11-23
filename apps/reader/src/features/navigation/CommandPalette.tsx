@@ -14,6 +14,7 @@ import { Dialog } from "../../ui/Dialog";
 import { Icon } from "../../ui/Icon";
 import type { DocumentSummary, SearchHit, Workspace } from "../../api/client";
 import { searchQuery } from "../../api/queries";
+import { fileName } from "./fileName";
 import { recentDocuments } from "./recentDocuments";
 import styles from "./CommandPalette.module.css";
 
@@ -94,7 +95,7 @@ export function CommandPalette({
     if (
       !options.has(document.id) &&
       !recentIds.has(document.id) &&
-      `${document.title} ${document.path}`.toLocaleLowerCase().includes(folded)
+      `${fileName(document.path)} ${document.path}`.toLocaleLowerCase().includes(folded)
     ) {
       options.set(document.id, { document, excerpt: "" });
     }
@@ -106,7 +107,7 @@ export function CommandPalette({
     const detail = excerpt || document.path;
     return {
       id: document.id,
-      title: document.title,
+      title: fileName(document.path),
       detail: across && space ? `${space.name} · ${detail}` : detail,
       icon: "file-text",
       run: () => openDocument(document.id, document.workspaceId),

@@ -145,7 +145,7 @@ test("serves private documents and share snapshots without JavaScript", async ({
     await expect(sharePage.getByRole("navigation", { name: "阅读地址中的文档" })).toBeVisible();
     await expect(sharePage.getByRole("heading", { name: "静态阅读", level: 1 })).toBeVisible();
     await expect(sharePage.getByRole("navigation", { name: "阅读地址中的文档" })).toBeVisible();
-    await expect(sharePage.getByRole("link", { name: "终点" })).toHaveAttribute(
+    await expect(sharePage.getByRole("link", { name: "终点.md" })).toHaveAttribute(
       "href",
       `/r/${share.id}/read?documentId=${second.document.document.id}`,
     );
@@ -158,10 +158,10 @@ test("serves private documents and share snapshots without JavaScript", async ({
       await sharePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     await sharePage.screenshot({ path: "test-results/static-share-1440.png" });
-    await sharePage.getByRole("link", { name: "终点" }).click();
+    await sharePage.getByRole("link", { name: "终点.md" }).click();
     await expect(sharePage.getByRole("heading", { name: "终点", level: 1 })).toBeVisible();
     await expect(sharePage.locator("body")).toContainText("这是终点正文。");
-    await expect(sharePage.getByRole("link", { name: "终点" })).toHaveAttribute(
+    await expect(sharePage.getByRole("link", { name: "终点.md" })).toHaveAttribute(
       "aria-current",
       "page",
     );

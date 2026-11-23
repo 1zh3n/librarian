@@ -10,6 +10,7 @@ import { analyzeMarkdown } from "../markdown/analyze";
 import { ReaderSurface } from "../markdown/ReaderSurface";
 import { isInlineImagePath } from "../markdown/imagePath";
 import { relativeDocumentPath } from "../markdown/relativePath";
+import { fileName } from "../features/navigation/fileName";
 import { Disclosure } from "../ui/Disclosure";
 import styles from "./SnapshotRoute.module.css";
 
@@ -163,7 +164,7 @@ function SnapshotReader({
                   }}
                   aria-current={item.id === document.id ? "page" : false}
                 >
-                  {item.title}
+                  {fileName(item.path)}
                 </Link>
               ))}
             </nav>
