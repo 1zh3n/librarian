@@ -28,6 +28,7 @@ declare const styles: {
   readonly previewBody: string;
   readonly previewTools: string;
   readonly workspaceName: string;
+  readonly securityBadge: string;
   readonly workspaceArrow: string;
 };
 export default styles;

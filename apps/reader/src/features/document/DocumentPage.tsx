@@ -17,6 +17,7 @@ import {
   documentsQuery,
   outlineQuery,
   workspaceKeys,
+  workspacesQuery,
 } from "../../api/queries";
 import { blockAtOffset, captureReaderAnchor, restoreReaderAnchor } from "../../markdown/anchors";
 import type { EditorMountAnchor } from "../../editor/codemirror/adapter";
@@ -154,6 +155,8 @@ function DocumentWorkspace({
   const navigate = useNavigate();
   const { history } = useRouter();
   const documents = useQuery(documentsQuery(workspace)).data;
+  const workspaceInfo = useQuery(workspacesQuery).data?.find((item) => item.id === workspace);
+  const externalAi = workspaceInfo?.capabilities.externalAi ?? true;
   const path = snapshot.document.path;
   const resolveLink = useCallback(
     (href: string) => {
@@ -1346,27 +1349,30 @@ function DocumentWorkspace({
           )}
         </div>
       </div>
-      <DocumentAiPanel open={aiOpen} onClose={closeAi}>
-        <AiPanel
-          key={location.state.__TSR_key}
-          citationDraft={citationDraft}
-          floating
-          active={aiOpen}
-          workspace={workspace}
-          documentId={documentId}
-          documents={documents ?? []}
-          writable={writable}
-          resolveContext={resolveAiContext}
-          returnVisit={returnVisit?.transcript}
-          onSourceVisit={rememberSource}
-        />
-      </DocumentAiPanel>
-      {!aiOpen && (
+      {externalAi && (
+        <DocumentAiPanel open={aiOpen} onClose={closeAi}>
+          <AiPanel
+            key={location.state.__TSR_key}
+            citationDraft={citationDraft}
+            floating
+            active={aiOpen}
+            workspace={workspace}
+            documentId={documentId}
+            documents={documents ?? []}
+            writable={writable}
+            resolveContext={resolveAiContext}
+            returnVisit={returnVisit?.transcript}
+            onSourceVisit={rememberSource}
+          />
+        </DocumentAiPanel>
+      )}
+      {(!aiOpen || !externalAi) && (
         <Button
           ref={aiLauncher}
           className={styles.aiLauncher}
           isIconOnly
-          aria-label="打开文档 AI"
+          aria-label={externalAi ? "打开文档 AI" : "外部 AI 已关闭"}
+          isDisabled={!externalAi}
           onPress={openAi}
         >
           <Icon name="sparkles" />

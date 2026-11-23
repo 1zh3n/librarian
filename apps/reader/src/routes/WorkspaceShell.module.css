@@ -360,3 +360,20 @@
     min-height: 44px;
   }
 }
+
+.securityBadge {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--ink-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.securityBadge[data-level="confidential"],
+.securityBadge[data-level="secret"] {
+  border-color: var(--control-invalid);
+  color: var(--ink);
+}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../../api/client";
 import type { McpGrant, McpSettings } from "../../api/client";
+import { workspacesQuery } from "../../api/queries";
 import { Button } from "../../ui/Button";
 import { CopyButton } from "../../ui/CopyButton";
 import { Dialog } from "../../ui/Dialog";
@@ -74,6 +75,13 @@ export function ConnectionsSettings({
     staleTime: 0,
     queryFn: ({ signal }) => api.listMcpGrants(signal),
   });
+  const workspaces = useQuery({
+    ...workspacesQuery,
+    enabled: active && Boolean(account),
+  });
+  const restrictedWorkspaces = (workspaces.data ?? []).filter(
+    (item) => item.securityLevel === "confidential" || item.securityLevel === "secret",
+  ).length;
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [showOtherClients, setShowOtherClients] = useState(false);
@@ -203,6 +211,11 @@ export function ConnectionsSettings({
           </span>
         </div>
         <p className={styles.detail}>{statusDetail(view)}</p>
+        {restrictedWorkspaces > 0 && (
+          <p className={styles.detail}>
+            受限和高敏空间不会出现在外部 MCP 授权列表；这些空间的正文不会通过 MCP 读取。
+          </p>
+        )}
         {isAdmin && (
           <div className={styles.actions}>
             {!view.disabledByEnv && (

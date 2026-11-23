@@ -9,6 +9,7 @@ import { PublicationPanel } from "../features/release/PublicationPanel";
 import { SnapshotPanel } from "../features/snapshot/SnapshotPanel";
 import { WorkspaceEditor } from "../features/workspace/WorkspaceEditor";
 import { WorkspaceMembers } from "../features/workspace/WorkspaceMembers";
+import { WorkspaceSecurity } from "../features/workspace/WorkspaceSecurity";
 import styles from "../features/workspace/Management.module.css";
 import { Tabs, TabPanel } from "../ui/Tabs";
 
@@ -133,6 +134,10 @@ export function WorkspaceManagementRoute() {
             <section className={styles.section} aria-label="空间设置">
               <h2 id="space">空间设置</h2>
               <WorkspaceEditor current={workspace} />
+            </section>
+            <section className={styles.section} aria-label="安全等级">
+              <h2>安全等级</h2>
+              <WorkspaceSecurity workspace={workspace} />
             </section>
           </TabPanel>
         )}

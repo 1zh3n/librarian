@@ -23,6 +23,13 @@ declare const styles: {
   readonly actions: string;
   readonly result: string;
   readonly tabList: string;
+  readonly security: string;
+  readonly securitySummary: string;
+  readonly securityBadge: string;
+  readonly securityNote: string;
+  readonly capabilities: string;
+  readonly capability: string;
+  readonly securityForm: string;
   readonly tab: string;
 };
 export default styles;

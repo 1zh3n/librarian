@@ -17,6 +17,7 @@ import { ReaderDock } from "../ui/ReaderDock/ReaderDock";
 import { api, ApiError } from "../api/client";
 import type { DevicePreferences, DocumentSnapshot, DocumentSummary } from "../api/client";
 import { documentsQuery, sessionQuery, workspaceKeys, workspacesQuery } from "../api/queries";
+import { securityLevelLabel } from "../features/workspace/securityLabels";
 import { RenameDocumentDialog } from "../features/document/RenameDocumentDialog";
 import { CreateDocumentDialog } from "../features/document/CreateDocumentDialog";
 import { rememberRecentDocument } from "../features/navigation/recentDocuments";
@@ -431,6 +432,15 @@ export function WorkspaceShell() {
             <span className={styles.breadcrumbTitle}>
               {active?.path.split("/").at(-1) ?? workspace?.name}
             </span>
+            {!navigationVisible && workspace && workspace.securityLevel !== "internal" && (
+              <span
+                className={styles.securityBadge}
+                data-level={workspace.securityLevel}
+                title="空间安全等级"
+              >
+                {securityLevelLabel(workspace.securityLevel)}
+              </span>
+            )}
           </div>
           {authenticated && (
             <div className={styles.topActions}>
@@ -543,6 +553,15 @@ export function WorkspaceShell() {
                         className={styles.workspace}
                       >
                         <span className={styles.workspaceName}>{workspace.name}</span>
+                        {workspace.securityLevel !== "internal" && (
+                          <span
+                            className={styles.securityBadge}
+                            data-level={workspace.securityLevel}
+                            title="空间安全等级"
+                          >
+                            {securityLevelLabel(workspace.securityLevel)}
+                          </span>
+                        )}
                         <Icon name="chevron-down" className={styles.workspaceArrow} />
                       </Button>
                     }
