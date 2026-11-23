@@ -383,7 +383,7 @@ test("lists and revokes other browser sessions", async ({ page, browser }, testI
     const remaining = [
       (await second.request.get("/api/v1/session")).status(),
       (await third.request.get("/api/v1/session")).status(),
-    ].sort();
+    ].sort((left, right) => left - right);
     expect(remaining).toEqual([200, 401]);
     expect((await page.request.get("/api/v1/session")).status()).toBe(200);
 

@@ -94,37 +94,15 @@ type CreateAccount = components["schemas"]["CreateAccount"];
 type UpdateAccount = components["schemas"]["UpdateAccount"];
 type ReplaceAccountPassword = components["schemas"]["ReplaceAccountPassword"];
 type ChangeOwnPassword = components["schemas"]["ChangeOwnPassword"];
-export type TotpStatus = { enabled: boolean; recoveryRemaining: number };
-export type TotpStart = { secret: string; uri: string };
-export type TotpEnabled = { recoveryCodes: string[] };
-export type TotpVerifyInput = { secret: string; code: string };
-export type StepUpToken = { token: string; expiresIn: number };
-export type InviteWorkspace = { id: string; name: string };
-export type InvitePreview = {
-  username: string;
-  expiresAt: number;
-  workspaces: InviteWorkspace[];
-};
-export type InviteSummary = {
-  id: string;
-  username: string;
-  admin: boolean;
-  role: "read" | "write";
-  workspaceIds: string[];
-  workspaces: InviteWorkspace[];
-  createdBy: string;
-  createdAt: number;
-  expiresAt: number;
-  acceptedAt: number | null;
-  revoked: boolean;
-};
-export type CreatedInvite = {
-  id: string;
-  username: string;
-  token: string;
-  url: string;
-  expiresAt: number;
-};
+export type TotpStatus = components["schemas"]["TotpStatus"];
+export type TotpStart = components["schemas"]["TotpStart"];
+export type TotpEnabled = components["schemas"]["TotpEnabled"];
+export type TotpVerifyInput = components["schemas"]["TotpVerify"];
+export type StepUpToken = components["schemas"]["StepUpToken"];
+export type InviteWorkspace = components["schemas"]["InviteWorkspace"];
+export type InvitePreview = components["schemas"]["InvitePreview"];
+export type InviteSummary = components["schemas"]["InviteSummary"];
+export type CreatedInvite = components["schemas"]["CreatedInvite"];
 export type WorkspaceMember = components["schemas"]["WorkspaceMember"];
 type SetWorkspaceMember = components["schemas"]["SetWorkspaceMember"];
 
