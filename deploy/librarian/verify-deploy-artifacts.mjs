@@ -30,7 +30,16 @@ function expectAll(label, text, needles) {
   }
 }
 
-for (const script of ["backup.sh", "restore.sh", "deploy.sh", "smoke.sh"]) {
+for (const script of [
+  "backup.sh",
+  "restore.sh",
+  "deploy.sh",
+  "smoke.sh",
+  "host-setup.sh",
+  "install-caddy.sh",
+  "cloudflare-ips.sh",
+  "preflight.sh",
+]) {
   const path = join(here, script);
   const text = read(path);
   if (!text.startsWith("#!/usr/bin/env bash")) fail(`${script} has no bash shebang`);
@@ -49,6 +58,24 @@ expectAll("librarian.service", unit, [
   "StateDirectory=librarian",
   "UMask=0077",
   "Restart=on-failure",
+]);
+
+const caddyUnit = read(join(here, "caddy.service"));
+expectAll("caddy.service", caddyUnit, [
+  "User=caddy",
+  "EnvironmentFile=/etc/librarian/caddy.env",
+  "EnvironmentFile=-/etc/librarian/cloudflare.env",
+  "ExecStart=/usr/local/bin/caddy run",
+  "AmbientCapabilities=CAP_NET_BIND_SERVICE",
+  "NoNewPrivileges=true",
+  "ProtectSystem=strict",
+]);
+
+const caddyInstall = read(join(here, "install-caddy.sh"));
+expectAll("install-caddy.sh", caddyInstall, [
+  'VERSION="2.11.9"',
+  'SHA256="5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb"',
+  "sha256sum -c -",
 ]);
 
 const backupUnit = read(join(here, "librarian-backup.service"));
@@ -73,6 +100,11 @@ for (const file of [
   "deploy/librarian/librarian-backup.service",
   "deploy/librarian/librarian-backup.timer",
   "deploy/librarian/backup.env.example",
+  "deploy/librarian/host-setup.sh",
+  "deploy/librarian/install-caddy.sh",
+  "deploy/librarian/caddy.service",
+  "deploy/librarian/cloudflare-ips.sh",
+  "deploy/librarian/preflight.sh",
   "deploy/librarian/verify-entry-config.mjs",
   "docs/librarian/public-deployment.md",
   "docs/librarian/incident-response.md",

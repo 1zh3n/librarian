@@ -65,6 +65,15 @@ ufw enable
 
 启用自动安全更新、时间同步和 swap（内存小于 4 GB 时至少 2 GB）。
 
+以上步骤可以脚本化，脚本仍要求先核对管理 CIDR：
+
+```bash
+bash deploy/librarian/host-setup.sh --admin-ssh-cidr <ADMIN_IP>/32 --harden-ssh
+bash deploy/librarian/install-caddy.sh
+```
+
+`host-setup.sh` 安装基础包、创建 `librarian` 用户和目录、配置 swap/journald、可选 SSH 加固，并调用 `cloudflare-ips.sh --apply` 写入 Cloudflare 段和 UFW 规则。`install-caddy.sh` 下载固定版本 Caddy 2.11.9（SHA-256 已写死）并安装 systemd 单元。
+
 ## 3. 首次安装
 
 ```bash
@@ -96,6 +105,8 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 ## 4. Caddy
 
 ```bash
+bash deploy/librarian/install-caddy.sh
+
 install -m 0644 deploy/librarian/public.Caddyfile /etc/caddy/Caddyfile
 install -m 0600 /path/to/origin.pem /etc/caddy/origin.pem
 install -m 0600 /path/to/origin.key /etc/caddy/origin.key
@@ -103,20 +114,17 @@ cat >/etc/librarian/caddy.env <<'EOF'
 LIBRARIAN_DOMAIN=app.example.com
 LIBRARIAN_ORIGIN_CERT=/etc/caddy/origin.pem
 LIBRARIAN_ORIGIN_KEY=/etc/caddy/origin.key
-LIBRARIAN_TRUSTED_PROXIES=<空格分隔的 Cloudflare CIDR>
 LIBRARIAN_BACKEND_PORT=8080
 EOF
 chmod 0600 /etc/librarian/caddy.env
 
-install -d /etc/systemd/system/caddy.service.d
-cat >/etc/systemd/system/caddy.service.d/librarian.conf <<'EOF'
-[Service]
-EnvironmentFile=/etc/librarian/caddy.env
-EOF
-systemctl daemon-reload
-
-set -a; . /etc/librarian/caddy.env; set +a
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# 由 cloudflare-ips.sh 写入，Caddy 单元同时读取这个文件。
+cat /etc/librarian/cloudflare.env
+set -a
+. /etc/librarian/caddy.env
+. /etc/librarian/cloudflare.env
+set +a
+/usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 systemctl enable --now caddy
 ```
 
@@ -172,6 +180,7 @@ bash deploy/librarian/deploy.sh /tmp/librarian-0.1.0-linux-x86_64.tar.gz
 ```bash
 bash deploy/librarian/smoke.sh http://127.0.0.1:8080 https://app.example.com
 node deploy/librarian/verify-entry-config.mjs
+bash deploy/librarian/preflight.sh --domain app.example.com --origin-ip <ORIGIN_IP> --local-health
 
 # 源站直连必须失败
 curl --resolve app.example.com:443:<ORIGIN_IP> https://app.example.com/ --max-time 5
@@ -197,6 +206,10 @@ curl -sS -D - -o /dev/null https://app.example.com/ | grep -Ei \
 ## 10. 相关文件
 
 - `deploy/librarian/public.Caddyfile`
+- `deploy/librarian/host-setup.sh`
+- `deploy/librarian/install-caddy.sh`
+- `deploy/librarian/cloudflare-ips.sh`
+- `deploy/librarian/preflight.sh`
 - `deploy/librarian/librarian.service`
 - `deploy/librarian/librarian.env.example`
 - `deploy/librarian/backup.sh`、`restore.sh`、`deploy.sh`、`smoke.sh`
