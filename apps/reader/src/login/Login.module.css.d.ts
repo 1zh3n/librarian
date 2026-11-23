@@ -10,6 +10,7 @@ declare const styles: {
   readonly reveal: string;
   readonly submit: string;
   readonly error: string;
+  readonly qr: string;
   readonly totpHint: string;
   readonly back: string;
 };

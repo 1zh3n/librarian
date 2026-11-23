@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use silverbullet_server::product::router::{
-    build_configured_product_router_with_parser, build_product_router, ProductState,
+    build_configured_product_router_with_parser, build_product_router, ProductState, ShellAuth,
 };
 
 pub fn router() -> Router {
@@ -12,9 +12,14 @@ pub fn router() -> Router {
 }
 
 fn product_state() -> Arc<ProductState> {
+    product_state_with_auth(None)
+}
+
+fn product_state_with_auth(auth: Option<ShellAuth>) -> Arc<ProductState> {
     Arc::new(ProductState {
         version: env!("CARGO_PKG_VERSION"),
         asset: assets::reader_asset,
+        auth,
     })
 }
 
@@ -48,8 +53,12 @@ impl Product {
     fn open_configured(data_root: &Path, port: u16, parser: Option<&Path>) -> Result<Self, String> {
         let spaces = NativeSpaces::open(data_root, port, env!("CARGO_PKG_VERSION"))?;
         let manager = spaces.manager.clone();
+        let shell_auth = ShellAuth {
+            authenticator: spaces.authenticator.clone(),
+            users: spaces.users.clone(),
+        };
         let (product_router, bridge) = build_configured_product_router_with_parser(
-            product_state(),
+            product_state_with_auth(Some(shell_auth)),
             data_root,
             spaces,
             parser,

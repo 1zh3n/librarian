@@ -4,6 +4,7 @@ import { Feedback } from "../ui/Feedback";
 import { Field, Form } from "../ui/Forms";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import qrcode from "qrcode-generator";
 import type { InvitePreview } from "../api/client";
 import "../styles/tokens.css";
 import "../ui/theme.css";
@@ -90,6 +91,16 @@ function Invite({ token }: { token: string }) {
     }
   }
 
+  const setupUri = preview
+    ? `otpauth://totp/${encodeURIComponent(`Librarian:${preview.username}`)}?secret=${secret}&issuer=Librarian&algorithm=SHA1&digits=6&period=30`
+    : "";
+  const qr = qrcode(0, "M");
+  if (setupUri) {
+    qr.addData(setupUri);
+    qr.make();
+  }
+  const qrSrc = setupUri ? qr.createDataURL(5, 2) : "";
+
   if (codes.length > 0) {
     return (
       <main className={login.page}>
@@ -146,8 +157,9 @@ function Invite({ token }: { token: string }) {
                 {preview.workspaces.map((workspace) => workspace.name).join("、") || "（暂无空间）"}
               </p>
             )}
+            {qrSrc && <img className={login.qr} src={qrSrc} alt="TOTP 二维码" />}
             <p className={login.totpHint}>
-              在验证器应用中手动输入密钥：<code>{secret}</code>
+              用验证器扫描二维码，或在验证器中手动输入密钥：<code>{secret}</code>
             </p>
             <Form
               className={login.form}

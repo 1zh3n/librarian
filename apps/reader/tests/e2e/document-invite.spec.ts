@@ -60,6 +60,7 @@ test("accepts an invite and signs in with the new TOTP account", async ({ page }
 
   await page.goto(`/.auth/librarian/invite?token=${invite.token}`);
   await expect(page.getByRole("heading", { name: "接受邀请" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "TOTP 二维码" })).toBeVisible();
   const secret = (await page.locator("p code").first().textContent())?.trim() ?? "";
   expect(secret.length).toBeGreaterThanOrEqual(32);
   await page.getByLabel("设置密码").fill("invite-playwright-password");

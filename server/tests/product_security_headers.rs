@@ -20,6 +20,7 @@ fn app() -> axum::Router {
     build_product_router(Arc::new(ProductState {
         version: "test",
         asset,
+        auth: None,
     }))
 }
 

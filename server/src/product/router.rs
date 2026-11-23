@@ -2,11 +2,16 @@ use std::borrow::Cow;
 use std::{path::Path as FilePath, sync::Arc, time::Duration};
 
 use axum::extract::{OriginalUri, Path, State};
-use axum::http::{header, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde_json::json;
+
+use crate::auth::Authenticator;
+use crate::multi::access::signed_in_user;
+use crate::multi::users::UserStore;
 
 use super::mcp_bridge::McpBridge;
 
@@ -15,9 +20,16 @@ pub struct ProductAsset {
     pub content_type: String,
 }
 
+#[derive(Clone)]
+pub struct ShellAuth {
+    pub authenticator: Arc<Authenticator>,
+    pub users: Arc<UserStore>,
+}
+
 pub struct ProductState {
     pub version: &'static str,
     pub asset: fn(&str) -> Option<ProductAsset>,
+    pub auth: Option<ShellAuth>,
 }
 
 pub fn build_product_router(state: Arc<ProductState>) -> Router {
@@ -122,7 +134,20 @@ async fn api_not_found() -> impl IntoResponse {
     )
 }
 
-async fn index(State(state): State<Arc<ProductState>>, OriginalUri(uri): OriginalUri) -> Response {
+async fn index(
+    State(state): State<Arc<ProductState>>,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+) -> Response {
+    if protected_shell(uri.path()) {
+        if let Some(auth) = &state.auth {
+            if signed_in_user(&auth.authenticator, &auth.users, &headers).is_none() {
+                let next = utf8_percent_encode(uri.path(), NON_ALPHANUMERIC).to_string();
+                return Redirect::to(&format!("/.auth/librarian/login?next={next}"))
+                    .into_response();
+            }
+        }
+    }
     let Some(asset) = (state.asset)("index.html") else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -161,6 +186,11 @@ async fn index(State(state): State<Arc<ProductState>>, OriginalUri(uri): Origina
         body,
     )
         .into_response()
+}
+
+fn protected_shell(path: &str) -> bool {
+    let path = path.trim_end_matches('/');
+    path.is_empty() || path == "/ai" || path == "/accounts" || path.starts_with("/workspaces/")
 }
 
 fn static_reading_href(path: &str) -> Option<String> {

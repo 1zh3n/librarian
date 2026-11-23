@@ -144,6 +144,29 @@ impl Fixture {
             .await
     }
 
+    async fn page(&self, path: &str, cookie: Option<&str>) -> (StatusCode, HeaderMap, String) {
+        let mut request = Request::builder()
+            .method("GET")
+            .uri(path)
+            .header(header::HOST, HOST);
+        if let Some(cookie) = cookie {
+            request = request.header(header::COOKIE, cookie);
+        }
+        let response = self
+            .app
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let (parts, body) = response.into_parts();
+        let bytes = to_bytes(body, 2_000_000).await.unwrap();
+        (
+            parts.status,
+            parts.headers,
+            String::from_utf8_lossy(&bytes).into_owned(),
+        )
+    }
+
     async fn raw(&self, method: &str, path: &str, cookie: &str) -> (StatusCode, HeaderMap, String) {
         let response = self
             .app
@@ -1078,4 +1101,31 @@ async fn administrator_queries_and_exports_audit_events() {
         .request("GET", "/audit?result=unknown", &admin, Value::Null)
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn unauthenticated_shell_redirects_but_shares_stay_public() {
+    let f = Fixture::new();
+    let (status, headers, _) = f.page("/", None).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let location = headers
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap();
+    assert!(
+        location.starts_with("/.auth/librarian/login?next="),
+        "{location}"
+    );
+
+    let (status, _, _) = f.page("/accounts", None).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (status, _, _) = f.page("/workspaces/ws_test", None).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (status, _, _) = f.page("/r/public-share", None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let admin = f.login("admin", ORIGINAL).await;
+    let (status, _, body) = f.page("/", Some(&admin)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("<!doctype html>"));
 }

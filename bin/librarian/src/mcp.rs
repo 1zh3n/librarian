@@ -364,7 +364,7 @@ impl LoginQuery {
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         };
         let known_route = match segments.as_slice() {
-            ["", ""] | ["", "accounts"] => true,
+            ["", ""] | ["", "ai"] | ["", "accounts"] => true,
             ["", "workspaces", workspace] => id(workspace),
             ["", "workspaces", workspace, "ai"] => id(workspace),
             ["", "workspaces", workspace, "manage"] => id(workspace),
