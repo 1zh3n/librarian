@@ -1,0 +1,30 @@
+[Unit]
+Description=Librarian managed AI runner
+After=network-online.target librarian.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=librarian
+Group=librarian
+WorkingDirectory=/var/lib/librarian
+Environment=LIBRARIAN_URL=http://127.0.0.1:8080
+Environment=LIBRARIAN_RUNNER_IDENTITY_FILE=/var/lib/librarian/data/.librarian/managed-runner.json
+ExecStart=/bin/sh -c 'exec /opt/librarian/current/bin/node "$(readlink -f /opt/librarian/current/bin/librarian/runner/runner.mjs)"'
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/librarian/data
+
+[Install]
+WantedBy=multi-user.target

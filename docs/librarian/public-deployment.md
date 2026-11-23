@@ -115,6 +115,22 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 - 备份必须包含 `.librarian/ai-install.key` 和 `.librarian/managed-runner.json`，否则模型密钥和受管执行器无法恢复。
 - 首版不配置 Zola 发布目标。
 
+### 受管 AI 执行器
+
+```bash
+runuser -u librarian -- /opt/librarian/current/librarian runner-enroll \
+  --data-root /var/lib/librarian/data \
+  --identity-file /var/lib/librarian/data/.librarian/managed-runner.json
+install -m 0644 deploy/librarian/librarian-managed-runner.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now librarian-managed-runner
+systemctl is-active librarian-managed-runner
+```
+
+- 系统级单元以 `librarian` 用户运行；`ExecStart` 通过 `readlink -f` 解析 `current` 符号链接，避免 runner 的入口判断失效。
+- 执行器只保存身份文件，供应商密钥在 Reader 的 **设置 → AI** 里录入；执行器在线后管理员再选择模型并启用受管 AI。
+- 升级后执行器会随 `current` 指向的新 release 运行；身份文件留在数据根，不要随 release 删除。
+
 ## 4. Caddy
 
 ```bash
@@ -264,5 +280,6 @@ journalctl -u librarian-monitor.service -n 5 --no-pager
 - `deploy/librarian/monitor.sh`
 - `deploy/librarian/librarian-backup.service`、`librarian-backup.timer`
 - `deploy/librarian/librarian-monitor.service`、`librarian-monitor.timer`、`alert.env.example`
+- `deploy/librarian/librarian-managed-runner.service`
 - `deploy/librarian/verify-entry-config.mjs`
 - [事故响应](incident-response.md)

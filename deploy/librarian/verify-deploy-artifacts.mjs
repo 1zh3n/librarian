@@ -109,6 +109,14 @@ expectAll("librarian-monitor.service", monitorUnit, [
 const monitorTimer = read(join(here, "librarian-monitor.timer"));
 expectAll("librarian-monitor.timer", monitorTimer, ["OnUnitActiveSec=5min", "WantedBy=timers.target"]);
 
+const managedRunner = read(join(here, "librarian-managed-runner.service"));
+expectAll("librarian-managed-runner.service", managedRunner, [
+  "User=librarian",
+  "LIBRARIAN_RUNNER_IDENTITY_FILE=/var/lib/librarian/data/.librarian/managed-runner.json",
+  "bin/librarian/runner/runner.mjs",
+  "NoNewPrivileges=true",
+]);
+
 const hostSetup = read(join(here, "host-setup.sh"));
 expectAll("host-setup.sh", hostSetup, [
   "fail2ban",
@@ -132,6 +140,7 @@ for (const file of [
   "deploy/librarian/monitor.sh",
   "deploy/librarian/librarian-monitor.service",
   "deploy/librarian/librarian-monitor.timer",
+  "deploy/librarian/librarian-managed-runner.service",
   "deploy/librarian/alert.env.example",
   "deploy/librarian/host-setup.sh",
   "deploy/librarian/install-caddy.sh",

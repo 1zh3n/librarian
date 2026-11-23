@@ -35,6 +35,7 @@ export function stageReleaseFiles(root, bundle) {
     "deploy/librarian/monitor.sh",
     "deploy/librarian/librarian-monitor.service",
     "deploy/librarian/librarian-monitor.timer",
+    "deploy/librarian/librarian-managed-runner.service",
     "deploy/librarian/alert.env.example",
     "deploy/librarian/host-setup.sh",
     "deploy/librarian/install-caddy.sh",
