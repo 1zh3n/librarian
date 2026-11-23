@@ -10,7 +10,6 @@
 # The application listens on loopback only. Cloudflare terminates the public TLS
 # connection; Caddy keeps a second TLS hop with an Origin CA certificate and
 # overwrites the forwarding headers after resolving the real client address.
-
 {
 	admin off
 	servers {
