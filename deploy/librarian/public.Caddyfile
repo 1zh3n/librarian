@@ -1,0 +1,45 @@
+# Public entry for Librarian behind Cloudflare.
+#
+# Required environment:
+#   LIBRARIAN_DOMAIN          app.example.com
+#   LIBRARIAN_ORIGIN_CERT     /etc/caddy/origin.pem   (Cloudflare Origin CA)
+#   LIBRARIAN_ORIGIN_KEY      /etc/caddy/origin.key
+#   LIBRARIAN_TRUSTED_PROXIES space-separated Cloudflare CIDRs
+#   LIBRARIAN_BACKEND_PORT    default 8080
+#
+# The application listens on loopback only. Cloudflare terminates the public TLS
+# connection; Caddy keeps a second TLS hop with an Origin CA certificate and
+# overwrites the forwarding headers after resolving the real client address.
+
+{
+	admin off
+	servers {
+		trusted_proxies static {$LIBRARIAN_TRUSTED_PROXIES}
+		trusted_proxies_strict
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+{$LIBRARIAN_DOMAIN} {
+	tls {$LIBRARIAN_ORIGIN_CERT} {$LIBRARIAN_ORIGIN_KEY}
+
+	header {
+		Strict-Transport-Security "max-age=86400; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	request_body {
+		max_size 16MB
+	}
+
+	reverse_proxy 127.0.0.1:{$LIBRARIAN_BACKEND_PORT:8080} {
+		header_up X-Forwarded-Proto https
+		header_up X-Real-IP {http.request.remote.host}
+		header_up X-Forwarded-For {http.request.remote.host}
+		flush_interval -1
+		health_uri /api/v1/health
+		health_interval 30s
+		health_timeout 5s
+	}
+}

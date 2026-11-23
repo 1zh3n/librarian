@@ -12,7 +12,7 @@ const legacyAi = [
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["document-*.spec.ts", "reading-focus.spec.ts"],
+  testMatch: ["document-*.spec.ts", "reading-focus.spec.ts", "security-*.spec.ts"],
   use: { ...devices["Desktop Chrome"], baseURL, trace: "retain-on-failure" },
   projects: [
     { name: "reader", testIgnore: legacyAi },

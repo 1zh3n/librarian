@@ -80,6 +80,15 @@ fn sweep(service: &super::documents::DocumentService) {
     }
 }
 
+/// Headers for the single-page app shell.
+///
+/// `style-src` keeps `'unsafe-inline'` because CodeMirror and React Aria inject
+/// style elements at runtime; scripts stay restricted to same-origin bundles.
+const SHELL_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'";
+const SHELL_REFERRER_POLICY: &str = "no-referrer";
+const SHELL_PERMISSIONS_POLICY: &str =
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+
 fn build(state: Arc<ProductState>, routes: Router) -> Router {
     let api = Router::new()
         .route("/health", get(health))
@@ -137,6 +146,17 @@ async fn index(State(state): State<Arc<ProductState>>, OriginalUri(uri): Origina
             (header::CONTENT_TYPE, asset.content_type.as_str()),
             (header::CACHE_CONTROL, "no-cache"),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::CONTENT_SECURITY_POLICY, SHELL_CSP),
+            (header::REFERRER_POLICY, SHELL_REFERRER_POLICY),
+            (header::X_FRAME_OPTIONS, "DENY"),
+            (
+                header::HeaderName::from_static("permissions-policy"),
+                SHELL_PERMISSIONS_POLICY,
+            ),
+            (
+                header::HeaderName::from_static("cross-origin-resource-policy"),
+                "same-origin",
+            ),
         ],
         body,
     )

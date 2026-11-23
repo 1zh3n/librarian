@@ -191,15 +191,37 @@ impl<K: Eq + Hash> AttemptCounts<K> {
     }
 }
 
+fn parse_forwarded_address(value: &str) -> Option<IpAddr> {
+    // The last entry is the one appended by the trusted proxy closest to us;
+    // earlier entries are client-controlled and must not choose the bucket.
+    value
+        .rsplit(',')
+        .next()?
+        .trim()
+        .parse::<IpAddr>()
+        .ok()
+        .map(|ip| ip.to_canonical())
+}
+
+/// The client address used for per-source login limits.
+///
+/// Forwarding headers are only trusted when the immediate peer is loopback and
+/// the process was started with the loopback-proxy switch. `X-Real-IP` wins over
+/// the last entry of `X-Forwarded-For`; both are overwritten by the trusted
+/// proxy, never accepted from the public client.
 pub fn client_address(
     peer: Option<IpAddr>,
     trust_loopback_proxy: bool,
-    forwarded: Option<&str>,
+    real_ip: Option<&str>,
+    forwarded_for: Option<&str>,
 ) -> Option<IpAddr> {
     let peer = peer?.to_canonical();
     if peer.is_loopback() && trust_loopback_proxy {
-        if let Some(ip) = forwarded.and_then(|value| value.parse::<IpAddr>().ok()) {
-            return Some(ip.to_canonical());
+        if let Some(ip) = real_ip.and_then(parse_forwarded_address) {
+            return Some(ip);
+        }
+        if let Some(ip) = forwarded_for.and_then(parse_forwarded_address) {
+            return Some(ip);
         }
     }
     Some(peer)
@@ -327,25 +349,42 @@ mod tests {
     #[test]
     fn trusted_proxy_source_requires_explicit_loopback_peer() {
         let external: IpAddr = "192.0.2.1".parse().unwrap();
-        let forwarded: IpAddr = "192.0.2.2".parse().unwrap();
+        let real: IpAddr = "192.0.2.2".parse().unwrap();
+        let forwarded: IpAddr = "192.0.2.4".parse().unwrap();
         let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+
         assert_eq!(
-            client_address(Some(external), true, Some("192.0.2.2")),
+            client_address(Some(external), true, Some("192.0.2.2"), Some("192.0.2.3")),
             Some(external)
         );
         assert_eq!(
-            client_address(Some(loopback), true, Some("192.0.2.2")),
+            client_address(Some(loopback), true, Some("192.0.2.2"), None),
+            Some(real)
+        );
+        assert_eq!(
+            client_address(Some(loopback), true, None, Some("192.0.2.3, 192.0.2.4")),
             Some(forwarded)
         );
         assert_eq!(
-            client_address(Some(loopback), false, Some("192.0.2.2")),
-            Some(loopback)
+            client_address(Some(loopback), true, Some("192.0.2.2"), Some("192.0.2.3")),
+            Some(real),
+            "the explicit real-IP header wins over the forwarded chain"
         );
-        assert_eq!(client_address(Some(loopback), true, None), Some(loopback));
         assert_eq!(
-            client_address(Some(loopback), true, Some("192.0.2.1, 192.0.2.2")),
+            client_address(Some(loopback), false, Some("192.0.2.2"), Some("192.0.2.3")),
             Some(loopback)
         );
-        assert_eq!(client_address(None, true, Some("192.0.2.2")), None);
+        assert_eq!(
+            client_address(Some(loopback), true, None, None),
+            Some(loopback)
+        );
+        assert_eq!(
+            client_address(Some(loopback), true, Some("not-an-ip"), Some("also-bad")),
+            Some(loopback)
+        );
+        assert_eq!(
+            client_address(None, true, Some("192.0.2.2"), Some("192.0.2.3")),
+            None
+        );
     }
 }

@@ -448,6 +448,9 @@ async fn login_submit(
         headers
             .get("x-real-ip")
             .and_then(|value| value.to_str().ok()),
+        headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok()),
     );
     let Some(attempt) = login
         .password_limits
