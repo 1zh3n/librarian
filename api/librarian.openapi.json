@@ -6833,6 +6833,10 @@
           "message": {
             "type": "string"
           },
+          "ruleId": {
+            "type": "string",
+            "description": "Content policy rule that blocked the request."
+          },
           "currentRevision": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"

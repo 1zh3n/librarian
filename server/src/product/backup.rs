@@ -20,10 +20,12 @@ use silverbullet_server_common::revision::sha256_hex;
 use uuid::Uuid;
 
 use super::{
+    audit,
     auth::Account,
     contract::ApiError,
     db::Metadata,
     documents::{body, product_read, run, state, DocumentService},
+    security_levels::SecurityLevel,
     workspace,
 };
 
@@ -85,6 +87,8 @@ struct Target {
     repository: String,
     branch: String,
     ssh: Option<Ssh>,
+    #[serde(default)]
+    encrypted: bool,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -569,6 +573,16 @@ fn run_job(
         let current = Settings::load(db, workspace)?;
         let targets = load_targets(db, workspace)?;
         let target = current.selected(&targets)?.clone();
+        let level = workspace::info(db, workspace)?.security_level;
+        let blocked = match level {
+            SecurityLevel::Secret => Some("remote_backup_disabled"),
+            SecurityLevel::Confidential if !target.encrypted => Some("encrypted_backup_required"),
+            _ => None,
+        };
+        if let Some(rule) = blocked {
+            audit::policy_block(db, Some(account.username()), workspace, "backup", rule)?;
+            return Err(ApiError::policy_blocked(rule));
+        }
         let key = target.key()?;
         let existing = match existing {
             Some(job) if job.target_key != key => return Err(target_changed()),

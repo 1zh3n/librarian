@@ -247,6 +247,7 @@ impl Fixture {
             .await;
         assert_eq!(status, StatusCode::OK, "{docs}");
         self.configure(&workspace);
+        set_level(&self.root.path().join("data"), "public");
         (
             workspace,
             docs,
@@ -287,6 +288,15 @@ fn doc(docs: &Value, path: &str) -> String {
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+fn set_level(data: &Path, level: &str) {
+    let db = rusqlite::Connection::open(data.join(".librarian/metadata.sqlite3")).unwrap();
+    db.execute(
+        "UPDATE workspaces SET security_level = ?1 WHERE space_id = 'field'",
+        [level],
+    )
+    .unwrap();
 }
 
 fn confirmation(
@@ -632,4 +642,80 @@ async fn build_failure_is_retryable_and_republication_changes_only_its_owned_fil
         text_git(&f.target, &["show", "main:content/articles/guide/index.md"])
             .contains("Different owner edit")
     );
+}
+
+#[tokio::test]
+async fn publication_requires_a_public_workspace() {
+    let f = Fixture::new();
+    let (workspace, docs, commit) = f.scope().await;
+    set_level(&f.root.path().join("data"), "internal");
+    let selected = [doc(&docs, "notes/Start.md")];
+    let (status, proposal) = f
+        .request(
+            "POST",
+            "/publications",
+            &f.administrator,
+            confirmation(&workspace, &commit, &selected, OPERATION, false),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{proposal}");
+
+    let (status, error) = f
+        .request(
+            "POST",
+            "/publications",
+            &f.administrator,
+            confirmation(&workspace, &commit, &selected, OPERATION, true),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "publication_requires_public_workspace");
+}
+
+#[tokio::test]
+async fn publication_blocks_high_confidence_credentials() {
+    let f = Fixture::new();
+    let (workspace, docs, _) = f.scope().await;
+    let source = f.source();
+    let start = source.join("notes/Start.md");
+    let mut text = fs::read_to_string(&start).unwrap();
+    text.push_str("\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\n");
+    fs::write(&start, text).unwrap();
+    git(&source, &["add", "--", "notes/Start.md"]);
+    git(
+        &source,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "commit",
+            "-qm",
+            "add secret",
+        ],
+    );
+    let commit = text_git(&source, &["rev-parse", "HEAD"]);
+    let selected = [doc(&docs, "notes/Start.md")];
+    let (status, proposal) = f
+        .request(
+            "POST",
+            "/publications",
+            &f.administrator,
+            confirmation(&workspace, &commit, &selected, OPERATION, false),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{proposal}");
+
+    let (status, error) = f
+        .request(
+            "POST",
+            "/publications",
+            &f.administrator,
+            confirmation(&workspace, &commit, &selected, OPERATION, true),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "private_key");
 }

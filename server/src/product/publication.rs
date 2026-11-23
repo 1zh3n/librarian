@@ -21,13 +21,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
+    audit,
     auth::Account,
+    content_policy::{self, Action},
     contract::ApiError,
     db::Metadata,
     documents::{body, product_read, run, state, DocumentService, MARKDOWN_LIMIT},
     revisions::validate_commit,
+    security_levels::SecurityLevel,
     snapshots::{document_blob_at_commit, git_blobs},
-    workspace::require_manage,
+    workspace::{self, require_manage},
 };
 
 static PUBLICATION_GATE: Mutex<()> = Mutex::new(());
@@ -353,6 +356,41 @@ fn execute(service: &DocumentService, account: &Account, id: &str) -> Result<Jou
     if journal.status == "published" {
         return Ok(journal);
     }
+    let details = workspace::info(&service.metadata, &request.workspace_id)?;
+    if details.security_level != SecurityLevel::Public {
+        audit::policy_block(
+            &service.metadata,
+            Some(account.username()),
+            &request.workspace_id,
+            "publication",
+            "publication_requires_public_workspace",
+        )?;
+        return Err(ApiError::policy_blocked(
+            "publication_requires_public_workspace",
+        ));
+    }
+    {
+        let state = state(&instance)?;
+        let _read = product_read(state)?;
+        let (store, repo) = git_blobs::repo(state)?;
+        let commit = git_blobs::resolve_commit(&repo, &request.commit_id)?;
+        if let Some(rule) = publication_block_rule(
+            store,
+            &repo,
+            &commit,
+            &journal.plan.paths,
+            details.security_level,
+        )? {
+            audit::policy_block(
+                &service.metadata,
+                Some(account.username()),
+                &request.workspace_id,
+                "publication",
+                rule,
+            )?;
+            return Err(ApiError::policy_blocked(rule));
+        }
+    }
     let configured = config::get(&service.metadata, &request.workspace_id, &request.target_id)?;
     if configured != journal.plan.target {
         return Err(ApiError::new(
@@ -408,6 +446,26 @@ fn execute(service: &DocumentService, account: &Account, id: &str) -> Result<Jou
         }
     }
     Journal::read(&service.metadata, id)?.ok_or_else(ApiError::not_found)
+}
+
+fn publication_block_rule(
+    store: &crate::revisions::RevisionStore,
+    repo: &std::path::Path,
+    commit: &str,
+    paths: &[String],
+    level: SecurityLevel,
+) -> Result<Option<&'static str>, ApiError> {
+    for path in paths {
+        let oid = git_blobs::find(store, repo, commit, path, MARKDOWN_LIMIT)?
+            .ok_or_else(ApiError::not_found)?;
+        let markdown = git_blobs::read(repo, &oid)?;
+        let text = String::from_utf8_lossy(&markdown);
+        let inspection = content_policy::inspect(&text, level);
+        if inspection.action == Action::Deny {
+            return Ok(Some(inspection.blocking_rule.unwrap_or("content_policy")));
+        }
+    }
+    Ok(None)
 }
 
 fn mark_published(

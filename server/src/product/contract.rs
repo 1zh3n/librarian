@@ -20,6 +20,8 @@ struct ErrorBody {
     code: &'static str,
     message: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    rule_id: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     current_revision: Option<String>,
 }
 
@@ -34,6 +36,10 @@ impl ApiError {
 
     pub(super) fn code(&self) -> &'static str {
         self.body.code
+    }
+
+    pub(super) fn rule_id(&self) -> Option<&'static str> {
+        self.body.rule_id
     }
 
     pub(super) fn is_file_conflict(&self) -> bool {
@@ -51,6 +57,19 @@ impl ApiError {
             body: ErrorBody {
                 code,
                 message,
+                rule_id: None,
+                current_revision: None,
+            },
+        }
+    }
+
+    pub(crate) fn policy_blocked(rule: &'static str) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            body: ErrorBody {
+                code: "policy_blocked",
+                message: "Content policy blocked this action",
+                rule_id: Some(rule),
                 current_revision: None,
             },
         }

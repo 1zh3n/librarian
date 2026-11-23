@@ -37,6 +37,7 @@ pub(crate) struct Inspection {
     pub action: Action,
     pub findings: Vec<Finding>,
     pub redacted: String,
+    pub blocking_rule: Option<&'static str>,
 }
 
 struct Rule {
@@ -195,8 +196,13 @@ pub(crate) fn inspect(text: &str, level: SecurityLevel) -> Inspection {
     findings.sort_unstable_by_key(|finding| (finding.start, finding.end));
 
     let mut action = Action::Allow;
+    let mut blocking_rule = None;
     for finding in &findings {
-        action = action.max(action_for(level, finding.category));
+        let finding_action = action_for(level, finding.category);
+        if finding_action == Action::Deny && blocking_rule.is_none() {
+            blocking_rule = Some(finding.rule);
+        }
+        action = action.max(finding_action);
     }
 
     let redacted = if action == Action::Allow {
@@ -222,6 +228,7 @@ pub(crate) fn inspect(text: &str, level: SecurityLevel) -> Inspection {
         action,
         findings,
         redacted,
+        blocking_rule,
     }
 }
 

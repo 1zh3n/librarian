@@ -22,6 +22,7 @@ Librarian 把 Workspace 的已提交版本备份到部署者指定的专用 Git 
       "workspaceId": "ws_00000000000000000000000000000002",
       "repository": "ssh://git@github.com/example/librarian-reference.git",
       "branch": "workspace-backup",
+      "encrypted": true,
       "ssh": {
         "identityFile": "/etc/librarian/backup-keys/reference",
         "knownHostsFile": "/etc/librarian/backup-keys/known_hosts"
@@ -30,6 +31,13 @@ Librarian 把 Workspace 的已提交版本备份到部署者指定的专用 Git 
   ]
 }
 ```
+
+## 安全等级
+
+- S0 公开、S1 内部：允许配置远端 Git 备份。
+- S2 受限：只允许 `encrypted: true` 的目标。部署者必须确认目标在传输和静态存储上加密，不能只靠 Git 的传输加密。
+- S3 高敏：禁止远端备份，只保留本机数据根归档。
+- `encrypted` 省略时为 `false`；它不会改变目标身份，切换该标记不需要重新选择目标。
 
 本地目标使用独立的裸 Git 仓库，可通过 `git init --bare /srv/backups/manual.git` 创建。SSH 目标使用完整的 `ssh://` 地址、目标仓库的专用写入密钥和预先通过可信渠道核对的主机公钥。私钥及 `known_hosts` 使用绝对路径和普通文件，私钥权限设为 `0600`。服务以批处理模式连接，并校验固定的主机公钥。
 

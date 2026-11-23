@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, Transaction};
 use serde_json::Value;
 
-use super::contract::ApiError;
+use super::{contract::ApiError, db::Metadata};
 
 pub(super) fn migrate(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch(
@@ -54,4 +54,31 @@ pub(crate) fn record_in(connection: &Connection, event: Event<'_>) -> Result<(),
         ],
     )?;
     Ok(())
+}
+
+pub(crate) fn record(metadata: &Metadata, event: Event<'_>) -> Result<(), ApiError> {
+    let connection = metadata.connection()?;
+    record_in(&connection, event)
+}
+
+pub(crate) fn policy_block(
+    metadata: &Metadata,
+    actor: Option<&str>,
+    workspace: &str,
+    channel: &str,
+    rule: &str,
+) -> Result<(), ApiError> {
+    record(
+        metadata,
+        Event {
+            actor,
+            workspace: Some(workspace),
+            action: "policy.blocked",
+            target: Some(channel),
+            result: "denied",
+            rule_id: Some(rule),
+            request_id: None,
+            metadata: None,
+        },
+    )
 }

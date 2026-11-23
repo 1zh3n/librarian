@@ -1684,6 +1684,8 @@ export interface components {
     ApiError: {
       code: string;
       message: string;
+      /** @description Content policy rule that blocked the request. */
+      ruleId?: string;
       currentRevision?: string;
     };
     SearchHit: {

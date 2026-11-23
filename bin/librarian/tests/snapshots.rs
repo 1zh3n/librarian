@@ -115,6 +115,27 @@ impl Fixture {
         self.app = Some(librarian::Product::open(self.root.path(), 0).unwrap());
     }
 
+    fn set_level(&self, level: &str) {
+        let db = rusqlite::Connection::open(self.root.path().join(".librarian/metadata.sqlite3"))
+            .unwrap();
+        db.execute(
+            "UPDATE workspaces SET security_level = ?1 WHERE space_id = 'field'",
+            [level],
+        )
+        .unwrap();
+    }
+
+    fn audit_rule(&self, action: &str) -> Option<String> {
+        let db = rusqlite::Connection::open(self.root.path().join(".librarian/metadata.sqlite3"))
+            .unwrap();
+        db.query_row(
+            "SELECT rule_id FROM product_audit WHERE action = ?1 ORDER BY id DESC LIMIT 1",
+            [action],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
     async fn request(
         &self,
         method: &str,
@@ -701,4 +722,68 @@ async fn temporary_release(f: &Fixture, name: &str) -> (String, PathBuf, String)
         )
         .await;
     (workspace, folder, release)
+}
+
+#[tokio::test]
+async fn confidential_workspace_rejects_anonymous_snapshots() {
+    let f = Fixture::new();
+    let (workspace, document, _) = f.scope().await;
+    f.set_level("confidential");
+
+    let (status, _, bytes) = f
+        .request(
+            "POST",
+            &format!("/workspaces/{workspace}/snapshots"),
+            Some(&f.writer),
+            json!({"kind":"current","documentIds":[document]}),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    let error: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "anonymous_share_disabled");
+    assert_eq!(
+        f.audit_rule("policy.blocked").as_deref(),
+        Some("anonymous_share_disabled")
+    );
+}
+
+#[tokio::test]
+async fn snapshot_blocks_high_confidence_credentials() {
+    let f = Fixture::new();
+    let (workspace, document, _) = f.scope().await;
+    fs::write(
+        f.repo().join("Notes.md"),
+        format!(
+            "{ORIGINAL}\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\n"
+        ),
+    )
+    .unwrap();
+
+    let (status, _, bytes) = f
+        .request(
+            "POST",
+            &format!("/workspaces/{workspace}/snapshots"),
+            Some(&f.writer),
+            json!({"kind":"current","documentIds":[document]}),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    let error: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "private_key");
+    assert_eq!(
+        f.audit_rule("policy.blocked").as_deref(),
+        Some("private_key")
+    );
 }

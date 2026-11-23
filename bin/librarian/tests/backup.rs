@@ -123,6 +123,22 @@ impl Fixture {
         assert_eq!(configured["mode"], mode);
     }
 
+    fn set_level(&self, level: &str) {
+        let db = rusqlite::Connection::open(self.data.join(".librarian/metadata.sqlite3")).unwrap();
+        db.execute(
+            "UPDATE workspaces SET security_level = ?1 WHERE id = ?2",
+            rusqlite::params![level, self.workspace],
+        )
+        .unwrap();
+    }
+
+    fn set_encrypted(&self, encrypted: bool) {
+        let path = self.data.join(".librarian/backup-targets.json");
+        let mut config: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        config["targets"][0]["encrypted"] = json!(encrypted);
+        fs::write(path, config.to_string()).unwrap();
+    }
+
     async fn local_move(&self, from: &str, to: &str, operation: &str) -> Value {
         let (status, updated) = self
             .call(
@@ -652,4 +668,41 @@ async fn inherited_git_rewrite_cannot_redirect_backup() {
         ORIGINAL.as_bytes()
     );
     assert!(git(&f.distractor, &["for-each-ref"]).is_empty());
+}
+
+#[tokio::test]
+async fn secret_workspace_rejects_remote_backup() {
+    let f = Fixture::open().await;
+    f.configure("grouped").await;
+    f.set_level("secret");
+    let (status, error) = f
+        .call(
+            "POST",
+            "/backup/jobs",
+            json!({"operationId":"1a5f5b3e-6f0e-4a5a-9a5f-000000000001"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "remote_backup_disabled");
+}
+
+#[tokio::test]
+async fn confidential_workspace_requires_an_encrypted_target() {
+    let f = Fixture::open().await;
+    f.configure("grouped").await;
+    f.set_level("confidential");
+    let (status, error) = f
+        .call(
+            "POST",
+            "/backup/jobs",
+            json!({"operationId":"1a5f5b3e-6f0e-4a5a-9a5f-000000000002"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{error}");
+    assert_eq!(error["code"], "policy_blocked");
+    assert_eq!(error["ruleId"], "encrypted_backup_required");
+
+    f.set_encrypted(true);
+    let _ = f.job("1a5f5b3e-6f0e-4a5a-9a5f-000000000003").await;
 }

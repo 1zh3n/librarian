@@ -23,7 +23,9 @@ use uuid::Uuid;
 use crate::{multi::instance::SpaceInstance, revisions::RevisionStore, state::ServerState};
 
 use super::{
+    audit,
     auth::Account,
+    content_policy::{self, Action},
     contract::ApiError,
     db::Metadata,
     documents::{
@@ -33,6 +35,8 @@ use super::{
     },
     mutations::{max_file_bytes, valid_file_path},
     revisions::restored::Lineage,
+    security_levels::SecurityLevel,
+    workspace,
 };
 const MAX_DOCUMENTS: usize = 64;
 const MAX_ATTACHMENTS: usize = 128;
@@ -227,13 +231,14 @@ async fn create(
     run(move || {
         let _workspace = service.metadata.workspace_guard()?;
         let (instance, _) = service.scope(&account, &workspace, true)?;
+        let level = workspace::info(&service.metadata, &workspace)?.security_level;
         let state = state(&instance)?;
         let capture = state.revisions.as_deref().filter(|engine| {
             matches!(request.kind, Kind::Release)
                 && request.commit_id.is_none()
                 && engine.store().auto_commit_allowed()
         });
-        let link = if let Some(engine) = capture {
+        let result = if let Some(engine) = capture {
             engine.with_managed_write(|transaction| {
                 check_storage_recovery(state)?;
                 let (_, actor) = service.scope(&account, &workspace, true)?;
@@ -252,13 +257,28 @@ async fn create(
                 request.commit_id = transaction
                     .checkpoint_files(&actor, &paths)
                     .map_err(ApiError::internal)?;
-                create_locked(&service.metadata, state, &workspace, request)
+                create_locked(&service.metadata, state, &workspace, request, level)
             })
         } else {
             let _guard = product_write(state)?;
             service.scope(&account, &workspace, true)?;
-            create_locked(&service.metadata, state, &workspace, request)
-        }?;
+            create_locked(&service.metadata, state, &workspace, request, level)
+        };
+        let link = match result {
+            Ok(link) => link,
+            Err(error) => {
+                if error.code() == "policy_blocked" {
+                    audit::policy_block(
+                        &service.metadata,
+                        Some(account.username()),
+                        &workspace,
+                        "share",
+                        error.rule_id().unwrap_or("content_policy"),
+                    )?;
+                }
+                return Err(error);
+            }
+        };
         Ok((StatusCode::CREATED, Json(link)))
     })
     .await
@@ -318,9 +338,13 @@ fn create_locked(
     state: &ServerState,
     workspace: &str,
     request: CreateSnapshot,
+    level: SecurityLevel,
 ) -> Result<ShareLink, ApiError> {
     active_workspace(metadata, workspace)?;
     request.validate()?;
+    if !level.capabilities().anonymous_share {
+        return Err(ApiError::policy_blocked("anonymous_share_disabled"));
+    }
     let paths = resolve_paths(metadata, workspace, &request.document_ids)?;
     let mut manifest = Manifest {
         kind: request.kind,
@@ -341,7 +365,13 @@ fn create_locked(
     let commit = match request.kind {
         Kind::Current => {
             for path in &paths {
-                read_markdown(state, path)?;
+                let markdown = read_markdown(state, path)?;
+                let inspection = content_policy::inspect(&markdown, level);
+                if inspection.action == Action::Deny {
+                    return Err(ApiError::policy_blocked(
+                        inspection.blocking_rule.unwrap_or("content_policy"),
+                    ));
+                }
             }
             for path in manifest.attachments.keys() {
                 asset_size(state, path)?;
@@ -354,7 +384,7 @@ fn create_locked(
                 git_blobs::resolve_commit(&repo, request.commit_id.as_deref().unwrap_or("HEAD"))?;
             for (document, path) in manifest.documents.iter_mut().zip(paths) {
                 let lineage = Lineage::load(metadata, store, workspace, &document.id, &path)?;
-                document.release = Some(release_document(store, &repo, &commit, &lineage)?);
+                document.release = Some(release_document(store, &repo, &commit, &lineage, level)?);
             }
             for (path, blob) in &mut manifest.attachments {
                 let oid = git_blobs::find(store, &repo, &commit, path, max_file_bytes(path))?
@@ -642,9 +672,16 @@ fn release_document(
     repo: &std::path::Path,
     commit: &str,
     lineage: &Lineage<'_>,
+    level: SecurityLevel,
 ) -> Result<ReleaseDocument, ApiError> {
     let (path, blob) = document_blob_at_commit(store, repo, commit, lineage)?;
     let markdown = release_markdown(repo, &blob)?;
+    let inspection = content_policy::inspect(&markdown, level);
+    if inspection.action == Action::Deny {
+        return Err(ApiError::policy_blocked(
+            inspection.blocking_rule.unwrap_or("content_policy"),
+        ));
+    }
     Ok(ReleaseDocument {
         title: title(&path, markdown.as_bytes()),
         path,
