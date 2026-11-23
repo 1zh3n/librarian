@@ -58,7 +58,7 @@ else
   fail "HTTP did not redirect to HTTPS (status $status)"
 fi
 
-if curl -kfsS --max-time 8 --resolve "$DOMAIN:443:$ORIGIN_IP" "https://$DOMAIN/" -o /dev/null; then
+if curl -kfs --max-time 8 --resolve "$DOMAIN:443:$ORIGIN_IP" "https://$DOMAIN/" -o /dev/null; then
   fail "origin IP answered directly; restrict the firewall to Cloudflare"
 else
   pass "origin IP is not directly reachable"
