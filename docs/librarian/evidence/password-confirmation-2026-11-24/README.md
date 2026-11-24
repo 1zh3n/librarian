@@ -1,7 +1,8 @@
 # 密码确认与内嵌查看图标验收（2026-11-24）
 
 - 产品分支：`feat/librarian-public-hardening`
-- 产品提交：`2bd559b8`（功能 `1896ddc8`，格式整理 `7d9f581c`，初版证据 `44a55630`）
+- 产品提交：`ca29d3f0`（功能 `1896ddc8`，复核修复 `2bd559b8`，格式整理 `7d9f581c`）
+- 部署版本：`librarian-0.1.0-linux-x86_64-20261124T144424Z`
 - 范围：邀请接受、管理员新建账号、管理员重置密码、用户修改密码、登录页。
 - 用户决定：密码最短长度保持 15；恢复码行为不变；登录页不加确认密码；查看密码使用输入框内的小眼睛图标。
 
@@ -21,6 +22,7 @@
 
 - 390 px 邀请页：密码输入框 `x=51.6875, width=286.625, height=48`；眼睛按钮 `x=294.3125, width=44, height=48`，位于输入框内部。
 - 320 px、200% 字号：登录页、邀请页、账号页 `document.documentElement.scrollWidth = 320`。
+- 公网 360 px 登录页：密码输入框 `x=47.796875, width=264.40625, height=48`；眼睛按钮 `x=268.203125, width=44, height=48`，位于输入框内部。
 
 ## 自动化
 
@@ -48,11 +50,22 @@ document-login document-invite document-accounts
 - 账号：新建账号、重置密码、修改密码都先验证不一致分支，再完成成功路径；新建账号额外断言不一致时 POST 次数为 0、成功创建后确认框错误可读取、成功创建后密码框回到掩码、短确认仍显示自定义错误、旧成功提示被清除。
 - 账号页 320 px + 200% 字号下确认框可见且页面不横向溢出。
 
+## 部署与公网验证
+
+- 包 SHA-256：`25effe5f7445df52af3b5c86e2e9486908f8db810bdb49392ca9ae73782309ae`。
+- 主机服务：`librarian`、`caddy`、`librarian-managed-runner`、`fail2ban` active；`monitor` Result=success；最新备份校验 OK。
+- 主机数据：1 个管理员账号，0 个待接受邀请，0 个 workspace；受管 runner 心跳在线；fail2ban 当前 0 封禁。
+- 公网：`/api/v1/health` 200；`/` 303 到登录页；`/r/nonexistent` 200；登录页 200，加载 `PasswordField` 分包。
+- 公网 Playwright 只填写假密码，不提交：眼睛按钮位于输入框内，44×48；切换后输入类型为 `text`，再切换为 `password`；320 px + 200% `scrollWidth = 320`；保存 `public-login-320-200.png`。
+- 唯一控制台错误是 Cloudflare 自动注入的 `static.cloudflareinsights.com/beacon.min.js` 被现有 `script-src 'self'` CSP 阻止。该错误与本次改动无关，未放宽 CSP。
+- 管理员邀请是一次性 token，本轮没有在生产创建新邀请；邀请表单的成功/失败路径由本地 product fixture 覆盖。
+
 ## 画面
 
 - `login-1440.png`、`login-390.png`、`login-320-200.png`
 - `invite-form-1440-mismatch.png`、`invite-form-1440-visible.png`、`invite-form-390.png`、`invite-form-320-200.png`
 - `accounts-1440.png`、`accounts-390.png`、`accounts-create-390-mismatch.png`、`accounts-password-320-200.png`
+- `public-login-320-200.png`
 
 ## 剩余非阻塞项
 
@@ -61,4 +74,4 @@ document-login document-invite document-accounts
 
 ## 结论
 
-通过本地验证。需要部署后在公网邀请页和账号页复验一次。
+通过。已部署到公网并验证登录页；邀请页和账号页的完整成功/失败路径由本地 product fixture 覆盖。
