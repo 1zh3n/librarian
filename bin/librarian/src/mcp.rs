@@ -393,7 +393,7 @@ async fn invite_page() -> Response {
             (header::REFERRER_POLICY, "no-referrer"),
             (
                 header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; script-src 'self'; style-src 'self' 'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='; form-action 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "default-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='; form-action 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
             ),
         ],
         Html(page.bytes),
