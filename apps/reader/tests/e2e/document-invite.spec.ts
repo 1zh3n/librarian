@@ -60,6 +60,7 @@ test("accepts an invite and signs in with the new TOTP account", async ({ page }
 
   await page.goto(`/.auth/librarian/invite?token=${invite.token}`);
   await expect(page.getByRole("heading", { name: "接受邀请" })).toBeVisible();
+  const acceptForm = page.getByRole("form", { name: "接受邀请" });
   const qr = page.getByRole("img", { name: "TOTP 二维码" });
   await expect(qr).toBeVisible();
   await expect
@@ -71,14 +72,15 @@ test("accepts an invite and signs in with the new TOTP account", async ({ page }
   const confirmation = page.getByLabel("确认密码", { exact: true });
   await password.fill("invite-playwright-password");
   await confirmation.fill("invite-playwright-password-typo");
-  await page.getByLabel("验证器验证码").fill(totp(secret));
+  await page.getByLabel("验证器验证码").fill("123456");
   let acceptRequests = 0;
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/accept")) acceptRequests += 1;
   });
   await page.getByRole("button", { name: "接受邀请" }).click();
-  await expect(page.getByRole("alert")).toHaveText("两次输入的密码不一致。");
+  await expect(acceptForm.getByRole("alert")).toHaveText("两次输入的密码不一致。");
   await expect(confirmation).toBeFocused();
+  await expect(confirmation).toHaveAccessibleDescription("两次输入的密码不一致。");
   await expect(password).toHaveValue("invite-playwright-password");
   await expect(confirmation).toHaveValue("invite-playwright-password-typo");
   expect(acceptRequests).toBe(0);
@@ -94,6 +96,7 @@ test("accepts an invite and signs in with the new TOTP account", async ({ page }
   await expect(password).toHaveAttribute("type", "password");
 
   await confirmation.fill("invite-playwright-password");
+  await page.getByLabel("验证器验证码").fill(totp(secret));
   await page.getByRole("button", { name: "接受邀请" }).click();
   await expect(page.getByRole("heading", { name: "邀请已接受" })).toBeVisible();
   expect(acceptRequests).toBe(1);

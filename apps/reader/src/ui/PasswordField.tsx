@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Ref } from "react";
 import { Field } from "./Forms";
 import { Icon } from "./Icon";
 import styles from "./PasswordField.module.css";
 
 export const PASSWORD_MISMATCH = "两次输入的密码不一致。";
+export const PASSWORD_MIN_LENGTH = 15;
 
 type PasswordFieldProps = {
   label: string;
@@ -42,6 +43,8 @@ export function PasswordField({
       name={name}
       type={visible ? "text" : "password"}
       autoComplete={autoComplete}
+      autoCapitalize="none"
+      spellCheck={false}
       required={required}
       {...(minLength !== undefined ? { minLength } : {})}
       {...(invalid !== undefined ? { invalid } : {})}
@@ -56,7 +59,6 @@ export function PasswordField({
           type="button"
           className={styles.reveal}
           aria-label={`${visible ? "隐藏" : "显示"}${revealLabel}`}
-          aria-pressed={visible}
           onClick={() => setVisible((current) => !current)}
         >
           <Icon name={visible ? "eye-off" : "eye"} />
@@ -68,8 +70,13 @@ export function PasswordField({
 
 export function usePasswordConfirmation() {
   const [mismatch, setMismatch] = useState(false);
+  const errorId = useId();
   const confirmation = useRef<HTMLInputElement>(null);
   const clear = () => setMismatch(false);
+
+  useEffect(() => {
+    if (mismatch) confirmation.current?.focus();
+  }, [mismatch]);
 
   function check(form: HTMLFormElement): string | undefined {
     const values = new FormData(form);
@@ -78,12 +85,11 @@ export function usePasswordConfirmation() {
     if (typeof password !== "string" || typeof value !== "string") return undefined;
     if (password !== value) {
       setMismatch(true);
-      confirmation.current?.focus();
       return undefined;
     }
     setMismatch(false);
     return password;
   }
 
-  return { mismatch, confirmation, check, clear };
+  return { mismatch, errorId, confirmation, check, clear };
 }

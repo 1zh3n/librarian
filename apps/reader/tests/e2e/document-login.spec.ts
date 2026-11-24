@@ -8,11 +8,15 @@ test("keeps the login fields usable at 320 px with 200 percent text", async ({ p
   await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
   const password = page.getByLabel("密码", { exact: true });
   await expect(password).toBeVisible();
+  await expect(password).toHaveAttribute("spellcheck", "false");
+  await expect(password).toHaveAttribute("autocapitalize", "none");
+  await expect(page.getByLabel("确认密码", { exact: true })).toHaveCount(0);
   expect((await password.boundingBox())?.width).toBeGreaterThanOrEqual(100);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   const reveal = page.getByRole("button", { name: "显示密码" });
   await password.press("Tab");
   await expect(reveal).toBeFocused();
+  await expect(reveal).not.toHaveAttribute("aria-pressed");
   await expect(reveal.locator('[data-icon="eye"]')).toBeVisible();
   const input = await password.boundingBox();
   const control = await reveal.boundingBox();

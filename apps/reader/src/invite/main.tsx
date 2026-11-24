@@ -2,7 +2,12 @@ import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { Feedback } from "../ui/Feedback";
 import { Field, Form } from "../ui/Forms";
-import { PASSWORD_MISMATCH, PasswordField, usePasswordConfirmation } from "../ui/PasswordField";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MISMATCH,
+  PasswordField,
+  usePasswordConfirmation,
+} from "../ui/PasswordField";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import qrcode from "qrcode-generator";
@@ -47,6 +52,7 @@ function Invite({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
   const {
     mismatch: passwordMismatch,
+    errorId: passwordErrorId,
     clear: clearPasswordMismatch,
     check: checkPassword,
     confirmation: confirmationRef,
@@ -69,10 +75,10 @@ function Invite({ token }: { token: string }) {
 
   async function accept(form: HTMLFormElement) {
     const code = new FormData(form).get("code");
+    setError("");
     const password = checkPassword(form);
     if (password === undefined || typeof code !== "string") return;
     setPending(true);
-    setError("");
     try {
       const accepted = await request<{ recoveryCodes: string[] }>(
         `/api/v1/invites/${encodeURIComponent(token)}/accept`,
@@ -168,6 +174,7 @@ function Invite({ token }: { token: string }) {
               用验证器扫描二维码，或在验证器中手动输入密钥：<code>{secret}</code>
             </p>
             <Form
+              aria-label="接受邀请"
               className={login.form}
               onSubmit={(event) => {
                 event.preventDefault();
@@ -178,7 +185,7 @@ function Invite({ token }: { token: string }) {
                 label="设置密码"
                 name="password"
                 autoComplete="new-password"
-                minLength={15}
+                minLength={PASSWORD_MIN_LENGTH}
                 className={login.field}
                 inputClassName={login.input}
                 onChange={clearPasswordMismatch}
@@ -187,15 +194,19 @@ function Invite({ token }: { token: string }) {
                 label="确认密码"
                 name="passwordConfirmation"
                 autoComplete="new-password"
-                minLength={15}
                 className={login.field}
                 inputClassName={login.input}
                 invalid={passwordMismatch}
                 onChange={clearPasswordMismatch}
                 ref={confirmationRef}
                 revealLabel="确认密码"
+                {...(passwordMismatch ? { "aria-describedby": passwordErrorId } : {})}
               />
-              {passwordMismatch && <Feedback tone="error">{PASSWORD_MISMATCH}</Feedback>}
+              {passwordMismatch && (
+                <Feedback tone="error" id={passwordErrorId}>
+                  {PASSWORD_MISMATCH}
+                </Feedback>
+              )}
               <Field
                 label="验证器验证码"
                 name="code"

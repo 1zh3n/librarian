@@ -166,9 +166,13 @@ test("manages a local account and applies Workspace membership through Reader", 
   await openCommand(page, "账号管理");
   await expect(page.getByRole("heading", { name: "账号管理" })).toBeVisible();
   const create = page.getByRole("form", { name: "新建账号" });
+  const initial = create.getByLabel("初始密码", { exact: true });
+  const confirmation = create.getByLabel("确认密码", { exact: true });
   await create.getByLabel("用户名").fill(username);
-  await create.getByLabel("初始密码", { exact: true }).fill(firstPassword);
-  await create.getByLabel("确认密码", { exact: true }).fill(`${firstPassword}-typo`);
+  await initial.fill(firstPassword);
+  await create.getByRole("button", { name: "显示初始密码" }).click();
+  await expect(initial).toHaveAttribute("type", "text");
+  await confirmation.fill(`${firstPassword}-typo`);
   let createRequests = 0;
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/api/v1/accounts")) {
@@ -177,12 +181,25 @@ test("manages a local account and applies Workspace membership through Reader", 
   });
   await create.getByRole("button", { name: "创建账号" }).click();
   await expect(create.getByRole("alert")).toHaveText("两次输入的密码不一致。");
-  await expect(create.getByLabel("确认密码", { exact: true })).toBeFocused();
-  await expect(create.getByLabel("初始密码", { exact: true })).toHaveValue(firstPassword);
+  await expect(confirmation).toBeFocused();
+  await expect(confirmation).toHaveAccessibleDescription("两次输入的密码不一致。");
+  await expect(initial).toHaveValue(firstPassword);
   expect(createRequests).toBe(0);
-  await create.getByLabel("确认密码", { exact: true }).fill(firstPassword);
+  await confirmation.fill(firstPassword);
   await create.getByRole("button", { name: "创建账号" }).click();
-  await expect(create.getByLabel("初始密码", { exact: true })).toHaveValue("");
+  await expect(initial).toHaveValue("");
+  await expect(initial).toHaveAttribute("type", "password");
+  await expect(create.getByText("账号已创建")).toBeVisible();
+  expect(createRequests).toBe(1);
+
+  await create.getByLabel("用户名").fill(`${username}-second`);
+  await initial.fill(firstPassword);
+  await confirmation.fill("short");
+  await create.getByRole("button", { name: "创建账号" }).click();
+  await expect(create.getByRole("alert")).toHaveText("两次输入的密码不一致。");
+  await expect(confirmation).toBeFocused();
+  await expect(confirmation).toHaveAccessibleDescription("两次输入的密码不一致。");
+  await expect(create.getByText("账号已创建")).toHaveCount(0);
   expect(createRequests).toBe(1);
   const account = page.getByRole("list", { name: "账号列表" }).getByRole("listitem").filter({
     hasText: username,
@@ -292,6 +309,9 @@ test("manages a local account and applies Workspace membership through Reader", 
     await reset.getByRole("button", { name: "保存密码" }).click();
     await expect(reset.getByRole("alert")).toHaveText("两次输入的密码不一致。");
     await expect(reset.getByLabel("确认密码", { exact: true })).toBeFocused();
+    await expect(reset.getByLabel("确认密码", { exact: true })).toHaveAccessibleDescription(
+      "两次输入的密码不一致。",
+    );
     await expect(reset.getByLabel("新密码", { exact: true })).toHaveValue(replacementPassword);
     await reset.getByLabel("确认密码", { exact: true }).fill(replacementPassword);
     await reset.getByRole("button", { name: "保存密码" }).click();
@@ -334,6 +354,9 @@ test("lets a member replace their password and starts a fresh browser session", 
     await password.getByRole("button", { name: "保存密码" }).click();
     await expect(password.getByRole("alert")).toHaveText("两次输入的密码不一致。");
     await expect(password.getByLabel("确认密码", { exact: true })).toBeFocused();
+    await expect(password.getByLabel("确认密码", { exact: true })).toHaveAccessibleDescription(
+      "两次输入的密码不一致。",
+    );
     await expect(password.getByLabel("新密码", { exact: true })).toHaveValue(replacementPassword);
     await password.getByLabel("确认密码", { exact: true }).fill(replacementPassword);
     await password.getByRole("button", { name: "保存密码" }).click();
