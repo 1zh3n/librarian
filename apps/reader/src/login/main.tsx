@@ -2,6 +2,7 @@ import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { Feedback } from "../ui/Feedback";
 import { Form, Field } from "../ui/Forms";
+import { PasswordField } from "../ui/PasswordField";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../styles/tokens.css";
@@ -32,7 +33,6 @@ function Login({ status, username }: { status: string | undefined; username: str
   const incorrect = status === "incorrect";
   const totp = status?.startsWith("totp") ?? false;
   const errorDescription = incorrect || totp ? { "aria-describedby": "login-error" } : {};
-  const [visible, setVisible] = useState(false);
   const [pending, setPending] = useState(false);
   const alert = useRef<HTMLDivElement>(null);
   const password = useRef<HTMLInputElement>(null);
@@ -130,26 +130,15 @@ function Login({ status, username }: { status: string | undefined; username: str
             autoCapitalize="none"
             spellCheck={false}
           />
-          <Field
+          <PasswordField
             name="password"
             autoComplete="current-password"
             {...errorDescription}
-            type={visible ? "text" : "password"}
             required
             className={styles.field}
             label="密码"
             ref={password}
             inputClassName={styles.input}
-            actionClassName={styles.password}
-            action={
-              <Button
-                type="button"
-                className={styles.reveal}
-                onPress={() => setVisible((current) => !current)}
-              >
-                {visible ? "隐藏密码" : "显示密码"}
-              </Button>
-            }
           />
           <Button
             className={styles.submit}

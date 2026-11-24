@@ -10,8 +10,19 @@ test("keeps the login fields usable at 320 px with 200 percent text", async ({ p
   await expect(password).toBeVisible();
   expect((await password.boundingBox())?.width).toBeGreaterThanOrEqual(100);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  const reveal = page.getByRole("button", { name: "显示密码" });
   await password.press("Tab");
-  await expect(page.getByRole("button", { name: "显示密码" })).toBeFocused();
+  await expect(reveal).toBeFocused();
+  await expect(reveal.locator('[data-icon="eye"]')).toBeVisible();
+  const input = await password.boundingBox();
+  const control = await reveal.boundingBox();
+  if (!input || !control) throw new Error("Missing password control");
+  expect(control.x).toBeGreaterThanOrEqual(input.x);
+  expect(control.y).toBeGreaterThanOrEqual(input.y);
+  expect(control.x + control.width).toBeLessThanOrEqual(input.x + input.width);
+  expect(control.y + control.height).toBeLessThanOrEqual(input.y + input.height);
+  expect(control.width).toBeGreaterThanOrEqual(44);
+  expect(control.height).toBeGreaterThanOrEqual(44);
 });
 
 test("signs in on a narrow screen after showing and correcting a password", async ({ page }) => {
@@ -29,7 +40,9 @@ test("signs in on a narrow screen after showing and correcting a password", asyn
   await expect(page.getByRole("button", { name: "显示密码" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(password).toHaveAttribute("type", "text");
-  await page.getByRole("button", { name: "隐藏密码" }).click();
+  const hide = page.getByRole("button", { name: "隐藏密码" });
+  await expect(hide.locator('[data-icon="eye-off"]')).toBeVisible();
+  await hide.click();
   await expect(password).toHaveAttribute("type", "password");
 
   const failed = page.waitForResponse(

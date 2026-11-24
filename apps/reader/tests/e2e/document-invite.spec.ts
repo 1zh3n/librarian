@@ -67,10 +67,36 @@ test("accepts an invite and signs in with the new TOTP account", async ({ page }
     .toBeGreaterThan(0);
   const secret = (await page.locator("p code").first().textContent())?.trim() ?? "";
   expect(secret.length).toBeGreaterThanOrEqual(32);
-  await page.getByLabel("设置密码").fill("invite-playwright-password");
+  const password = page.getByLabel("设置密码", { exact: true });
+  const confirmation = page.getByLabel("确认密码", { exact: true });
+  await password.fill("invite-playwright-password");
+  await confirmation.fill("invite-playwright-password-typo");
   await page.getByLabel("验证器验证码").fill(totp(secret));
+  let acceptRequests = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/accept")) acceptRequests += 1;
+  });
+  await page.getByRole("button", { name: "接受邀请" }).click();
+  await expect(page.getByRole("alert")).toHaveText("两次输入的密码不一致。");
+  await expect(confirmation).toBeFocused();
+  await expect(password).toHaveValue("invite-playwright-password");
+  await expect(confirmation).toHaveValue("invite-playwright-password-typo");
+  expect(acceptRequests).toBe(0);
+
+  const revealPassword = page.getByRole("button", { name: "显示密码" });
+  const revealConfirmation = page.getByRole("button", { name: "显示确认密码" });
+  await revealPassword.click();
+  await expect(password).toHaveAttribute("type", "text");
+  await expect(confirmation).toHaveAttribute("type", "password");
+  await revealConfirmation.click();
+  await expect(confirmation).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "隐藏密码" }).click();
+  await expect(password).toHaveAttribute("type", "password");
+
+  await confirmation.fill("invite-playwright-password");
   await page.getByRole("button", { name: "接受邀请" }).click();
   await expect(page.getByRole("heading", { name: "邀请已接受" })).toBeVisible();
+  expect(acceptRequests).toBe(1);
   await expect(page.getByRole("list", { name: "恢复码" }).locator("li")).toHaveCount(10);
 
   await page.goto("/.auth/librarian/login");
@@ -125,4 +151,27 @@ test("labels an administrator invitation before acceptance", async ({ page }) =>
   await page.goto(`/.auth/librarian/invite?token=${invite.token}`);
   await expect(page.getByText("管理员邀请", { exact: false })).toBeVisible();
   await expect(page.getByText("服务器管理员权限", { exact: false })).toBeVisible();
+});
+
+test("fits the invite form at 320 px with double-size text", async ({ page }) => {
+  await page.goto("/.auth/librarian/login");
+  const origin = new URL(page.url()).origin;
+  await signIn(page, "fixture-admin", "fixture-admin-test-password");
+  const response = await page.request.post("/api/v1/invites", {
+    headers: { origin },
+    data: {
+      username: "invite-narrow-ui",
+      admin: false,
+      role: "write",
+      workspaceIds: [],
+      expiresInDays: 1,
+    },
+  });
+  expect(response.status()).toBe(201);
+  const invite = (await response.json()) as { token: string };
+  await page.setViewportSize({ width: 320, height: 820 });
+  await page.goto(`/.auth/librarian/invite?token=${invite.token}`);
+  await page.evaluate(() => (document.documentElement.style.fontSize = "200%"));
+  await expect(page.getByLabel("确认密码", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
 });

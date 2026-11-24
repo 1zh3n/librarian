@@ -2,6 +2,7 @@ import { Icon } from "../ui/Icon";
 import { Button } from "../ui/Button";
 import { Feedback } from "../ui/Feedback";
 import { Field, Form } from "../ui/Forms";
+import { PASSWORD_MISMATCH, PasswordField, usePasswordConfirmation } from "../ui/PasswordField";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import qrcode from "qrcode-generator";
@@ -44,6 +45,12 @@ function Invite({ token }: { token: string }) {
   const [codes, setCodes] = useState<string[]>([]);
   const [error, setError] = useState(token ? "" : "邀请链接不完整。");
   const [pending, setPending] = useState(false);
+  const {
+    mismatch: passwordMismatch,
+    clear: clearPasswordMismatch,
+    check: checkPassword,
+    confirmation: confirmationRef,
+  } = usePasswordConfirmation();
 
   useEffect(() => {
     if (!token) return;
@@ -61,10 +68,9 @@ function Invite({ token }: { token: string }) {
   }, [token]);
 
   async function accept(form: HTMLFormElement) {
-    const values = new FormData(form);
-    const password = values.get("password");
-    const code = values.get("code");
-    if (typeof password !== "string" || typeof code !== "string") return;
+    const code = new FormData(form).get("code");
+    const password = checkPassword(form);
+    if (password === undefined || typeof code !== "string") return;
     setPending(true);
     setError("");
     try {
@@ -168,16 +174,28 @@ function Invite({ token }: { token: string }) {
                 if (!pending) void accept(event.currentTarget);
               }}
             >
-              <Field
+              <PasswordField
                 label="设置密码"
                 name="password"
-                type="password"
                 autoComplete="new-password"
                 minLength={15}
-                required
                 className={login.field}
                 inputClassName={login.input}
+                onChange={clearPasswordMismatch}
               />
+              <PasswordField
+                label="确认密码"
+                name="passwordConfirmation"
+                autoComplete="new-password"
+                minLength={15}
+                className={login.field}
+                inputClassName={login.input}
+                invalid={passwordMismatch}
+                onChange={clearPasswordMismatch}
+                ref={confirmationRef}
+                revealLabel="确认密码"
+              />
+              {passwordMismatch && <Feedback tone="error">{PASSWORD_MISMATCH}</Feedback>}
               <Field
                 label="验证器验证码"
                 name="code"

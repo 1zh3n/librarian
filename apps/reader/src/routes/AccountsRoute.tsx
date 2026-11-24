@@ -2,6 +2,7 @@ import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Feedback } from "../ui/Feedback";
 import { Form, Field } from "../ui/Forms";
+import { PASSWORD_MISMATCH, PasswordField, usePasswordConfirmation } from "../ui/PasswordField";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
@@ -21,21 +22,6 @@ async function signInAgain() {
   window.location.replace("/.auth/librarian/login?next=%2Faccounts");
 }
 
-function PasswordField({ current = false, label }: { current?: boolean; label: string }) {
-  return (
-    <Field
-      label={label}
-      className={styles.field}
-      name={current ? "currentPassword" : "password"}
-      type="password"
-      autoComplete={current ? "current-password" : "new-password"}
-      {...(!current && { minLength: 15 })}
-      required
-      inputClassName={styles.input}
-    />
-  );
-}
-
 function PasswordForm({
   own = false,
   onSave,
@@ -45,13 +31,19 @@ function PasswordForm({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const {
+    mismatch,
+    clear: clearMismatch,
+    check: checkPassword,
+    confirmation: confirmationRef,
+  } = usePasswordConfirmation();
 
   async function save(form: HTMLFormElement) {
     const values = new FormData(form);
-    const password = values.get("password");
     const currentPassword = values.get("currentPassword");
+    const password = checkPassword(form);
+    if (password === undefined) return;
     form.reset();
-    if (typeof password !== "string") return;
     setPending(true);
     setError("");
     try {
@@ -77,9 +69,44 @@ function PasswordForm({
       }}
     >
       <div className={styles.fields}>
-        {own && <PasswordField current label="当前密码" />}
-        <PasswordField label="新密码" />
+        {own && (
+          <PasswordField
+            label="当前密码"
+            className={styles.field}
+            name="currentPassword"
+            autoComplete="current-password"
+            inputClassName={styles.input}
+            revealLabel="当前密码"
+          />
+        )}
+        <PasswordField
+          label="新密码"
+          className={styles.field}
+          name="password"
+          autoComplete="new-password"
+          minLength={15}
+          inputClassName={styles.input}
+          onChange={clearMismatch}
+          revealLabel="新密码"
+        />
+        <PasswordField
+          label="确认密码"
+          className={styles.field}
+          name="passwordConfirmation"
+          autoComplete="new-password"
+          minLength={15}
+          inputClassName={styles.input}
+          invalid={mismatch}
+          onChange={clearMismatch}
+          ref={confirmationRef}
+          revealLabel="确认密码"
+        />
       </div>
+      {mismatch && (
+        <Feedback tone="error" className={styles.status}>
+          {PASSWORD_MISMATCH}
+        </Feedback>
+      )}
       <p className={styles.status}>新密码至少 15 个字符。</p>
       {error && (
         <Feedback tone="error" className={styles.status}>
@@ -97,12 +124,17 @@ function NewAccount({ onCreated }: { onCreated: () => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const {
+    mismatch,
+    clear: clearMismatch,
+    check: checkPassword,
+    confirmation: confirmationRef,
+  } = usePasswordConfirmation();
 
   async function create(form: HTMLFormElement) {
-    const values = new FormData(form);
-    const username = values.get("username");
-    const password = values.get("password");
-    if (typeof username !== "string" || typeof password !== "string") return;
+    const username = new FormData(form).get("username");
+    const password = checkPassword(form);
+    if (typeof username !== "string" || password === undefined) return;
     setPending(true);
     setError("");
     setNotice("");
@@ -139,8 +171,34 @@ function NewAccount({ onCreated }: { onCreated: () => void }) {
           required
           inputClassName={styles.input}
         />
-        <PasswordField label="初始密码" />
+        <PasswordField
+          label="初始密码"
+          className={styles.field}
+          name="password"
+          autoComplete="new-password"
+          minLength={15}
+          inputClassName={styles.input}
+          onChange={clearMismatch}
+          revealLabel="初始密码"
+        />
+        <PasswordField
+          label="确认密码"
+          className={styles.field}
+          name="passwordConfirmation"
+          autoComplete="new-password"
+          minLength={15}
+          inputClassName={styles.input}
+          invalid={mismatch}
+          onChange={clearMismatch}
+          ref={confirmationRef}
+          revealLabel="确认密码"
+        />
       </div>
+      {mismatch && (
+        <Feedback tone="error" className={styles.status}>
+          {PASSWORD_MISMATCH}
+        </Feedback>
+      )}
       <p className={styles.status}>初始密码至少 15 个字符。</p>
       {error && (
         <Feedback tone="error" className={styles.status}>
